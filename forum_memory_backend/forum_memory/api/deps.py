@@ -16,14 +16,15 @@ def get_db() -> Session:
 
 
 def get_current_user(
-    x_employee_id: str = Header(alias="X-Employee-Id", default=""),
+    x_employee_id: str = Header(default=""),
     session: Session = Depends(get_db),
 ) -> User:
     """
     根据请求头 X-Employee-Id 查找用户。
-    - 找到 → 返回 User 对象
-    - 找不到 → 401（需要先由管理员在系统中注册）
-    - 未传工号 → 401
+
+    FastAPI 的 Header() 自动将参数名下划线转连字符匹配，
+    即 x_employee_id → 匹配 x-employee-id（HTTP 头不区分大小写，
+    前端发 X-Employee-Id 同样能匹配）。
     """
     employee_id = x_employee_id.strip()
     if not employee_id:

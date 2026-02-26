@@ -5,19 +5,8 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="16b6dfc5-8c9a-4484-a4a7-f150f8ae201e" name="Changes" comment="">
-      <change afterPath="$PROJECT_DIR$/forum_memory_backend/forum_memory/schemas/user.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/forum_memory_backend/forum_memory/seed.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/forum_memory_backend/.idea/forum_memory_backend.iml" beforeDir="false" afterPath="$PROJECT_DIR$/forum_memory_backend/.idea/forum_memory_backend.iml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/forum_memory_backend/.idea/misc.xml" beforeDir="false" afterPath="$PROJECT_DIR$/forum_memory_backend/.idea/misc.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/forum_memory_backend/forum_memory/api/__init__.py" beforeDir="false" afterPath="$PROJECT_DIR$/forum_memory_backend/forum_memory/api/__init__.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/forum_memory_backend/forum_memory/api/deps.py" beforeDir="false" afterPath="$PROJECT_DIR$/forum_memory_backend/forum_memory/api/deps.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/forum_memory_backend/forum_memory/api/namespaces.py" beforeDir="false" afterPath="$PROJECT_DIR$/forum_memory_backend/forum_memory/api/namespaces.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/forum_memory_backend/forum_memory/models/enums.py" beforeDir="false" afterPath="$PROJECT_DIR$/forum_memory_backend/forum_memory/models/enums.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/forum_memory_backend/forum_memory/models/user.py" beforeDir="false" afterPath="$PROJECT_DIR$/forum_memory_backend/forum_memory/models/user.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/forum_memory_frontend/src/api/client.js" beforeDir="false" afterPath="$PROJECT_DIR$/forum_memory_frontend/src/api/client.js" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/forum_memory_frontend/src/components/Layout.jsx" beforeDir="false" afterPath="$PROJECT_DIR$/forum_memory_frontend/src/components/Layout.jsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/forum_memory_frontend/src/pages/BoardList.jsx" beforeDir="false" afterPath="$PROJECT_DIR$/forum_memory_frontend/src/pages/BoardList.jsx" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -60,7 +49,7 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1772030367698</updated>
-      <workItem from="1772030368796" duration="8645000" />
+      <workItem from="1772030368796" duration="9131000" />
     </task>
     <servers />
   </component>
