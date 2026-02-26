@@ -1,8 +1,25 @@
 const BASE = '/api/v1';
 
+/**
+ * 获取当前工号。
+ * 优先从 localStorage 读取，没有则默认 '00000000'（超级管理员）。
+ */
+function getEmployeeId() {
+  return localStorage.getItem('employeeId') || '00000000';
+}
+
+/** 设置当前工号 */
+export function setEmployeeId(id) {
+  localStorage.setItem('employeeId', id);
+}
+
 async function request(url, options = {}) {
   const res = await fetch(`${BASE}${url}`, {
-    headers: { 'Content-Type': 'application/json', 'X-User-Id': localStorage.getItem('userId') || 'anonymous', ...options.headers },
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Employee-Id': getEmployeeId(),
+      ...options.headers,
+    },
     ...options,
   });
   if (!res.ok) {
@@ -18,7 +35,15 @@ const post = (url, body) => request(url, { method: 'POST', body: JSON.stringify(
 const put = (url, body) => request(url, { method: 'PUT', body: JSON.stringify(body) });
 const del = (url) => request(url, { method: 'DELETE' });
 
-// ── Namespaces ───────────────────────────────────
+// ── Users ────────────────────────────────────
+export const userApi = {
+  me: () => get('/users/me'),
+  list: () => get('/users'),
+  create: (data) => post('/users', data),
+  deactivate: (id) => del(`/users/${id}`),
+};
+
+// ── Namespaces ───────────────────────────────
 export const namespaceApi = {
   list: () => get('/namespaces'),
   get: (id) => get(`/namespaces/${id}`),
@@ -28,7 +53,7 @@ export const namespaceApi = {
   updateDict: (id, entries) => put(`/namespaces/${id}/dictionary`, { entries }),
 };
 
-// ── Threads ──────────────────────────────────────
+// ── Threads ──────────────────────────────────
 export const threadApi = {
   list: (params = {}) => {
     const q = new URLSearchParams();
@@ -46,7 +71,7 @@ export const threadApi = {
   addComment: (id, content) => post(`/threads/${id}/comments`, { thread_id: id, content }),
 };
 
-// ── Memories ─────────────────────────────────────
+// ── Memories ─────────────────────────────────
 export const memoryApi = {
   list: (params = {}) => {
     const q = new URLSearchParams();
@@ -62,7 +87,7 @@ export const memoryApi = {
   extract: (threadId) => post(`/memories/extract/${threadId}`),
 };
 
-// ── Feedback ─────────────────────────────────────
+// ── Feedback ─────────────────────────────────
 export const feedbackApi = {
   submit: (memoryId, data) => post(`/memories/${memoryId}/feedback`, data),
   list: (memoryId) => get(`/memories/${memoryId}/feedback`),

@@ -41,6 +41,7 @@ class AUDNAction(str, Enum):
 # ── User / Role enums ────────────────────────────────────────
 
 class UserRole(str, Enum):
+    """Memory source role — who provided the answer."""
     POSTER = "poster"
     COMMENTER = "commenter"
     AI = "ai"
@@ -53,6 +54,12 @@ ROLE_WEIGHT: dict[UserRole, float] = {
     UserRole.AI: 0.5,
     UserRole.POSTER: 0.7,
 }
+
+
+class SystemRole(str, Enum):
+    """System-level user role for access control."""
+    SUPER_ADMIN = "super_admin"
+    USER = "user"
 
 
 # ── Feedback enums ────────────────────────────────────────────
