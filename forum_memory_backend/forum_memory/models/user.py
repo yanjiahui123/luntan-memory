@@ -1,15 +1,11 @@
 """User model."""
 
-from uuid import UUID
-
-from sqlmodel import SQLModel, Field
-
-from .base import UUIDMixin, TimestampMixin
+from sqlmodel import Field
+from forum_memory.models.base import UUIDMixin, TimestampMixin
 
 
 class User(UUIDMixin, TimestampMixin, table=True):
     """Forum user."""
-
     __tablename__ = "users"
 
     username: str = Field(max_length=100, unique=True, index=True)

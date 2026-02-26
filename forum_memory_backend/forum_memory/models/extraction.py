@@ -1,21 +1,19 @@
-"""Extraction record — idempotent guard for memory extraction."""
+"""Extraction record for idempotent processing."""
 
-from datetime import datetime
+from uuid import UUID
 
-from sqlmodel import SQLModel, Field
-from sqlalchemy import Column, Text
-from sqlalchemy.dialects.postgresql import ARRAY
+from sqlmodel import Field
 
-from .enums import ExtractionStatus
+from forum_memory.models.base import UUIDMixin, TimestampMixin
+from forum_memory.models.enums import ExtractionStatus
 
 
-class ExtractionRecord(SQLModel, table=True):
-    """Tracks which threads have been processed."""
-
+class ExtractionRecord(UUIDMixin, TimestampMixin, table=True):
+    """Tracks extraction jobs to prevent duplicates."""
     __tablename__ = "extraction_records"
 
-    thread_id: str = Field(primary_key=True, max_length=200)
-    status: ExtractionStatus = Field(default=ExtractionStatus.PENDING, index=True)
-    processed_at: datetime | None = Field(default=None)
-    memory_ids: list[str] | None = Field(default=None, sa_column=Column(ARRAY(Text)))
+    thread_id: UUID = Field(foreign_key="threads.id", unique=True, index=True)
+    namespace_id: UUID = Field(foreign_key="namespaces.id", index=True)
+    status: ExtractionStatus = Field(default=ExtractionStatus.PENDING)
+    memory_ids_created: str | None = Field(default=None)
     error_message: str | None = Field(default=None)

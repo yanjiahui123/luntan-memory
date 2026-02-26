@@ -1,16 +1,16 @@
-"""API routers registration."""
+"""API router registration."""
 
-from fastapi import APIRouter
+from fastapi import FastAPI
 
-from .namespaces import router as namespaces_router
-from .threads import router as threads_router
-from .memories import router as memories_router
-from .feedback import router as feedback_router
+from forum_memory.api.namespaces import router as ns_router
+from forum_memory.api.threads import router as thread_router
+from forum_memory.api.memories import router as memory_router
+from forum_memory.api.feedback import router as fb_router
 
 
-def register_routers(app):
-    """Register all API routers on the FastAPI app."""
-    app.include_router(namespaces_router)
-    app.include_router(threads_router)
-    app.include_router(memories_router)
-    app.include_router(feedback_router)
+def register_routers(app: FastAPI) -> None:
+    prefix = "/api/v1"
+    app.include_router(ns_router, prefix=prefix)
+    app.include_router(thread_router, prefix=prefix)
+    app.include_router(memory_router, prefix=prefix)
+    app.include_router(fb_router, prefix=prefix)

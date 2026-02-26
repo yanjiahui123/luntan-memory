@@ -1,1 +1,1 @@
-"""Core engines: state machine, AUDN, extraction, quality."""
+"""Core business logic engines."""

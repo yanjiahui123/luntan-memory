@@ -1,110 +1,82 @@
-# Forum Memory Agent
+# Forum Memory Agent — Backend
 
-知识论坛 + 可插拔记忆 Agent 系统
+知识论坛 + 记忆系统后端，基于 FastAPI + SQLModel + PostgreSQL（同步模式）。
+
+## 快速启动
+
+```bash
+# 1. 安装依赖
+pip install -e ".[dev]"
+
+# 2. 配置环境变量
+cp .env.example .env
+# 编辑 .env，设置数据库连接和 LLM API Key
+
+# 3. 启动
+uvicorn forum_memory.main:app --reload --port 8000
+```
+
+## 技术栈
+
+- **FastAPI** — Web 框架
+- **SQLModel** ≥0.0.22 — ORM（基于 SQLAlchemy 2.0）
+- **psycopg2-binary** — PostgreSQL 同步驱动
+- **Pydantic v2** — 数据校验
+- **OpenAI SDK** — LLM 调用（知识提取、AUDN、AI 回答）
 
 ## 项目结构
 
 ```
 forum_memory/
-├── main.py                          # FastAPI 应用入口
-├── config.py                        # Pydantic Settings 配置
-├── database.py                      # 数据库引擎/会话
-│
-├── models/                          # SQLModel 数据模型
-│   ├── enums.py                     # 所有枚举定义
-│   ├── base.py                      # UUID/时间戳 Mixin
-│   ├── user.py                      # 用户
-│   ├── namespace.py                 # 板块/命名空间
-│   ├── thread.py                    # 帖子 + 评论
-│   ├── memory.py                    # 记忆（核心实体）
-│   ├── extraction.py                # 提取幂等记录
-│   ├── feedback.py                  # 反馈
-│   ├── operation_log.py             # 操作审计日志
-│   └── event.py                     # 事件/摘要/知识缺口
-│
-├── schemas/                         # Pydantic 请求/响应模型
-│   ├── namespace.py
-│   ├── thread.py
-│   ├── memory.py
-│   └── feedback.py
-│
-├── services/                        # 业务逻辑层 (与 API 分离)
-│   ├── namespace_service.py         # 板块管理
-│   ├── thread_service.py            # 帖子生命周期 + 状态机
-│   ├── memory_service.py            # 记忆 CRUD + 权威管理 + AUDN
-│   ├── feedback_service.py          # 反馈处理 + 自动动作
-│   ├── search_service.py            # 四阶段检索管道
-│   └── extraction_service.py        # 提取编排器 (5 步管道)
-│
-├── api/                             # FastAPI 路由层 (薄层, 只做参数校验和调用 service)
-│   ├── deps.py                      # 依赖注入
-│   ├── namespaces.py
-│   ├── threads.py
-│   ├── memories.py
-│   └── feedback.py
-│
-├── core/                            # 核心引擎
-│   ├── state_machine.py             # 帖子状态机
-│   ├── quality.py                   # 质量评分公式
-│   ├── audn.py                      # AUDN 决策引擎
-│   ├── extraction.py                # 事实提取 + 压缩
-│   └── prompts.py                   # Prompt 模板
-│
-└── providers/                       # LLM 服务抽象
-    ├── base.py                      # 抽象基类
-    ├── openai_provider.py           # OpenAI 实现
-    └── factory.py                   # 工厂 + 注册
+├── main.py                 # FastAPI 入口
+├── config.py               # 配置（Pydantic Settings）
+├── database.py             # 同步 Engine + Session
+├── models/                 # SQLModel 数据模型
+│   ├── enums.py            # 所有枚举
+│   ├── base.py             # UUID + Timestamp Mixin
+│   ├── user.py / namespace.py / thread.py / memory.py
+│   ├── extraction.py / feedback.py / operation_log.py / event.py
+├── schemas/                # Pydantic 请求/响应模型
+├── core/                   # 核心业务逻辑引擎
+│   ├── state_machine.py    # 帖子状态机 + 权威映射
+│   ├── quality.py          # 五因子质量评分
+│   ├── audn.py             # AUDN 决策解析
+│   ├── extraction.py       # 提取辅助逻辑
+│   └── prompts.py          # 所有 LLM Prompt 模板
+├── providers/              # LLM 提供商抽象
+│   ├── base.py / openai_provider.py / factory.py
+├── services/               # 业务服务层
+│   ├── namespace_service.py / thread_service.py
+│   ├── memory_service.py / feedback_service.py
+│   ├── search_service.py / extraction_service.py
+└── api/                    # FastAPI 路由
+    ├── deps.py             # 依赖注入
+    ├── namespaces.py / threads.py / memories.py / feedback.py
 ```
 
-## 核心设计
+## 关键改动说明
 
-### 分层架构
-- **API 层** → 路由、参数校验、HTTP 协议
-- **Service 层** → 业务逻辑、事务管理
-- **Core 层** → 纯业务引擎（状态机、AUDN、质量评分）
-- **Provider 层** → LLM 抽象（可替换）
-- **Model 层** → SQLModel 数据定义
+- **同步模式**：使用 `psycopg2-binary` 替代 `asyncpg`，所有 service/api 均为同步函数
+- **绝对导入**：全部使用 `from forum_memory.xxx import yyy` 格式
+- **SQLModel ≥0.0.22**：兼容最新版本
 
-### 帖子状态机
-```
-OPEN → RESOLVED (发起人点赞最佳回答)
-OPEN → TIMEOUT_CLOSED (系统超时)
-```
+## API 端点
 
-### 记忆二维状态
-- **权威等级**: LOCKED (人工参与) / NORMAL (AI 自动)
-- **生命周期**: ACTIVE → COLD → ARCHIVED → DELETED
-
-### AUDN 循环
-每条候选事实 vs 已有记忆:
-- **ADD**: 全新知识
-- **UPDATE**: 补充/修正 NORMAL 记忆
-- **DELETE**: 明确废弃
-- **NONE**: 已有覆盖
-
-### 检索管道
-1. 查询预处理 (黑话映射 + 改写)
-2. ES 混合召回 (向量 + BM25 + 权威加权)
-3. Reranker 精排
-4. 环境匹配后处理
-
-## 快速启动
-
-```bash
-# 安装依赖
-pip install -e ".[dev]"
-
-# 配置 .env
-cp .env.example .env
-
-# 启动
-uvicorn forum_memory.main:app --reload
-```
-
-## 编码规范
-
-- 函数体不超过 5 行
-- 嵌套层数不超过 4 层
-- API 和 Service 严格分离
-- Pydantic 封装所有入参/出参
-- SQLModel 定义所有数据模型
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET/POST | `/api/v1/namespaces` | 板块列表 / 创建 |
+| GET/PUT | `/api/v1/namespaces/:id` | 板块详情 / 更新 |
+| GET | `/api/v1/namespaces/:id/stats` | 板块统计 |
+| PUT | `/api/v1/namespaces/:id/dictionary` | 黑话字典更新 |
+| GET/POST | `/api/v1/threads` | 帖子列表 / 创建 |
+| GET | `/api/v1/threads/:id` | 帖子详情 |
+| POST | `/api/v1/threads/:id/resolve` | 采纳关闭 |
+| POST | `/api/v1/threads/:id/timeout-close` | 超时关闭 |
+| GET/POST | `/api/v1/threads/:id/comments` | 评论列表 / 添加 |
+| GET/POST | `/api/v1/memories` | 记忆列表 / 创建 |
+| GET/PUT/DELETE | `/api/v1/memories/:id` | 记忆详情 / 更新 / 删除 |
+| PUT | `/api/v1/memories/:id/authority` | 权威等级变更 |
+| POST | `/api/v1/memories/search` | 记忆搜索 |
+| POST | `/api/v1/memories/extract/:thread_id` | 触发知识提取 |
+| POST | `/api/v1/memories/:id/feedback` | 提交反馈 |
+| GET | `/api/v1/memories/:id/feedback/summary` | 反馈汇总 |

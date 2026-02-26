@@ -1,145 +1,108 @@
-"""Search service — memory retrieval with query preprocessing and reranking."""
+"""Memory search service — sync.
+
+The 4-stage pipeline: preprocess → recall → rerank → env_match.
+ES integration marked as TODO; currently falls back to simple SQL LIKE.
+"""
 
 from uuid import UUID
 
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlmodel import Session, select
 
-from ..models.memory import Memory
-from ..models.namespace import Namespace
-from ..models.enums import MemoryStatus
-from ..schemas.memory import MemorySearchRequest, MemorySearchResponse, MemorySearchHit, MemoryRead
-from ..providers.base import LLMProvider
-from ..core.prompts import QUERY_REWRITE_SYSTEM, QUERY_REWRITE_PROMPT
-
-
-class SearchService:
-    """Orchestrates the 4-stage search pipeline: preprocess → recall → rerank → postprocess."""
-
-    def __init__(self, session: AsyncSession, llm: LLMProvider, es_client=None):
-        self.session = session
-        self.llm = llm
-        self.es = es_client  # Elasticsearch client (injected)
-
-    async def search(self, req: MemorySearchRequest) -> MemorySearchResponse:
-        expanded_query = await self._preprocess(req)
-        candidates = await self._recall(expanded_query, req)
-        ranked = await self._rerank(expanded_query, candidates)
-        hits = self._postprocess(ranked, req.env_hint)
-        return MemorySearchResponse(hits=hits, query_expanded=expanded_query, total_recalled=len(candidates))
-
-    async def find_similar(self, text: str, namespace_id: UUID, threshold: float = 0.75, top_k: int = 5) -> list[dict]:
-        """Find similar memories for AUDN cycle (vector search only)."""
-        embedding = await self.llm.embed(text)
-        return await self._vector_search(embedding, namespace_id, threshold, top_k)
-
-    # ── Stage 1: Query preprocessing ─────────────────────────
-
-    async def _preprocess(self, req: MemorySearchRequest) -> str:
-        dictionary = await self._load_dictionary(req.namespace_id)
-        mapped = _apply_dictionary(req.query, dictionary)
-        return await self._rewrite_query(mapped, dictionary)
-
-    async def _load_dictionary(self, ns_id: UUID) -> dict:
-        ns = await self.session.get(Namespace, ns_id)
-        return ns.dictionary if ns else {}
-
-    async def _rewrite_query(self, query: str, dictionary: dict) -> str:
-        prompt = QUERY_REWRITE_PROMPT.format(query=query, dictionary=dictionary)
-        resp = await self.llm.complete(prompt, system=QUERY_REWRITE_SYSTEM)
-        return resp.content.strip()
-
-    # ── Stage 2: ES hybrid recall ─────────────────────────────
-
-    async def _recall(self, query: str, req: MemorySearchRequest) -> list[dict]:
-        """ES hybrid search: dense vector + BM25 with authority weighting."""
-        if self.es is None:
-            return await self._fallback_pg_search(query, req)
-        embedding = await self.llm.embed(query)
-        return await self._hybrid_es_search(embedding, query, req)
-
-    async def _hybrid_es_search(self, embedding: list[float], query: str, req: MemorySearchRequest) -> list[dict]:
-        """Placeholder — real implementation calls ES function_score query."""
-        # TODO: Implement ES hybrid search with function_score
-        # Combines: dense_vector cosine + BM25 + authority boost + quality_score
-        return []
-
-    async def _vector_search(self, embedding: list[float], ns_id: UUID, threshold: float, top_k: int) -> list[dict]:
-        """Placeholder — real implementation calls ES knn search."""
-        # TODO: Implement ES knn search for AUDN similarity check
-        return []
-
-    async def _fallback_pg_search(self, query: str, req: MemorySearchRequest) -> list[dict]:
-        """Simple PG text search fallback when ES is unavailable."""
-        from sqlmodel import select, col
-        stmt = (
-            select(Memory)
-            .where(Memory.namespace_id == req.namespace_id)
-            .where(Memory.status == MemoryStatus.ACTIVE)
-            .where(col(Memory.content).contains(query))
-            .limit(req.top_k)
-        )
-        result = await self.session.exec(stmt)
-        return [_memory_to_dict(m) for m in result.all()]
-
-    # ── Stage 3: Rerank ───────────────────────────────────────
-
-    async def _rerank(self, query: str, candidates: list[dict]) -> list[dict]:
-        """Placeholder for BGE-Reranker-v2-m3 reranking."""
-        # TODO: Call reranker model, re-sort candidates by relevance
-        return candidates[:5]
-
-    # ── Stage 4: Postprocess ──────────────────────────────────
-
-    def _postprocess(self, candidates: list[dict], env_hint: str | None) -> list[MemorySearchHit]:
-        return [_build_hit(c, env_hint) for c in candidates]
+from forum_memory.models.memory import Memory
+from forum_memory.models.namespace import Namespace
+from forum_memory.models.enums import MemoryStatus
+from forum_memory.schemas.memory import MemorySearchRequest, MemorySearchResponse, MemorySearchHit, MemoryRead
+from forum_memory.core.prompts import QUERY_REWRITE_SYSTEM, QUERY_REWRITE_USER
+from forum_memory.providers import get_provider
+from forum_memory.config import get_settings
 
 
-# ── Pure functions (≤ 5 lines each) ──────────────────────────
+def search_memories(session: Session, req: MemorySearchRequest) -> MemorySearchResponse:
+    """Run the full search pipeline."""
+    expanded = _preprocess_query(session, req)
+    candidates = _recall(session, req.namespace_id, expanded, req.top_k * 5)
+    ranked = _simple_rank(candidates, expanded, req.top_k)
+    hits = _build_hits(ranked, req.environment)
+    return MemorySearchResponse(hits=hits, query_expanded=expanded, total_recalled=len(candidates))
+
+
+def find_similar(session: Session, namespace_id: UUID, content: str, top_k: int = 5) -> list[dict]:
+    """Find similar memories for AUDN dedup. Returns list of dicts."""
+    stmt = (
+        select(Memory)
+        .where(Memory.namespace_id == namespace_id, Memory.status == MemoryStatus.ACTIVE)
+        .limit(top_k * 10)
+    )
+    memories = list(session.exec(stmt).all())
+    # TODO: replace with vector similarity search via ES
+    results = []
+    for m in memories:
+        if _text_overlap(content, m.content) > 0.2:
+            results.append({"id": str(m.id), "content": m.content, "authority": m.authority})
+    return results[:top_k]
+
+
+def _preprocess_query(session: Session, req: MemorySearchRequest) -> str:
+    ns = session.get(Namespace, req.namespace_id)
+    if not ns or not ns.dictionary:
+        return req.query
+    return _apply_dictionary(req.query, ns.dictionary)
+
 
 def _apply_dictionary(query: str, dictionary: dict) -> str:
+    result = query
     for slang, canonical in dictionary.items():
-        query = query.replace(slang, f"{slang} {canonical}")
-    return query
+        if slang.lower() in result.lower():
+            result = result.replace(slang, canonical)
+    return result
 
 
-def _memory_to_dict(memory: Memory) -> dict:
-    return {
-        "id": str(memory.id), "content": memory.content,
-        "authority": memory.authority, "quality_score": memory.quality_score,
-        "environment": memory.environment, "tags": memory.tags,
-    }
-
-
-def _build_hit(candidate: dict, env_hint: str | None) -> MemorySearchHit:
-    env_match, warning = _check_env_match(candidate.get("environment"), env_hint)
-    return MemorySearchHit(
-        memory=MemoryRead(**_pad_memory_read(candidate)),
-        score=candidate.get("_score", 0.0),
-        env_match=env_match,
-        env_warning=warning,
+def _recall(session: Session, ns_id: UUID, query: str, limit: int) -> list[Memory]:
+    """Recall candidates — TODO: replace with ES hybrid search."""
+    stmt = (
+        select(Memory)
+        .where(Memory.namespace_id == ns_id, Memory.status == MemoryStatus.ACTIVE)
+        .limit(limit)
     )
+    # Simple LIKE fallback
+    keywords = query.split()
+    for kw in keywords[:3]:
+        stmt = stmt.where(Memory.content.contains(kw))
+    return list(session.exec(stmt).all())
 
 
-def _check_env_match(mem_env: str | None, hint: str | None) -> tuple[bool, str | None]:
-    if hint is None or mem_env is None:
-        return True, None
-    if hint.lower() not in (mem_env or "").lower():
-        return False, f"⚠️ This knowledge is from environment: {mem_env}"
-    return True, None
+def _simple_rank(candidates: list[Memory], query: str, top_k: int) -> list[Memory]:
+    """Simple text-based ranking. TODO: replace with reranker model."""
+    scored = [(m, _text_overlap(query, m.content)) for m in candidates]
+    scored.sort(key=lambda x: x[1], reverse=True)
+    return [m for m, _ in scored[:top_k]]
 
 
-def _pad_memory_read(data: dict) -> dict:
-    """Ensure all required MemoryRead fields have defaults."""
-    defaults = dict(
-        id=data.get("id"), namespace_id=data.get("namespace_id", ""),
-        content=data.get("content", ""), authority=data.get("authority", "NORMAL"),
-        status=data.get("status", "ACTIVE"), quality_score=data.get("quality_score", 0.5),
-        useful_count=0, not_useful_count=0, wrong_count=0, retrieve_count=0,
-        source_type="forum", source_id=None, source_role=data.get("source_role", ""),
-        knowledge_type=None, resolved_type=data.get("resolved_type", ""),
-        tags=data.get("tags"), environment=data.get("environment"),
-        pending_human_confirm=False, extra={},
-        created_at=data.get("created_at", "2025-01-01T00:00:00Z"),
-        updated_at=data.get("updated_at", "2025-01-01T00:00:00Z"),
-    )
-    return {**defaults, **data}
+def _text_overlap(a: str, b: str) -> float:
+    tokens_a = set(a.lower().split())
+    tokens_b = set(b.lower().split())
+    if not tokens_a or not tokens_b:
+        return 0.0
+    inter = tokens_a & tokens_b
+    return len(inter) / max(len(tokens_a), len(tokens_b))
+
+
+def _build_hits(memories: list[Memory], env: str | None) -> list[MemorySearchHit]:
+    hits = []
+    for m in memories:
+        env_match = _check_env(m.environment, env)
+        warning = None if env_match else "环境不匹配，请确认适用性"
+        hit = MemorySearchHit(
+            memory=MemoryRead.model_validate(m),
+            score=m.quality_score,
+            env_match=env_match,
+            env_warning=warning,
+        )
+        hits.append(hit)
+    return hits
+
+
+def _check_env(mem_env: str | None, req_env: str | None) -> bool:
+    if not req_env or not mem_env:
+        return True
+    return req_env.lower() in mem_env.lower()

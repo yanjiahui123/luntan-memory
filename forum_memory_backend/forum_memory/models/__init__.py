@@ -1,11 +1,16 @@
-"""All SQLModel table models."""
+"""Database models — re-export for convenience."""
 
-from .enums import *  # noqa: F401,F403
-from .user import User
-from .namespace import Namespace
-from .thread import Thread, Comment
-from .memory import Memory
-from .extraction import ExtractionRecord
-from .feedback import MemoryFeedback
-from .operation_log import MemoryOperation
-from .event import ThreadEvent, ThreadSummary, KnowledgeGap, NamespaceAdmin
+from forum_memory.models.user import User
+from forum_memory.models.namespace import Namespace
+from forum_memory.models.thread import Thread, Comment
+from forum_memory.models.memory import Memory
+from forum_memory.models.extraction import ExtractionRecord
+from forum_memory.models.feedback import Feedback
+from forum_memory.models.operation_log import OperationLog
+from forum_memory.models.event import DomainEvent
+
+__all__ = [
+    "User", "Namespace", "Thread", "Comment",
+    "Memory", "ExtractionRecord", "Feedback",
+    "OperationLog", "DomainEvent",
+]

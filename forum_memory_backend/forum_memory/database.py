@@ -1,25 +1,20 @@
-"""Database engine and session management."""
+"""Database engine and session management (synchronous)."""
 
-from sqlmodel import SQLModel
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
-from .config import get_settings
+from sqlmodel import SQLModel, Session, create_engine
+from forum_memory.config import get_settings
 
-
-engine = create_async_engine(
+engine = create_engine(
     get_settings().database_url,
     echo=get_settings().database_echo,
 )
 
-async_session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
-
-async def get_session():
-    """FastAPI dependency for DB session."""
-    async with async_session() as session:
+def get_session():
+    """FastAPI dependency — yields a sync Session."""
+    with Session(engine) as session:
         yield session
 
 
-async def init_db():
+def init_db():
     """Create all tables."""
-    async with engine.begin() as conn:
-        await conn.run_sync(SQLModel.metadata.create_all)
+    SQLModel.metadata.create_all(engine)

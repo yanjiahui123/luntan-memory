@@ -3,17 +3,15 @@
 from uuid import UUID
 from datetime import datetime
 
-from sqlmodel import SQLModel, Field, Relationship
-from sqlalchemy import Column, Text
-from sqlalchemy.dialects.postgresql import ARRAY, JSONB
+from sqlmodel import Field
+from sqlalchemy import Column, Text, JSON
 
-from .base import UUIDMixin, TimestampMixin
-from .enums import ThreadStatus, ResolvedType, Priority
+from forum_memory.models.base import UUIDMixin, TimestampMixin
+from forum_memory.models.enums import ThreadStatus, ResolvedType, Priority
 
 
 class Thread(UUIDMixin, TimestampMixin, table=True):
     """Forum thread / post."""
-
     __tablename__ = "threads"
 
     namespace_id: UUID = Field(foreign_key="namespaces.id", index=True)
@@ -27,8 +25,8 @@ class Thread(UUIDMixin, TimestampMixin, table=True):
     resolved_type: ResolvedType | None = Field(default=None)
     best_answer_id: UUID | None = Field(default=None)
 
-    # Tags & metadata
-    tags: list[str] | None = Field(default=None, sa_column=Column(ARRAY(Text)))
+    # Tags & metadata (stored as JSON array)
+    tags: list | None = Field(default=None, sa_column=Column("tags", JSON))
     priority: Priority | None = Field(default=None)
     knowledge_type: str | None = Field(default=None, max_length=50)
     environment: str | None = Field(default=None, max_length=200)
@@ -41,12 +39,9 @@ class Thread(UUIDMixin, TimestampMixin, table=True):
     resolved_at: datetime | None = Field(default=None)
     timeout_at: datetime | None = Field(default=None)
 
-    comments: list["Comment"] = Relationship(back_populates="thread")
-
 
 class Comment(UUIDMixin, TimestampMixin, table=True):
     """Comment / reply on a thread."""
-
     __tablename__ = "comments"
 
     thread_id: UUID = Field(foreign_key="threads.id", index=True)
@@ -54,17 +49,11 @@ class Comment(UUIDMixin, TimestampMixin, table=True):
     is_ai: bool = Field(default=False)
 
     content: str = Field(sa_column=Column(Text, nullable=False))
-
-    # Which role posted this
     author_role: str = Field(default="commenter", max_length=50)
 
     # Voting
     upvote_count: int = Field(default=0)
     is_best_answer: bool = Field(default=False)
 
-    # AI-specific: memory IDs cited in this answer
-    cited_memory_ids: list[str] | None = Field(
-        default=None, sa_column=Column(ARRAY(Text))
-    )
-
-    thread: Thread | None = Relationship(back_populates="comments")
+    # AI-specific: memory IDs cited
+    cited_memory_ids: list | None = Field(default=None, sa_column=Column("cited_memory_ids", JSON))

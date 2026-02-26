@@ -1,43 +1,34 @@
-"""Thread state machine — defines valid transitions and side effects."""
+"""Thread state machine and authority mapping."""
 
-from ..models.enums import ThreadStatus, ResolvedType, Authority
+from forum_memory.models.enums import (
+    ThreadStatus, ResolvedType, Authority,
+)
 
-# ── Valid transitions ─────────────────────────────────────────
-
-_VALID_TRANSITIONS: dict[ThreadStatus, set[ThreadStatus]] = {
+# Valid transitions: from_status -> set of allowed to_statuses
+VALID_TRANSITIONS: dict[ThreadStatus, set[ThreadStatus]] = {
     ThreadStatus.OPEN: {ThreadStatus.RESOLVED, ThreadStatus.TIMEOUT_CLOSED},
     ThreadStatus.RESOLVED: set(),
     ThreadStatus.TIMEOUT_CLOSED: set(),
 }
 
-
-def can_transition(current: ThreadStatus, target: ThreadStatus) -> bool:
-    return target in _VALID_TRANSITIONS.get(current, set())
-
-
-def validate_transition(current: ThreadStatus, target: ThreadStatus) -> None:
-    if not can_transition(current, target):
-        raise ValueError(f"Invalid transition: {current} → {target}")
-
-
-# ── Authority mapping ─────────────────────────────────────────
-
-_AUTHORITY_MAP: dict[ResolvedType, Authority] = {
-    ResolvedType.AI_RESOLVED: Authority.NORMAL,
+# Map resolved_type to default authority for extracted memories
+AUTHORITY_MAP: dict[ResolvedType, Authority] = {
     ResolvedType.HUMAN_RESOLVED: Authority.LOCKED,
+    ResolvedType.AI_RESOLVED: Authority.NORMAL,
     ResolvedType.TIMEOUT: Authority.NORMAL,
 }
 
 
-def resolve_authority(resolved_type: ResolvedType) -> Authority:
-    return _AUTHORITY_MAP[resolved_type]
+def can_transition(current: ThreadStatus, target: ThreadStatus) -> bool:
+    """Check if a transition is valid."""
+    return target in VALID_TRANSITIONS.get(current, set())
+
+
+def default_authority(resolved_type: ResolvedType) -> Authority:
+    """Determine memory authority from resolution type."""
+    return AUTHORITY_MAP.get(resolved_type, Authority.NORMAL)
 
 
 def needs_human_confirm(resolved_type: ResolvedType) -> bool:
+    """Whether extracted memories need human confirmation."""
     return resolved_type == ResolvedType.TIMEOUT
-
-
-def determine_resolved_type(is_ai_answer: bool, is_admin: bool) -> ResolvedType:
-    if is_ai_answer:
-        return ResolvedType.AI_RESOLVED
-    return ResolvedType.HUMAN_RESOLVED

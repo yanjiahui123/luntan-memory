@@ -1,50 +1,39 @@
-"""OpenAI-compatible LLM provider."""
+"""OpenAI LLM provider (synchronous)."""
 
-from .base import LLMProvider, LLMResponse
-from ..config import get_settings
+from openai import OpenAI
+
+from forum_memory.providers.base import LLMProvider
+from forum_memory.config import get_settings
 
 
 class OpenAIProvider(LLMProvider):
-    """OpenAI API provider (also works with Azure / compatible APIs)."""
+    """OpenAI-based LLM provider using sync client."""
 
     def __init__(self):
-        from openai import AsyncOpenAI
         settings = get_settings()
-        self._client = AsyncOpenAI(api_key=settings.llm_api_key)
-        self._main_model = settings.llm_main_model
-        self._embed_model = settings.llm_embedding_model
+        self.client = OpenAI(api_key=settings.llm_api_key)
+        self.main_model = settings.llm_main_model
+        self.small_model = settings.llm_small_model
+        self.embed_model = settings.llm_embedding_model
 
-    async def complete(self, prompt: str, system: str = "", model: str | None = None) -> LLMResponse:
-        messages = self._build_messages(prompt, system)
-        resp = await self._client.chat.completions.create(
-            model=model or self._main_model,
+    def complete(self, messages: list[dict], model: str | None = None) -> str:
+        resp = self.client.chat.completions.create(
+            model=model or self.main_model,
             messages=messages,
+            temperature=0.2,
         )
-        return self._parse_response(resp)
+        return resp.choices[0].message.content or ""
 
-    async def embed(self, text: str) -> list[float]:
-        resp = await self._client.embeddings.create(model=self._embed_model, input=text)
+    def embed(self, text: str) -> list[float]:
+        resp = self.client.embeddings.create(
+            model=self.embed_model,
+            input=[text],
+        )
         return resp.data[0].embedding
 
-    async def embed_batch(self, texts: list[str]) -> list[list[float]]:
-        resp = await self._client.embeddings.create(model=self._embed_model, input=texts)
-        return [d.embedding for d in resp.data]
-
-    # ── Private helpers ───────────────────────────────────────
-
-    @staticmethod
-    def _build_messages(prompt: str, system: str) -> list[dict]:
-        msgs: list[dict] = []
-        if system:
-            msgs.append({"role": "system", "content": system})
-        msgs.append({"role": "user", "content": prompt})
-        return msgs
-
-    @staticmethod
-    def _parse_response(resp) -> LLMResponse:
-        choice = resp.choices[0]
-        return LLMResponse(
-            content=choice.message.content or "",
-            model=resp.model,
-            usage_tokens=resp.usage.total_tokens if resp.usage else 0,
+    def embed_batch(self, texts: list[str]) -> list[list[float]]:
+        resp = self.client.embeddings.create(
+            model=self.embed_model,
+            input=texts,
         )
+        return [d.embedding for d in resp.data]

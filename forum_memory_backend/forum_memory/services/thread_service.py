@@ -1,121 +1,141 @@
-"""Thread (post) service — business logic."""
+"""Thread and comment service — sync."""
 
 from uuid import UUID
 from datetime import datetime, timezone
 
-from sqlmodel import select, col
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlmodel import Session, select
 
-from ..models.thread import Thread, Comment
-from ..models.event import ThreadEvent
-from ..models.enums import ThreadStatus, ResolvedType, UserRole
-from ..schemas.thread import ThreadCreate, ThreadListParams
-from ..core.state_machine import validate_transition, determine_resolved_type
+from forum_memory.models.thread import Thread, Comment
+from forum_memory.models.event import DomainEvent
+from forum_memory.models.enums import ThreadStatus, ResolvedType
+from forum_memory.core.state_machine import can_transition
+from forum_memory.schemas.thread import ThreadCreate, CommentCreate
 
 
-class ThreadService:
-    def __init__(self, session: AsyncSession):
-        self.session = session
+def list_threads(
+    session: Session,
+    namespace_id: UUID | None = None,
+    status: str | None = None,
+    page: int = 1,
+    size: int = 20,
+) -> list[Thread]:
+    stmt = select(Thread).order_by(Thread.created_at.desc())
+    if namespace_id:
+        stmt = stmt.where(Thread.namespace_id == namespace_id)
+    if status:
+        stmt = stmt.where(Thread.status == status)
+    stmt = stmt.offset((page - 1) * size).limit(size)
+    return list(session.exec(stmt).all())
 
-    async def create(self, data: ThreadCreate, author_id: UUID) -> Thread:
-        thread = Thread(**data.model_dump(), author_id=author_id)
-        self.session.add(thread)
-        await self.session.commit()
-        await self.session.refresh(thread)
-        return thread
 
-    async def get(self, thread_id: UUID) -> Thread | None:
-        return await self.session.get(Thread, thread_id)
+def get_thread(session: Session, thread_id: UUID) -> Thread | None:
+    return session.get(Thread, thread_id)
 
-    async def list(self, params: ThreadListParams) -> list[Thread]:
-        stmt = self._build_list_query(params)
-        result = await self.session.exec(stmt)
-        return list(result.all())
 
-    async def resolve(self, thread_id: UUID, best_answer_id: UUID) -> Thread:
-        """Mark thread as RESOLVED by poster selecting a best answer."""
-        thread = await self._get_or_raise(thread_id)
-        comment = await self._get_comment_or_raise(best_answer_id)
-        resolved_type = determine_resolved_type(comment.is_ai, comment.author_role == "admin")
-        return await self._transition_to_resolved(thread, comment, resolved_type)
+def create_thread(session: Session, data: ThreadCreate, author_id: UUID) -> Thread:
+    thread = Thread(
+        namespace_id=data.namespace_id,
+        author_id=author_id,
+        title=data.title,
+        content=data.content,
+        tags=data.tags,
+        knowledge_type=data.knowledge_type,
+        environment=data.environment,
+        priority=data.priority,
+    )
+    session.add(thread)
+    session.commit()
+    session.refresh(thread)
+    _emit_event(session, "thread.created", "Thread", thread.id, thread.namespace_id)
+    return thread
 
-    async def timeout_close(self, thread_id: UUID) -> Thread:
-        """System auto-close after timeout."""
-        thread = await self._get_or_raise(thread_id)
-        validate_transition(thread.status, ThreadStatus.TIMEOUT_CLOSED)
-        return await self._apply_timeout(thread)
 
-    async def add_comment(self, thread_id: UUID, content: str, author_id: UUID, role: str = "commenter") -> Comment:
-        comment = Comment(
-            thread_id=thread_id, author_id=author_id,
-            content=content, author_role=role, is_ai=False,
-        )
-        return await self._save_comment(comment)
+def resolve_thread(session: Session, thread_id: UUID, best_answer_id: UUID | None = None) -> Thread:
+    thread = session.get(Thread, thread_id)
+    if not thread:
+        raise ValueError("Thread not found")
+    if not can_transition(thread.status, ThreadStatus.RESOLVED):
+        raise ValueError(f"Cannot resolve thread in {thread.status} state")
 
-    async def add_ai_comment(self, thread_id: UUID, content: str, cited_ids: list[str] | None = None) -> Comment:
-        comment = Comment(
-            thread_id=thread_id, content=content,
-            author_role="ai", is_ai=True, cited_memory_ids=cited_ids,
-        )
-        return await self._save_comment(comment)
+    resolved_type = _determine_resolved_type(session, best_answer_id)
+    thread.status = ThreadStatus.RESOLVED
+    thread.resolved_type = resolved_type
+    thread.best_answer_id = best_answer_id
+    thread.resolved_at = datetime.now(timezone.utc)
 
-    async def get_comments(self, thread_id: UUID) -> list[Comment]:
-        stmt = select(Comment).where(Comment.thread_id == thread_id).order_by(Comment.created_at)
-        result = await self.session.exec(stmt)
-        return list(result.all())
+    if best_answer_id:
+        _mark_best_answer(session, best_answer_id)
 
-    # ── Private helpers (each ≤ 5 lines) ──────────────────────
+    session.commit()
+    session.refresh(thread)
+    _emit_event(session, "thread.resolved", "Thread", thread.id, thread.namespace_id, {"resolved_type": resolved_type.value})
+    return thread
 
-    async def _get_or_raise(self, thread_id: UUID) -> Thread:
-        thread = await self.get(thread_id)
-        if thread is None:
-            raise ValueError(f"Thread {thread_id} not found")
-        return thread
 
-    async def _get_comment_or_raise(self, comment_id: UUID) -> Comment:
-        comment = await self.session.get(Comment, comment_id)
-        if comment is None:
-            raise ValueError(f"Comment {comment_id} not found")
-        return comment
+def timeout_close_thread(session: Session, thread_id: UUID) -> Thread:
+    thread = session.get(Thread, thread_id)
+    if not thread:
+        raise ValueError("Thread not found")
+    if not can_transition(thread.status, ThreadStatus.TIMEOUT_CLOSED):
+        raise ValueError(f"Cannot timeout-close thread in {thread.status} state")
 
-    async def _transition_to_resolved(self, thread: Thread, comment: Comment, rt: ResolvedType) -> Thread:
-        validate_transition(thread.status, ThreadStatus.RESOLVED)
-        thread.status = ThreadStatus.RESOLVED
-        thread.resolved_type = rt
-        thread.best_answer_id = comment.id
-        thread.resolved_at = datetime.now(timezone.utc)
+    thread.status = ThreadStatus.TIMEOUT_CLOSED
+    thread.resolved_type = ResolvedType.TIMEOUT
+    thread.timeout_at = datetime.now(timezone.utc)
+    session.commit()
+    session.refresh(thread)
+    _emit_event(session, "thread.timeout_closed", "Thread", thread.id, thread.namespace_id)
+    return thread
+
+
+def list_comments(session: Session, thread_id: UUID) -> list[Comment]:
+    stmt = select(Comment).where(Comment.thread_id == thread_id).order_by(Comment.created_at)
+    return list(session.exec(stmt).all())
+
+
+def add_comment(session: Session, data: CommentCreate, author_id: UUID | None, is_ai: bool = False, author_role: str = "commenter") -> Comment:
+    comment = Comment(
+        thread_id=data.thread_id,
+        author_id=author_id,
+        content=data.content,
+        is_ai=is_ai,
+        author_role=author_role,
+    )
+    session.add(comment)
+    _increment_comment_count(session, data.thread_id)
+    session.commit()
+    session.refresh(comment)
+    return comment
+
+
+def _determine_resolved_type(session: Session, best_answer_id: UUID | None) -> ResolvedType:
+    if not best_answer_id:
+        return ResolvedType.HUMAN_RESOLVED
+    comment = session.get(Comment, best_answer_id)
+    if comment and comment.is_ai:
+        return ResolvedType.AI_RESOLVED
+    return ResolvedType.HUMAN_RESOLVED
+
+
+def _mark_best_answer(session: Session, comment_id: UUID) -> None:
+    comment = session.get(Comment, comment_id)
+    if comment:
         comment.is_best_answer = True
-        await self._emit_event(thread)
-        await self.session.commit()
-        return thread
 
-    async def _apply_timeout(self, thread: Thread) -> Thread:
-        thread.status = ThreadStatus.TIMEOUT_CLOSED
-        thread.resolved_type = ResolvedType.TIMEOUT
-        thread.timeout_at = datetime.now(timezone.utc)
-        await self._emit_event(thread)
-        await self.session.commit()
-        return thread
 
-    async def _emit_event(self, thread: Thread) -> None:
-        event = ThreadEvent(
-            thread_id=thread.id, namespace_id=thread.namespace_id,
-            status=thread.status, resolved_type=thread.resolved_type,
-            best_answer_id=thread.best_answer_id,
-        )
-        self.session.add(event)
+def _increment_comment_count(session: Session, thread_id: UUID) -> None:
+    thread = session.get(Thread, thread_id)
+    if thread:
+        thread.comment_count += 1
 
-    async def _save_comment(self, comment: Comment) -> Comment:
-        self.session.add(comment)
-        await self.session.commit()
-        await self.session.refresh(comment)
-        return comment
 
-    def _build_list_query(self, params: ThreadListParams):
-        stmt = select(Thread).order_by(col(Thread.created_at).desc())
-        if params.namespace_id:
-            stmt = stmt.where(Thread.namespace_id == params.namespace_id)
-        if params.status:
-            stmt = stmt.where(Thread.status == params.status)
-        offset = (params.page - 1) * params.size
-        return stmt.offset(offset).limit(params.size)
+def _emit_event(session: Session, event_type: str, agg_type: str, agg_id: UUID, ns_id: UUID, payload: dict | None = None) -> None:
+    event = DomainEvent(
+        event_type=event_type,
+        aggregate_type=agg_type,
+        aggregate_id=agg_id,
+        namespace_id=ns_id,
+        payload=payload or {},
+    )
+    session.add(event)
+    session.commit()

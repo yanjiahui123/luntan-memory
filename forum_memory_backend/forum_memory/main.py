@@ -1,19 +1,19 @@
-"""Forum Memory Agent — FastAPI application."""
+"""Forum Memory Agent — FastAPI application (synchronous)."""
 
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from .config import get_settings
-from .database import init_db
-from .api import register_routers
+from forum_memory.config import get_settings
+from forum_memory.database import init_db
+from forum_memory.api import register_routers
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Startup/shutdown lifecycle."""
-    await init_db()
+    """Startup: create tables."""
+    init_db()
     yield
 
 
@@ -42,7 +42,7 @@ def _add_cors(app: FastAPI) -> None:
 
 def _add_health_check(app: FastAPI) -> None:
     @app.get("/health")
-    async def health():
+    def health():
         return {"status": "ok"}
 
 

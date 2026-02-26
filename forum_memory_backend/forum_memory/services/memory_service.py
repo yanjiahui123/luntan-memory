@@ -1,219 +1,170 @@
-"""Memory service — core CRUD, authority management, and lifecycle."""
+"""Memory CRUD and lifecycle service — sync."""
 
 from uuid import UUID
 from datetime import datetime, timezone
 
-from sqlmodel import select, col
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlmodel import Session, select
 
-from ..models.memory import Memory
-from ..models.operation_log import MemoryOperation
-from ..models.enums import (
-    Authority, MemoryStatus, OperationType, AUDNAction,
-)
-from ..schemas.memory import (
-    MemoryCreate, MemoryUpdate, MemoryListParams, AuthorityChange, AUDNResult,
-)
-from ..core.quality import compute_quality_score, QualityInput
+from forum_memory.models.memory import Memory
+from forum_memory.models.operation_log import OperationLog
+from forum_memory.models.enums import Authority, MemoryStatus, OperationType, AUDNAction
+from forum_memory.core.quality import compute_quality_score
+from forum_memory.core.audn import AUDNResult
+from forum_memory.schemas.memory import MemoryCreate, MemoryUpdate
 
 
-class MemoryService:
-    def __init__(self, session: AsyncSession):
-        self.session = session
+def list_memories(
+    session: Session,
+    namespace_id: UUID | None = None,
+    authority: str | None = None,
+    status: str | None = None,
+    pending_confirm: bool | None = None,
+    page: int = 1,
+    size: int = 20,
+) -> list[Memory]:
+    stmt = select(Memory).order_by(Memory.updated_at.desc())
+    stmt = _apply_filters(stmt, namespace_id, authority, status, pending_confirm)
+    stmt = stmt.offset((page - 1) * size).limit(size)
+    return list(session.exec(stmt).all())
 
-    # ── CRUD ──────────────────────────────────────────────────
 
-    async def create(self, data: MemoryCreate, source_role: str = "admin", resolved_type: str = "manual") -> Memory:
-        memory = Memory(
-            **data.model_dump(),
-            source_role=source_role,
-            resolved_type=resolved_type,
-        )
-        self.session.add(memory)
-        await self._log(memory.id, OperationType.ADD, content_after=memory.content)
-        await self.session.commit()
-        await self.session.refresh(memory)
-        return memory
+def get_memory(session: Session, memory_id: UUID) -> Memory | None:
+    return session.get(Memory, memory_id)
 
-    async def get(self, memory_id: UUID) -> Memory | None:
-        return await self.session.get(Memory, memory_id)
 
-    async def list(self, params: MemoryListParams) -> list[Memory]:
-        stmt = self._build_list_query(params)
-        result = await self.session.exec(stmt)
-        return list(result.all())
+def create_memory(session: Session, data: MemoryCreate) -> Memory:
+    memory = Memory(**data.model_dump())
+    session.add(memory)
+    session.commit()
+    session.refresh(memory)
+    _log_operation(session, memory.id, OperationType.ADD, reason="created")
+    return memory
 
-    async def update(self, memory_id: UUID, data: MemoryUpdate, operator_id: UUID | None = None) -> Memory | None:
-        memory = await self.get(memory_id)
-        if memory is None:
-            return None
-        return await self._apply_update(memory, data, operator_id)
 
-    async def delete(self, memory_id: UUID, operator_id: UUID | None = None) -> bool:
-        memory = await self.get(memory_id)
-        if memory is None:
-            return False
-        return await self._soft_delete(memory, operator_id)
+def update_memory(session: Session, memory_id: UUID, data: MemoryUpdate) -> Memory | None:
+    memory = session.get(Memory, memory_id)
+    if not memory:
+        return None
+    before = _snapshot(memory)
+    for key, val in data.model_dump(exclude_unset=True).items():
+        setattr(memory, key, val)
+    memory.updated_at = datetime.now(timezone.utc)
+    session.commit()
+    session.refresh(memory)
+    _log_operation(session, memory.id, OperationType.UPDATE, reason="manual_update", before=before)
+    return memory
 
-    # ── Authority management ──────────────────────────────────
 
-    async def change_authority(self, memory_id: UUID, change: AuthorityChange, operator_id: UUID) -> Memory | None:
-        memory = await self.get(memory_id)
-        if memory is None:
-            return None
-        return await self._apply_authority_change(memory, change, operator_id)
+def delete_memory(session: Session, memory_id: UUID) -> bool:
+    memory = session.get(Memory, memory_id)
+    if not memory:
+        return False
+    memory.status = MemoryStatus.DELETED
+    memory.updated_at = datetime.now(timezone.utc)
+    session.commit()
+    _log_operation(session, memory.id, OperationType.DELETE, reason="deleted")
+    return True
 
-    # ── Lifecycle transitions ─────────────────────────────────
 
-    async def mark_cold(self, memory_id: UUID) -> Memory | None:
-        memory = await self.get(memory_id)
-        if memory is None or memory.authority == Authority.LOCKED:
-            return None
-        return await self._transition_status(memory, MemoryStatus.COLD)
+def change_authority(session: Session, memory_id: UUID, authority: str, reason: str | None = None) -> Memory | None:
+    memory = session.get(Memory, memory_id)
+    if not memory:
+        return None
+    before = _snapshot(memory)
+    old = memory.authority
+    memory.authority = Authority(authority)
+    memory.pending_human_confirm = False
+    memory.updated_at = datetime.now(timezone.utc)
+    session.commit()
+    session.refresh(memory)
+    op = OperationType.PROMOTE if authority == "LOCKED" else OperationType.DEMOTE
+    _log_operation(session, memory.id, op, reason=reason or f"{old} -> {authority}", before=before)
+    return memory
 
-    async def mark_archived(self, memory_id: UUID) -> Memory | None:
-        memory = await self.get(memory_id)
-        if memory is None:
-            return None
-        return await self._transition_status(memory, MemoryStatus.ARCHIVED)
 
-    async def restore(self, memory_id: UUID, operator_id: UUID) -> Memory | None:
-        memory = await self.get(memory_id)
-        if memory is None:
-            return None
-        return await self._transition_status(memory, MemoryStatus.ACTIVE, operator_id)
+def apply_audn(session: Session, new_fact: MemoryCreate, result: AUDNResult) -> Memory | None:
+    """Apply an AUDN decision to the memory store."""
+    if result.action == AUDNAction.ADD:
+        return create_memory(session, new_fact)
+    if result.action == AUDNAction.UPDATE:
+        return _apply_update(session, result)
+    if result.action == AUDNAction.DELETE:
+        return _apply_delete(session, result)
+    return None  # NONE
 
-    # ── AUDN result application ───────────────────────────────
 
-    async def apply_audn(self, result: AUDNResult, namespace_id: UUID, metadata: dict) -> Memory | None:
-        """Apply an AUDN decision to the memory store."""
-        if result.action == AUDNAction.ADD:
-            return await self._audn_add(result, namespace_id, metadata)
-        if result.action == AUDNAction.UPDATE:
-            return await self._audn_update(result)
-        if result.action == AUDNAction.DELETE:
-            return await self._audn_delete(result)
-        return None  # NONE action
+def refresh_quality(session: Session, memory_id: UUID) -> float:
+    memory = session.get(Memory, memory_id)
+    if not memory:
+        return 0.0
+    score = compute_quality_score(
+        useful=memory.useful_count,
+        not_useful=memory.not_useful_count,
+        wrong=memory.wrong_count,
+        outdated=memory.outdated_count,
+        source_role=memory.source_role,
+        retrieve_count=memory.retrieve_count,
+        created_at=memory.created_at,
+    )
+    memory.quality_score = score
+    memory.updated_at = datetime.now(timezone.utc)
+    session.commit()
+    return score
 
-    # ── Quality refresh ───────────────────────────────────────
 
-    async def refresh_quality(self, memory_id: UUID) -> float:
-        memory = await self.get(memory_id)
-        if memory is None:
-            return 0.0
-        inp = self._build_quality_input(memory)
-        memory.quality_score = compute_quality_score(inp)
-        await self.session.commit()
-        return memory.quality_score
+def _apply_update(session: Session, result: AUDNResult) -> Memory | None:
+    if not result.target_id or not result.merged_content:
+        return None
+    memory = session.get(Memory, UUID(result.target_id))
+    if not memory:
+        return None
+    if memory.authority == Authority.LOCKED:
+        return None  # LOCKED protection
+    before = _snapshot(memory)
+    memory.content = result.merged_content
+    memory.updated_at = datetime.now(timezone.utc)
+    session.commit()
+    session.refresh(memory)
+    _log_operation(session, memory.id, OperationType.UPDATE, reason=result.reason, before=before)
+    return memory
 
-    async def record_retrieval(self, memory_id: UUID) -> None:
-        memory = await self.get(memory_id)
-        if memory is None:
-            return
-        memory.retrieve_count += 1
-        memory.last_retrieved_at = datetime.now(timezone.utc)
-        if memory.status == MemoryStatus.COLD:
-            memory.status = MemoryStatus.ACTIVE
-        await self.session.commit()
 
-    # ── Private helpers (each ≤ 5 lines) ──────────────────────
+def _apply_delete(session: Session, result: AUDNResult) -> Memory | None:
+    if not result.target_id:
+        return None
+    memory = session.get(Memory, UUID(result.target_id))
+    if not memory or memory.authority == Authority.LOCKED:
+        return None
+    memory.status = MemoryStatus.DELETED
+    memory.updated_at = datetime.now(timezone.utc)
+    session.commit()
+    _log_operation(session, memory.id, OperationType.DELETE, reason=result.reason)
+    return memory
 
-    async def _apply_update(self, memory: Memory, data: MemoryUpdate, operator_id: UUID | None) -> Memory:
-        old_content = memory.content
-        for key, val in data.model_dump(exclude_unset=True).items():
-            setattr(memory, key, val)
-        await self._log(memory.id, OperationType.UPDATE, operator_id, old_content, memory.content)
-        await self.session.commit()
-        await self.session.refresh(memory)
-        return memory
 
-    async def _soft_delete(self, memory: Memory, operator_id: UUID | None) -> bool:
-        memory.status = MemoryStatus.DELETED
-        await self._log(memory.id, OperationType.DELETE, operator_id, content_before=memory.content)
-        await self.session.commit()
-        return True
+def _apply_filters(stmt, ns_id, authority, status, pending):
+    if ns_id:
+        stmt = stmt.where(Memory.namespace_id == ns_id)
+    if authority:
+        stmt = stmt.where(Memory.authority == authority)
+    if status:
+        stmt = stmt.where(Memory.status == status)
+    if pending:
+        stmt = stmt.where(Memory.pending_human_confirm == True)
+    return stmt
 
-    async def _apply_authority_change(self, memory: Memory, change: AuthorityChange, operator_id: UUID) -> Memory:
-        op = OperationType.PROMOTE if change.authority == Authority.LOCKED else OperationType.DEMOTE
-        memory.authority = change.authority
-        await self._log(memory.id, op, operator_id, reason=change.reason)
-        await self.session.commit()
-        await self.session.refresh(memory)
-        return memory
 
-    async def _transition_status(self, memory: Memory, status: MemoryStatus, operator_id: UUID | None = None) -> Memory:
-        op = OperationType.ARCHIVE if status == MemoryStatus.ARCHIVED else OperationType.RESTORE
-        memory.status = status
-        await self._log(memory.id, op, operator_id)
-        await self.session.commit()
-        await self.session.refresh(memory)
-        return memory
+def _snapshot(memory: Memory) -> dict:
+    return {"content": memory.content, "authority": memory.authority, "status": memory.status}
 
-    async def _audn_add(self, result: AUDNResult, ns_id: UUID, meta: dict) -> Memory:
-        memory = Memory(
-            namespace_id=ns_id, content=result.content or "",
-            source_role=meta.get("source_role", "ai"),
-            resolved_type=meta.get("resolved_type", "ai_resolved"),
-            authority=Authority(meta.get("authority", "NORMAL")),
-            tags=meta.get("tags"),
-            environment=meta.get("environment"),
-            source_id=meta.get("source_id"),
-            pending_human_confirm=meta.get("pending_human_confirm", False),
-        )
-        self.session.add(memory)
-        await self.session.commit()
-        await self.session.refresh(memory)
-        return memory
 
-    async def _audn_update(self, result: AUDNResult) -> Memory | None:
-        if result.memory_id is None:
-            return None
-        memory = await self.get(result.memory_id)
-        if memory is None or memory.authority == Authority.LOCKED:
-            return None
-        memory.content = result.content or memory.content
-        await self._log(memory.id, OperationType.UPDATE, reason=result.reason)
-        await self.session.commit()
-        return memory
-
-    async def _audn_delete(self, result: AUDNResult) -> Memory | None:
-        if result.memory_id is None:
-            return None
-        return await self.delete(result.memory_id) if result.memory_id else None
-
-    async def _log(
-        self, memory_id: UUID, op: OperationType,
-        operator_id: UUID | None = None, content_before: str | None = None,
-        content_after: str | None = None, reason: str | None = None,
-    ) -> None:
-        log = MemoryOperation(
-            memory_id=memory_id, operation=op,
-            operator_id=operator_id, content_before=content_before,
-            content_after=content_after, reason=reason,
-        )
-        self.session.add(log)
-
-    def _build_list_query(self, params: MemoryListParams):
-        stmt = select(Memory).order_by(col(Memory.updated_at).desc())
-        if params.namespace_id:
-            stmt = stmt.where(Memory.namespace_id == params.namespace_id)
-        if params.authority:
-            stmt = stmt.where(Memory.authority == params.authority)
-        if params.status:
-            stmt = stmt.where(Memory.status == params.status)
-        if params.pending_confirm is not None:
-            stmt = stmt.where(Memory.pending_human_confirm == params.pending_confirm)
-        offset = (params.page - 1) * params.size
-        return stmt.offset(offset).limit(params.size)
-
-    @staticmethod
-    def _build_quality_input(memory: Memory) -> QualityInput:
-        return QualityInput(
-            useful_count=memory.useful_count,
-            not_useful_count=memory.not_useful_count,
-            source_role=memory.source_role,
-            retrieve_count=memory.retrieve_count,
-            created_at=memory.created_at,
-            wrong_count=memory.wrong_count,
-            outdated_count=memory.outdated_count,
-        )
+def _log_operation(session: Session, memory_id: UUID, op: OperationType, reason: str | None = None, before: dict | None = None) -> None:
+    log = OperationLog(
+        memory_id=memory_id,
+        operation=op,
+        operator_type="system",
+        reason=reason,
+        before_snapshot=before,
+    )
+    session.add(log)
+    session.commit()

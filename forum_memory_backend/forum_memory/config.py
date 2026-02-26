@@ -10,8 +10,8 @@ class Settings(BaseSettings):
     app_name: str = "Forum Memory Agent"
     debug: bool = False
 
-    # Database
-    database_url: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/forum_memory"
+    # Database — sync driver (psycopg2)
+    database_url: str = "postgresql://postgres:postgres@localhost:5432/forum_memory"
     database_echo: bool = False
 
     # Elasticsearch

@@ -1,49 +1,51 @@
-"""Namespace (board) API routes."""
+"""Namespace (board) API routes — sync."""
 
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
+from sqlmodel import Session
 
-from ..schemas.namespace import NamespaceCreate, NamespaceUpdate, NamespaceRead, DictionaryUpdate, NamespaceStats
-from .deps import NamespaceSvcDep, CurrentUserDep
+from forum_memory.api.deps import get_db, get_current_user_id
+from forum_memory.schemas.namespace import NamespaceCreate, NamespaceUpdate, NamespaceRead, NamespaceStats, DictionaryUpdate
+from forum_memory.services import namespace_service
 
-router = APIRouter(prefix="/api/v1/namespaces", tags=["namespaces"])
-
-
-@router.post("", response_model=NamespaceRead, status_code=201)
-async def create_namespace(data: NamespaceCreate, svc: NamespaceSvcDep, user_id: CurrentUserDep):
-    return await svc.create(data, user_id)
+router = APIRouter(prefix="/namespaces", tags=["namespaces"])
 
 
 @router.get("", response_model=list[NamespaceRead])
-async def list_namespaces(svc: NamespaceSvcDep):
-    return await svc.list_all()
+def list_namespaces(session: Session = Depends(get_db)):
+    return namespace_service.list_namespaces(session)
 
 
 @router.get("/{ns_id}", response_model=NamespaceRead)
-async def get_namespace(ns_id: UUID, svc: NamespaceSvcDep):
-    ns = await svc.get(ns_id)
-    if ns is None:
+def get_namespace(ns_id: UUID, session: Session = Depends(get_db)):
+    ns = namespace_service.get_namespace(session, ns_id)
+    if not ns:
         raise HTTPException(404, "Namespace not found")
     return ns
+
+
+@router.post("", response_model=NamespaceRead, status_code=201)
+def create_namespace(data: NamespaceCreate, session: Session = Depends(get_db), user_id: UUID = Depends(get_current_user_id)):
+    return namespace_service.create_namespace(session, data, user_id)
 
 
 @router.put("/{ns_id}", response_model=NamespaceRead)
-async def update_namespace(ns_id: UUID, data: NamespaceUpdate, svc: NamespaceSvcDep):
-    ns = await svc.update(ns_id, data)
-    if ns is None:
-        raise HTTPException(404, "Namespace not found")
-    return ns
-
-
-@router.put("/{ns_id}/dictionary", response_model=NamespaceRead)
-async def update_dictionary(ns_id: UUID, data: DictionaryUpdate, svc: NamespaceSvcDep):
-    ns = await svc.update_dictionary(ns_id, data.entries)
-    if ns is None:
+def update_namespace(ns_id: UUID, data: NamespaceUpdate, session: Session = Depends(get_db)):
+    ns = namespace_service.update_namespace(session, ns_id, data)
+    if not ns:
         raise HTTPException(404, "Namespace not found")
     return ns
 
 
 @router.get("/{ns_id}/stats", response_model=NamespaceStats)
-async def get_stats(ns_id: UUID, svc: NamespaceSvcDep):
-    return await svc.get_stats(ns_id)
+def get_stats(ns_id: UUID, session: Session = Depends(get_db)):
+    return namespace_service.get_stats(session, ns_id)
+
+
+@router.put("/{ns_id}/dictionary", response_model=NamespaceRead)
+def update_dictionary(ns_id: UUID, data: DictionaryUpdate, session: Session = Depends(get_db)):
+    ns = namespace_service.update_dictionary(session, ns_id, data.entries)
+    if not ns:
+        raise HTTPException(404, "Namespace not found")
+    return ns

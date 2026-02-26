@@ -1,72 +1,68 @@
-"""Quality scoring engine for memories."""
+"""Quality score computation for memories."""
 
 from datetime import datetime, timezone
-from dataclasses import dataclass
 
-from ..models.enums import Authority, UserRole, ROLE_WEIGHT
-
-
-@dataclass
-class QualityInput:
-    useful_count: int = 0
-    not_useful_count: int = 0
-    source_role: str = "commenter"
-    retrieve_count: int = 0
-    max_retrieve_count: int = 100
-    created_at: datetime | None = None
-    wrong_count: int = 0
-    outdated_count: int = 0
+from forum_memory.models.enums import Authority, UserRole, ROLE_WEIGHT
+from forum_memory.config import get_settings
 
 
-def compute_quality_score(inp: QualityInput) -> float:
-    """Compute quality_score from 0.0 to 1.0."""
-    useful_ratio = _safe_ratio(inp.useful_count, inp.useful_count + inp.not_useful_count)
-    source_weight = _source_weight(inp.source_role)
-    heat = _retrieve_heat(inp.retrieve_count, inp.max_retrieve_count)
-    freshness = _time_freshness(inp.created_at)
-    penalty = _negative_penalty(inp.wrong_count, inp.outdated_count)
-
-    return _weighted_sum(useful_ratio, source_weight, heat, freshness, penalty)
+def _safe_ratio(num: int, denom: int) -> float:
+    """Safe division returning 0.0 on zero denominator."""
+    return num / denom if denom > 0 else 0.0
 
 
-def should_demote(wrong_count: int, threshold: int = 3) -> bool:
-    return wrong_count >= threshold
+def _useful_ratio(useful: int, not_useful: int, wrong: int) -> float:
+    """Compute useful ratio from feedback counts."""
+    total = useful + not_useful + wrong
+    return _safe_ratio(useful, total)
 
 
-def should_recommend_promote(useful_count: int, total: int, min_fb: int, ratio: float) -> bool:
-    if total < min_fb:
-        return False
-    return _safe_ratio(useful_count, total) > ratio
-
-
-# ── Private helpers (each ≤ 5 lines) ─────────────────────────
-
-def _safe_ratio(numerator: int, denominator: int) -> float:
-    return numerator / denominator if denominator > 0 else 0.5
-
-
-def _source_weight(role: str) -> float:
+def _source_weight(source_role: str | None) -> float:
+    """Weight by who provided the answer."""
+    if not source_role:
+        return 0.5
     try:
-        return ROLE_WEIGHT[UserRole(role)]
-    except (ValueError, KeyError):
+        role = UserRole(source_role)
+    except ValueError:
         return 0.5
+    return ROLE_WEIGHT.get(role, 0.5)
 
 
-def _retrieve_heat(count: int, max_count: int) -> float:
-    return min(count / max_count, 1.0) if max_count > 0 else 0.0
+def _freshness(created_at: datetime) -> float:
+    """Decay factor based on age — 1.0 for new, decays over 365 days."""
+    now = datetime.now(timezone.utc)
+    days = (now - created_at).days
+    return max(0.1, 1.0 - days / 365.0)
 
 
-def _time_freshness(created_at: datetime | None) -> float:
-    if created_at is None:
-        return 0.5
-    days_old = (datetime.now(timezone.utc) - created_at.replace(tzinfo=timezone.utc)).days
-    return max(0.0, 1.0 - days_old / 365.0)
+def _retrieve_heat(retrieve_count: int) -> float:
+    """Normalize retrieval count to 0..1 range."""
+    return min(1.0, retrieve_count / 100.0)
 
 
-def _negative_penalty(wrong: int, outdated: int) -> float:
-    return min((wrong * 0.2 + outdated * 0.1), 1.0)
+def _penalty(wrong: int, outdated: int) -> float:
+    """Penalty factor for negative feedback."""
+    settings = get_settings()
+    threshold = settings.wrong_feedback_threshold
+    score = (wrong + outdated * 0.5) / threshold
+    return min(1.0, score)
 
 
-def _weighted_sum(useful: float, source: float, heat: float, fresh: float, penalty: float) -> float:
-    score = useful * 0.35 + source * 0.20 + heat * 0.15 + fresh * 0.15 - penalty * 0.15
-    return max(0.0, min(1.0, score))
+def compute_quality_score(
+    useful: int,
+    not_useful: int,
+    wrong: int,
+    outdated: int,
+    source_role: str | None,
+    retrieve_count: int,
+    created_at: datetime,
+) -> float:
+    """Compute overall quality score (0..1) from five factors."""
+    ur = _useful_ratio(useful, not_useful, wrong)
+    sw = _source_weight(source_role)
+    rh = _retrieve_heat(retrieve_count)
+    fr = _freshness(created_at)
+    pn = _penalty(wrong, outdated)
+
+    raw = 0.35 * ur + 0.20 * sw + 0.15 * rh + 0.15 * fr + 0.15 * (1 - pn)
+    return round(max(0.0, min(1.0, raw)), 4)

@@ -1,104 +1,80 @@
-"""AUDN cycle — Add/Update/Delete/None decision engine."""
+"""AUDN (Add/Update/Delete/None) cycle logic."""
 
 import json
-from uuid import UUID
+import logging
 
-from ..models.enums import AUDNAction, Authority
-from ..schemas.memory import AUDNResult
-from ..providers.base import LLMProvider
-from .prompts import AUDN_SYSTEM, AUDN_PROMPT
+from forum_memory.core.prompts import AUDN_SYSTEM, AUDN_USER
+from forum_memory.models.enums import AUDNAction
 
-
-async def run_audn_cycle(
-    new_fact: str,
-    similar_memories: list[dict],
-    llm: LLMProvider,
-) -> AUDNResult:
-    """Decide how to handle a new candidate fact against existing memories."""
-    if not similar_memories:
-        return _add_result(new_fact)
-
-    raw = await _call_llm(new_fact, similar_memories, llm)
-    result = _parse_audn_response(raw)
-    return _apply_authority_guard(result, similar_memories)
+logger = logging.getLogger(__name__)
 
 
-# ── Internal steps (each ≤ 5 lines) ──────────────────────────
+class AUDNResult:
+    """Result of an AUDN decision."""
 
-def _add_result(content: str) -> AUDNResult:
-    return AUDNResult(action=AUDNAction.ADD, content=content, reason="No similar memory found")
+    def __init__(self, action: AUDNAction, target_id: str | None = None,
+                 merged_content: str | None = None, reason: str = "",
+                 conflict_with_locked: str | None = None):
+        self.action = action
+        self.target_id = target_id
+        self.merged_content = merged_content
+        self.reason = reason
+        self.conflict_with_locked = conflict_with_locked
 
 
-async def _call_llm(fact: str, memories: list[dict], llm: LLMProvider) -> str:
-    memories_text = _format_memories(memories)
-    prompt = AUDN_PROMPT.format(new_fact=fact, existing_memories=memories_text)
-    resp = await llm.complete(prompt, system=AUDN_SYSTEM)
-    return resp.content
+def build_audn_messages(new_fact: str, existing: list[dict]) -> list[dict]:
+    """Build LLM messages for the AUDN decision."""
+    formatted = _format_existing(existing)
+    return [
+        {"role": "system", "content": AUDN_SYSTEM},
+        {"role": "user", "content": AUDN_USER.format(new_fact=new_fact, existing_memories=formatted)},
+    ]
 
 
-def _format_memories(memories: list[dict]) -> str:
+def parse_audn_response(raw: str) -> AUDNResult:
+    """Parse LLM output into an AUDNResult."""
+    text = raw.strip()
+    if text.startswith("```"):
+        text = _strip_fences(text)
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError:
+        logger.warning("Failed to parse AUDN output: %s", text[:200])
+        return AUDNResult(action=AUDNAction.ADD, reason="parse_error_fallback_to_add")
+    return _data_to_result(data)
+
+
+def _format_existing(memories: list[dict]) -> str:
+    """Format existing memories for the prompt."""
+    if not memories:
+        return "(none)"
     lines = []
     for m in memories:
-        lines.append(f"[{m['id']}] (authority={m['authority']}): {m['content']}")
+        lock = " [LOCKED]" if m.get("authority") == "LOCKED" else ""
+        lines.append(f'- [{m["id"]}]{lock}: {m["content"]}')
     return "\n".join(lines)
 
 
-def _parse_audn_response(raw: str) -> AUDNResult:
-    """Parse LLM JSON response into AUDNResult."""
+def _strip_fences(text: str) -> str:
+    lines = text.split("\n")
+    if lines[0].startswith("```"):
+        lines = lines[1:]
+    if lines and lines[-1].startswith("```"):
+        lines = lines[:-1]
+    return "\n".join(lines)
+
+
+def _data_to_result(data: dict) -> AUDNResult:
+    """Convert parsed dict to AUDNResult."""
+    action_str = data.get("action", "ADD").upper()
     try:
-        data = json.loads(_extract_json(raw))
-    except (json.JSONDecodeError, ValueError):
-        return AUDNResult(action=AUDNAction.NONE, reason="Failed to parse LLM response")
-    return _build_result_from_dict(data)
-
-
-def _extract_json(text: str) -> str:
-    """Extract JSON from possible markdown code fences."""
-    text = text.strip()
-    if text.startswith("```"):
-        text = text.split("\n", 1)[-1].rsplit("```", 1)[0]
-    return text.strip()
-
-
-def _build_result_from_dict(data: dict) -> AUDNResult:
-    return AUDNResult(
-        action=AUDNAction(data.get("action", "NONE")),
-        memory_id=_safe_uuid(data.get("target_memory_id")),
-        content=data.get("updated_content"),
-        reason=data.get("reason", ""),
-        conflict_alert=data.get("conflict_alert", False),
-    )
-
-
-def _safe_uuid(val) -> UUID | None:
-    if val is None:
-        return None
-    try:
-        return UUID(str(val))
+        action = AUDNAction(action_str)
     except ValueError:
-        return None
-
-
-def _apply_authority_guard(result: AUDNResult, memories: list[dict]) -> AUDNResult:
-    """Enforce LOCKED protection: never auto-modify LOCKED memories."""
-    if result.action in (AUDNAction.ADD, AUDNAction.NONE):
-        return result
-    target = _find_target(result.memory_id, memories)
-    if target and target.get("authority") == Authority.LOCKED:
-        return _escalate_to_conflict(result)
-    return result
-
-
-def _find_target(memory_id: UUID | None, memories: list[dict]) -> dict | None:
-    if memory_id is None:
-        return None
-    return next((m for m in memories if str(m["id"]) == str(memory_id)), None)
-
-
-def _escalate_to_conflict(result: AUDNResult) -> AUDNResult:
+        action = AUDNAction.ADD
     return AUDNResult(
-        action=AUDNAction.ADD,
-        content=result.content,
-        reason=f"Conflict with LOCKED memory; original action was {result.action}",
-        conflict_alert=True,
+        action=action,
+        target_id=data.get("target_id"),
+        merged_content=data.get("merged_content"),
+        reason=data.get("reason", ""),
+        conflict_with_locked=data.get("conflict_with_locked"),
     )

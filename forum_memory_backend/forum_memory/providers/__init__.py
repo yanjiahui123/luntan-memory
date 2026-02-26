@@ -1,4 +1,5 @@
-"""LLM provider abstraction."""
+"""LLM provider abstraction layer."""
 
-from .base import LLMProvider, LLMResponse
-from .factory import get_llm_provider, register_provider
+from forum_memory.providers.factory import get_provider
+
+__all__ = ["get_provider"]

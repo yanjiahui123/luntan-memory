@@ -1,26 +1,19 @@
-"""LLM provider abstraction layer."""
+"""Abstract LLM provider interface."""
 
 from abc import ABC, abstractmethod
-from pydantic import BaseModel
-
-
-class LLMResponse(BaseModel):
-    content: str
-    model: str
-    usage_tokens: int = 0
 
 
 class LLMProvider(ABC):
-    """Abstract base for all LLM providers."""
+    """Base class for LLM providers."""
 
     @abstractmethod
-    async def complete(self, prompt: str, system: str = "", model: str | None = None) -> LLMResponse:
-        ...
+    def complete(self, messages: list[dict], model: str | None = None) -> str:
+        """Run a chat completion and return the text."""
 
     @abstractmethod
-    async def embed(self, text: str) -> list[float]:
-        ...
+    def embed(self, text: str) -> list[float]:
+        """Embed a single text."""
 
     @abstractmethod
-    async def embed_batch(self, texts: list[str]) -> list[list[float]]:
-        ...
+    def embed_batch(self, texts: list[str]) -> list[list[float]]:
+        """Embed a batch of texts."""

@@ -1,137 +1,139 @@
-"""Extraction orchestrator — coordinates the full memory extraction pipeline."""
+"""Extraction orchestrator — sync.
 
+Pipeline: idempotent guard → compress → extract facts → AUDN per fact → persist.
+"""
+
+import logging
 from uuid import UUID
-from datetime import datetime, timezone
 
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlmodel import Session, select
 
-from ..models.thread import Thread, Comment
-from ..models.extraction import ExtractionRecord
-from ..models.enums import ExtractionStatus, ResolvedType
-from ..providers.base import LLMProvider
-from ..core.extraction import compress_if_needed, extract_facts, process_facts
-from ..core.state_machine import resolve_authority, needs_human_confirm
-from ..services.memory_service import MemoryService
-from ..services.search_service import SearchService
+from forum_memory.models.thread import Thread, Comment
+from forum_memory.models.extraction import ExtractionRecord
+from forum_memory.models.enums import ExtractionStatus, MemoryStatus
+from forum_memory.core.state_machine import default_authority, needs_human_confirm
+from forum_memory.core.extraction import build_compress_messages, build_extract_messages, parse_extracted_facts
+from forum_memory.core.audn import build_audn_messages, parse_audn_response
+from forum_memory.schemas.memory import MemoryCreate
+from forum_memory.services.memory_service import apply_audn
+from forum_memory.services.search_service import find_similar
+from forum_memory.providers import get_provider
+
+logger = logging.getLogger(__name__)
 
 
-class ExtractionOrchestrator:
-    """Runs the 5-step extraction pipeline for a single thread."""
+def run_extraction(session: Session, thread_id: UUID) -> list[UUID]:
+    """Run full extraction pipeline for a resolved thread. Returns created memory IDs."""
+    if _already_extracted(session, thread_id):
+        logger.info("Thread %s already extracted, skipping", thread_id)
+        return []
 
-    def __init__(self, session: AsyncSession, llm: LLMProvider, search: SearchService):
-        self.session = session
-        self.llm = llm
-        self.search = search
-        self.memory_svc = MemoryService(session)
+    thread = session.get(Thread, thread_id)
+    if not thread or not thread.resolved_type:
+        raise ValueError("Thread not found or not resolved")
 
-    async def run(self, thread_id: UUID) -> list[UUID]:
-        """Execute full pipeline. Returns created/updated memory IDs."""
-        if await self._already_processed(str(thread_id)):
-            return []
-        await self._mark_in_progress(str(thread_id))
-        try:
-            return await self._execute_pipeline(thread_id)
-        except Exception as e:
-            await self._mark_failed(str(thread_id), str(e))
-            raise
-
-    # ── Pipeline steps ────────────────────────────────────────
-
-    async def _execute_pipeline(self, thread_id: UUID) -> list[UUID]:
-        thread, messages = await self._load_thread(thread_id)
-        compressed = await compress_if_needed(messages, self.llm)
-        facts = await self._extract(thread, compressed)
-        results = await process_facts(facts, self._similarity_fn(thread.namespace_id), self.llm)
-        memory_ids = await self._write_results(results, thread)
-        await self._mark_completed(str(thread_id), memory_ids)
+    record = _create_record(session, thread)
+    try:
+        memory_ids = _execute_pipeline(session, thread, record)
+        record.status = ExtractionStatus.COMPLETED
+        record.memory_ids_created = ",".join(str(mid) for mid in memory_ids)
+        session.commit()
         return memory_ids
-
-    async def _load_thread(self, thread_id: UUID) -> tuple[Thread, list[dict]]:
-        from sqlmodel import select
-        thread = await self.session.get(Thread, thread_id)
-        if thread is None:
-            raise ValueError(f"Thread {thread_id} not found")
-        comments = await self.session.exec(
-            select(Comment).where(Comment.thread_id == thread_id).order_by(Comment.created_at)
-        )
-        messages = _build_messages(thread, list(comments.all()))
-        return thread, messages
-
-    async def _extract(self, thread: Thread, compressed: str) -> list[str]:
-        best = await self._get_best_answer(thread)
-        return await extract_facts(
-            content=compressed,
-            title=thread.title,
-            resolved_type=thread.resolved_type.value if thread.resolved_type else "timeout",
-            source_role=best.author_role if best else "ai",
-            tags=thread.tags,
-            environment=thread.environment,
-            llm=self.llm,
-        )
-
-    async def _write_results(self, results, thread: Thread) -> list[UUID]:
-        ids = []
-        metadata = _build_metadata(thread)
-        for r in results:
-            memory = await self.memory_svc.apply_audn(r, thread.namespace_id, metadata)
-            if memory:
-                ids.append(memory.id)
-        return ids
-
-    # ── Helpers (each ≤ 5 lines) ──────────────────────────────
-
-    def _similarity_fn(self, namespace_id: UUID):
-        async def fn(text: str) -> list[dict]:
-            return await self.search.find_similar(text, namespace_id)
-        return fn
-
-    async def _get_best_answer(self, thread: Thread) -> Comment | None:
-        if thread.best_answer_id is None:
-            return None
-        return await self.session.get(Comment, thread.best_answer_id)
-
-    async def _already_processed(self, thread_id: str) -> bool:
-        record = await self.session.get(ExtractionRecord, thread_id)
-        return record is not None and record.status == ExtractionStatus.COMPLETED
-
-    async def _mark_in_progress(self, thread_id: str) -> None:
-        record = ExtractionRecord(thread_id=thread_id, status=ExtractionStatus.IN_PROGRESS)
-        self.session.add(record)
-        await self.session.commit()
-
-    async def _mark_completed(self, thread_id: str, memory_ids: list[UUID]) -> None:
-        record = await self.session.get(ExtractionRecord, thread_id)
-        if record:
-            record.status = ExtractionStatus.COMPLETED
-            record.processed_at = datetime.now(timezone.utc)
-            record.memory_ids = [str(mid) for mid in memory_ids]
-        await self.session.commit()
-
-    async def _mark_failed(self, thread_id: str, error: str) -> None:
-        record = await self.session.get(ExtractionRecord, thread_id)
-        if record:
-            record.status = ExtractionStatus.FAILED
-            record.error_message = error
-        await self.session.commit()
+    except Exception as e:
+        record.status = ExtractionStatus.FAILED
+        record.error_message = str(e)[:500]
+        session.commit()
+        raise
 
 
-# ── Pure functions ────────────────────────────────────────────
+def _already_extracted(session: Session, thread_id: UUID) -> bool:
+    stmt = select(ExtractionRecord).where(ExtractionRecord.thread_id == thread_id)
+    return session.exec(stmt).first() is not None
 
-def _build_messages(thread: Thread, comments: list[Comment]) -> list[dict]:
-    msgs = [{"role": "poster", "content": f"[Title] {thread.title}\n{thread.content}"}]
+
+def _create_record(session: Session, thread: Thread) -> ExtractionRecord:
+    record = ExtractionRecord(
+        thread_id=thread.id,
+        namespace_id=thread.namespace_id,
+        status=ExtractionStatus.IN_PROGRESS,
+    )
+    session.add(record)
+    session.commit()
+    return record
+
+
+def _execute_pipeline(session: Session, thread: Thread, record: ExtractionRecord) -> list[UUID]:
+    """Compress → extract → AUDN → persist."""
+    llm = get_provider()
+    discussion = _build_discussion(session, thread.id)
+    compressed = _maybe_compress(llm, thread.title, discussion)
+    facts = _extract_facts(llm, thread.title, thread.content, compressed)
+
+    authority = default_authority(thread.resolved_type)
+    pending = needs_human_confirm(thread.resolved_type)
+    memory_ids = []
+
+    for fact in facts:
+        mid = _process_one_fact(session, llm, thread, fact, authority, pending)
+        if mid:
+            memory_ids.append(mid)
+
+    return memory_ids
+
+
+def _build_discussion(session: Session, thread_id: UUID) -> str:
+    stmt = select(Comment).where(Comment.thread_id == thread_id).order_by(Comment.created_at)
+    comments = list(session.exec(stmt).all())
+    parts = []
     for c in comments:
-        msgs.append({"role": c.author_role, "content": c.content})
-    return msgs
+        role = "AI" if c.is_ai else c.author_role
+        best = " [BEST]" if c.is_best_answer else ""
+        parts.append(f"[{role}{best}]: {c.content}")
+    return "\n\n".join(parts)
 
 
-def _build_metadata(thread: Thread) -> dict:
-    rt = thread.resolved_type or ResolvedType.TIMEOUT
-    return {
-        "source_id": str(thread.id),
-        "source_role": "ai" if rt == ResolvedType.AI_RESOLVED else "commenter",
-        "resolved_type": rt.value,
-        "authority": resolve_authority(rt).value,
-        "tags": thread.tags,
-        "environment": thread.environment,
-        "pending_human_confirm": needs_human_confirm(rt),
-    }
+def _maybe_compress(llm, title: str, discussion: str) -> str:
+    if len(discussion) < 3000:
+        return discussion
+    msgs = build_compress_messages(title, discussion)
+    return llm.complete(msgs)
+
+
+def _extract_facts(llm, title: str, question: str, discussion: str) -> list[dict]:
+    msgs = build_extract_messages(title, question, discussion)
+    raw = llm.complete(msgs)
+    return parse_extracted_facts(raw)
+
+
+def _process_one_fact(session, llm, thread, fact, authority, pending) -> UUID | None:
+    similar = find_similar(session, thread.namespace_id, fact["content"])
+    msgs = build_audn_messages(fact["content"], similar)
+    raw = llm.complete(msgs)
+    result = parse_audn_response(raw)
+
+    data = MemoryCreate(
+        namespace_id=thread.namespace_id,
+        content=fact["content"],
+        knowledge_type=fact.get("knowledge_type"),
+        tags=fact.get("tags"),
+        environment=thread.environment,
+        source_type="thread",
+        source_id=thread.id,
+        source_role=_best_answer_role(session, thread),
+        resolved_type=thread.resolved_type,
+    )
+
+    memory = apply_audn(session, data, result)
+    if memory:
+        memory.authority = authority
+        memory.pending_human_confirm = pending
+        session.commit()
+        return memory.id
+    return None
+
+
+def _best_answer_role(session: Session, thread: Thread) -> str:
+    if not thread.best_answer_id:
+        return "unknown"
+    comment = session.get(Comment, thread.best_answer_id)
+    return comment.author_role if comment else "unknown"

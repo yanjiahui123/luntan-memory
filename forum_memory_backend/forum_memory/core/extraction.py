@@ -1,91 +1,57 @@
-"""Memory extraction pipeline — converts thread content to memories."""
+"""Extraction helper logic — compress and parse LLM outputs."""
 
 import json
+import logging
 
-from ..providers.base import LLMProvider
-from ..models.enums import ResolvedType
-from .prompts import (
-    FACT_EXTRACTION_SYSTEM, FACT_EXTRACTION_PROMPT,
-    COMPRESSION_SYSTEM, COMPRESSION_PROMPT,
+from forum_memory.core.prompts import (
+    FACT_EXTRACTION_SYSTEM, FACT_EXTRACTION_USER,
+    COMPRESS_SYSTEM, COMPRESS_USER,
 )
-from .audn import run_audn_cycle, _extract_json
-from ..schemas.memory import AUDNResult
+
+logger = logging.getLogger(__name__)
 
 
-# ── Public pipeline steps ─────────────────────────────────────
-
-async def compress_if_needed(
-    messages: list[dict],
-    llm: LLMProvider,
-    threshold: int = 10,
-) -> str:
-    """Compress thread if message count exceeds threshold."""
-    content = _join_messages(messages)
-    if len(messages) <= threshold:
-        return content
-    return await _compress(content, llm)
+def build_compress_messages(title: str, discussion: str) -> list[dict]:
+    """Build messages for the compression LLM call."""
+    return [
+        {"role": "system", "content": COMPRESS_SYSTEM},
+        {"role": "user", "content": COMPRESS_USER.format(title=title, discussion=discussion)},
+    ]
 
 
-async def extract_facts(
-    content: str,
-    title: str,
-    resolved_type: str,
-    source_role: str,
-    tags: list[str] | None = None,
-    environment: str | None = None,
-    llm: LLMProvider | None = None,
-) -> list[str]:
-    """Extract candidate facts from compressed thread content."""
-    prompt = _build_extraction_prompt(content, title, resolved_type, source_role, tags, environment)
-    resp = await llm.complete(prompt, system=FACT_EXTRACTION_SYSTEM)
-    return _parse_facts(resp.content)
+def build_extract_messages(title: str, question: str, discussion: str) -> list[dict]:
+    """Build messages for the fact extraction LLM call."""
+    return [
+        {"role": "system", "content": FACT_EXTRACTION_SYSTEM},
+        {"role": "user", "content": FACT_EXTRACTION_USER.format(title=title, question=question, discussion=discussion)},
+    ]
 
 
-async def process_facts(
-    facts: list[str],
-    similar_memories_fn,
-    llm: LLMProvider,
-) -> list[AUDNResult]:
-    """Run AUDN cycle on each candidate fact."""
-    results = []
-    for fact in facts:
-        similar = await similar_memories_fn(fact)
-        result = await run_audn_cycle(fact, similar, llm)
-        results.append(result)
-    return results
+def parse_extracted_facts(raw: str) -> list[dict]:
+    """Parse LLM output into a list of fact dicts."""
+    text = raw.strip()
+    if text.startswith("```"):
+        text = _strip_code_fences(text)
+    try:
+        facts = json.loads(text)
+    except json.JSONDecodeError:
+        logger.warning("Failed to parse extraction output: %s", text[:200])
+        return []
+    if not isinstance(facts, list):
+        return []
+    return [f for f in facts if _is_valid_fact(f)]
 
 
-# ── Private helpers (each ≤ 5 lines) ─────────────────────────
-
-def _join_messages(messages: list[dict]) -> str:
-    lines = [f"[{m.get('role', 'user')}]: {m.get('content', '')}" for m in messages]
+def _strip_code_fences(text: str) -> str:
+    """Remove markdown code fences."""
+    lines = text.split("\n")
+    if lines[0].startswith("```"):
+        lines = lines[1:]
+    if lines and lines[-1].startswith("```"):
+        lines = lines[:-1]
     return "\n".join(lines)
 
 
-async def _compress(content: str, llm: LLMProvider) -> str:
-    prompt = COMPRESSION_PROMPT.format(content=content)
-    resp = await llm.complete(prompt, system=COMPRESSION_SYSTEM)
-    return resp.content
-
-
-def _build_extraction_prompt(
-    content: str, title: str, resolved_type: str,
-    source_role: str, tags: list[str] | None, environment: str | None,
-) -> str:
-    return FACT_EXTRACTION_PROMPT.format(
-        title=title,
-        resolved_type=resolved_type,
-        source_role=source_role,
-        tags=", ".join(tags) if tags else "none",
-        environment=environment or "not specified",
-        content=content,
-    )
-
-
-def _parse_facts(raw: str) -> list[str]:
-    """Parse JSON array of facts from LLM response."""
-    try:
-        data = json.loads(_extract_json(raw))
-        return [str(f) for f in data if isinstance(f, str)]
-    except (json.JSONDecodeError, ValueError):
-        return []
+def _is_valid_fact(fact: dict) -> bool:
+    """Check that a fact dict has required fields."""
+    return isinstance(fact, dict) and bool(fact.get("content"))

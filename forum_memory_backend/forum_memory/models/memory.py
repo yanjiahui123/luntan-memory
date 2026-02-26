@@ -1,53 +1,53 @@
-"""Memory model — the core knowledge entity."""
+"""Memory (knowledge unit) model."""
 
 from uuid import UUID
-from datetime import datetime
 
-from sqlmodel import SQLModel, Field
-from sqlalchemy import Column, Text
-from sqlalchemy.dialects.postgresql import ARRAY, JSONB
+from sqlmodel import Field
+from sqlalchemy import Column, Text, JSON
 
-from .base import UUIDMixin, TimestampMixin
-from .enums import Authority, MemoryStatus
+from forum_memory.models.base import UUIDMixin, TimestampMixin
+from forum_memory.models.enums import Authority, MemoryStatus, KnowledgeType
 
 
 class Memory(UUIDMixin, TimestampMixin, table=True):
-    """A single knowledge memory extracted from forum threads."""
-
+    """Single knowledge unit extracted from resolved threads."""
     __tablename__ = "memories"
 
     namespace_id: UUID = Field(foreign_key="namespaces.id", index=True)
+
+    # Content
     content: str = Field(sa_column=Column(Text, nullable=False))
 
-    # ── Two-dimensional state ─────────────────────────────────
+    # Two-dimensional state
     authority: Authority = Field(default=Authority.NORMAL, index=True)
     status: MemoryStatus = Field(default=MemoryStatus.ACTIVE, index=True)
 
-    # ── Quality metrics ───────────────────────────────────────
+    # Quality
     quality_score: float = Field(default=0.5)
+
+    # Classification
+    knowledge_type: str | None = Field(default=None, max_length=50)
+    tags: list | None = Field(default=None, sa_column=Column("tags", JSON))
+    environment: str | None = Field(default=None, max_length=200)
+
+    # Source tracing
+    source_type: str = Field(default="thread", max_length=50)
+    source_id: UUID | None = Field(default=None, index=True)
+    source_role: str | None = Field(default=None, max_length=50)
+    resolved_type: str | None = Field(default=None, max_length=50)
+
+    # Feedback counters
     useful_count: int = Field(default=0)
     not_useful_count: int = Field(default=0)
     wrong_count: int = Field(default=0)
     outdated_count: int = Field(default=0)
-    retrieve_count: int = Field(default=0)
-    last_retrieved_at: datetime | None = Field(default=None)
 
-    # ── Fixed metadata (indexed columns) ──────────────────────
-    source_type: str = Field(default="forum", max_length=50)
-    source_id: str | None = Field(default=None, max_length=200)
-    source_role: str = Field(max_length=50)
-    knowledge_type: str | None = Field(default=None, max_length=50)
-    resolved_type: str = Field(max_length=50)
-    tags: list[str] | None = Field(default=None, sa_column=Column(ARRAY(Text)))
-    environment: str | None = Field(default=None, max_length=200)
-    access_level: int = Field(default=1)
+    # Retrieval stats
+    retrieve_count: int = Field(default=0)
+    cite_count: int = Field(default=0)
+
+    # Human confirmation flag
     pending_human_confirm: bool = Field(default=False)
 
-    # ── Extension metadata (JSONB) ────────────────────────────
-    extra: dict = Field(default_factory=dict, sa_column=Column(JSONB, nullable=False, server_default="{}"))
-
-    # ── Embedding info ────────────────────────────────────────
-    embedding_model: str | None = Field(default=None, max_length=100)
-
-    # ── Citation chain ────────────────────────────────────────
-    cited_by: list[str] | None = Field(default=None, sa_column=Column(ARRAY(Text)))
+    # Flexible extra data
+    extra: dict = Field(default_factory=dict, sa_column=Column("extra", JSON, nullable=False, server_default="{}"))

@@ -1,27 +1,27 @@
-"""Feedback API routes."""
+"""Feedback API routes — sync."""
 
 from uuid import UUID
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
+from sqlmodel import Session
 
-from ..schemas.feedback import FeedbackCreate, FeedbackRead, FeedbackSummary
-from .deps import FeedbackSvcDep, CurrentUserDep
+from forum_memory.api.deps import get_db, get_current_user_id
+from forum_memory.schemas.feedback import FeedbackCreate, FeedbackRead, FeedbackSummary
+from forum_memory.services import feedback_service
 
-router = APIRouter(prefix="/api/v1/memories/{memory_id}/feedback", tags=["feedback"])
-
-
-@router.post("", response_model=FeedbackRead, status_code=201)
-async def submit_feedback(memory_id: UUID, data: FeedbackCreate, svc: FeedbackSvcDep, user_id: CurrentUserDep):
-    feedback = await svc.submit(memory_id, data, user_id)
-    await svc.check_auto_actions(memory_id)
-    return feedback
+router = APIRouter(tags=["feedback"])
 
 
-@router.get("", response_model=list[FeedbackRead])
-async def list_feedback(memory_id: UUID, svc: FeedbackSvcDep):
-    return await svc.list_for_memory(memory_id)
+@router.post("/memories/{memory_id}/feedback", response_model=FeedbackRead, status_code=201)
+def submit_feedback(memory_id: UUID, data: FeedbackCreate, session: Session = Depends(get_db), user_id: UUID = Depends(get_current_user_id)):
+    return feedback_service.submit_feedback(session, memory_id, data, user_id)
 
 
-@router.get("/summary", response_model=FeedbackSummary)
-async def feedback_summary(memory_id: UUID, svc: FeedbackSvcDep):
-    return await svc.get_summary(memory_id)
+@router.get("/memories/{memory_id}/feedback", response_model=list[FeedbackRead])
+def list_feedback(memory_id: UUID, session: Session = Depends(get_db)):
+    return feedback_service.list_feedback(session, memory_id)
+
+
+@router.get("/memories/{memory_id}/feedback/summary", response_model=FeedbackSummary)
+def feedback_summary(memory_id: UUID, session: Session = Depends(get_db)):
+    return feedback_service.get_summary(session, memory_id)

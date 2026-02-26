@@ -1,57 +1,62 @@
-"""Thread (post) and Comment API routes."""
+"""Thread API routes — sync."""
 
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlmodel import Session
 
-from ..schemas.thread import ThreadCreate, ThreadRead, ThreadResolve, ThreadListParams, CommentCreate, CommentRead
-from .deps import ThreadSvcDep, CurrentUserDep
+from forum_memory.api.deps import get_db, get_current_user_id
+from forum_memory.schemas.thread import ThreadCreate, ThreadRead, ThreadResolve, CommentCreate, CommentRead
+from forum_memory.services import thread_service
 
-router = APIRouter(prefix="/api/v1/threads", tags=["threads"])
-
-
-@router.post("", response_model=ThreadRead, status_code=201)
-async def create_thread(data: ThreadCreate, svc: ThreadSvcDep, user_id: CurrentUserDep):
-    return await svc.create(data, user_id)
+router = APIRouter(prefix="/threads", tags=["threads"])
 
 
 @router.get("", response_model=list[ThreadRead])
-async def list_threads(svc: ThreadSvcDep, namespace_id: UUID | None = None, page: int = 1, size: int = 20):
-    params = ThreadListParams(namespace_id=namespace_id, page=page, size=size)
-    return await svc.list(params)
+def list_threads(
+    namespace_id: UUID | None = None,
+    status: str | None = None,
+    page: int = Query(1, ge=1),
+    size: int = Query(20, ge=1, le=100),
+    session: Session = Depends(get_db),
+):
+    return thread_service.list_threads(session, namespace_id, status, page, size)
 
 
 @router.get("/{thread_id}", response_model=ThreadRead)
-async def get_thread(thread_id: UUID, svc: ThreadSvcDep):
-    thread = await svc.get(thread_id)
-    if thread is None:
+def get_thread(thread_id: UUID, session: Session = Depends(get_db)):
+    thread = thread_service.get_thread(session, thread_id)
+    if not thread:
         raise HTTPException(404, "Thread not found")
     return thread
 
 
+@router.post("", response_model=ThreadRead, status_code=201)
+def create_thread(data: ThreadCreate, session: Session = Depends(get_db), user_id: UUID = Depends(get_current_user_id)):
+    return thread_service.create_thread(session, data, user_id)
+
+
 @router.post("/{thread_id}/resolve", response_model=ThreadRead)
-async def resolve_thread(thread_id: UUID, data: ThreadResolve, svc: ThreadSvcDep):
+def resolve_thread(thread_id: UUID, data: ThreadResolve, session: Session = Depends(get_db)):
     try:
-        return await svc.resolve(thread_id, data.best_answer_id)
+        return thread_service.resolve_thread(session, thread_id, data.best_answer_id)
     except ValueError as e:
         raise HTTPException(400, str(e))
 
 
 @router.post("/{thread_id}/timeout-close", response_model=ThreadRead)
-async def timeout_close_thread(thread_id: UUID, svc: ThreadSvcDep):
+def timeout_close(thread_id: UUID, session: Session = Depends(get_db)):
     try:
-        return await svc.timeout_close(thread_id)
+        return thread_service.timeout_close_thread(session, thread_id)
     except ValueError as e:
         raise HTTPException(400, str(e))
 
 
-# ── Comments ──────────────────────────────────────────────────
+@router.get("/{thread_id}/comments", response_model=list[CommentRead])
+def list_comments(thread_id: UUID, session: Session = Depends(get_db)):
+    return thread_service.list_comments(session, thread_id)
+
 
 @router.post("/{thread_id}/comments", response_model=CommentRead, status_code=201)
-async def add_comment(thread_id: UUID, data: CommentCreate, svc: ThreadSvcDep, user_id: CurrentUserDep):
-    return await svc.add_comment(thread_id, data.content, user_id)
-
-
-@router.get("/{thread_id}/comments", response_model=list[CommentRead])
-async def list_comments(thread_id: UUID, svc: ThreadSvcDep):
-    return await svc.get_comments(thread_id)
+def add_comment(thread_id: UUID, data: CommentCreate, session: Session = Depends(get_db), user_id: UUID = Depends(get_current_user_id)):
+    return thread_service.add_comment(session, data, user_id)
