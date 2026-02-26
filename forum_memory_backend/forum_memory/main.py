@@ -1,5 +1,6 @@
 """Forum Memory Agent — FastAPI application (synchronous)."""
 
+import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -9,11 +10,17 @@ from forum_memory.config import get_settings
 from forum_memory.database import init_db
 from forum_memory.api import register_routers
 
+logger = logging.getLogger(__name__)
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Startup: create tables."""
-    init_db()
+    try:
+        init_db()
+        logger.info("Database tables initialized successfully")
+    except Exception as e:
+        logger.error("Failed to initialize database: %s", e)
     yield
 
 
@@ -44,6 +51,18 @@ def _add_health_check(app: FastAPI) -> None:
     @app.get("/health")
     def health():
         return {"status": "ok"}
+
+    @app.get("/api/v1/health/db")
+    def health_db():
+        """检查数据库连接"""
+        from forum_memory.database import engine
+        from sqlalchemy import text
+        try:
+            with engine.connect() as conn:
+                conn.execute(text("SELECT 1"))
+            return {"status": "ok", "database": "connected"}
+        except Exception as e:
+            return {"status": "error", "database": str(e)}
 
 
 app = create_app()
