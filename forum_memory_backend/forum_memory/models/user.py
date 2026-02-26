@@ -2,6 +2,7 @@
 
 from sqlmodel import Field
 from forum_memory.models.base import UUIDMixin, TimestampMixin
+from forum_memory.models.enums import SystemRole
 
 
 class User(UUIDMixin, TimestampMixin, table=True):
