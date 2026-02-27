@@ -12,6 +12,7 @@ dependencies = [
     "pydantic>=2.6",
     "pydantic-settings>=2.1",
     "openai>=1.12",
+    "elasticsearch>=8.12",
 ]
 
 [project.optional-dependencies]

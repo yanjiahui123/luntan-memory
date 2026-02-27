@@ -1,5 +1,6 @@
 """Memory CRUD and lifecycle service — sync."""
 
+import logging
 from uuid import UUID
 from datetime import datetime, timezone
 
@@ -11,6 +12,30 @@ from forum_memory.models.enums import Authority, MemoryStatus, OperationType, AU
 from forum_memory.core.quality import compute_quality_score
 from forum_memory.core.audn import AUDNResult
 from forum_memory.schemas.memory import MemoryCreate, MemoryUpdate
+from forum_memory.services import es_service
+
+logger = logging.getLogger(__name__)
+
+
+def _index_to_es(memory: Memory) -> None:
+    """Generate embedding and index to ES. Fire-and-forget on failure."""
+    try:
+        from forum_memory.providers import get_provider
+        provider = get_provider()
+        embedding = provider.embed(memory.content)
+        es_service.index_memory(
+            memory_id=memory.id,
+            namespace_id=memory.namespace_id,
+            content=memory.content,
+            embedding=embedding,
+            status=memory.status,
+            environment=memory.environment,
+            tags=memory.tags,
+            knowledge_type=memory.knowledge_type,
+            quality_score=memory.quality_score,
+        )
+    except Exception:
+        logger.exception("Failed to index memory %s to ES (non-fatal)", memory.id)
 
 
 def list_memories(
@@ -38,6 +63,7 @@ def create_memory(session: Session, data: MemoryCreate) -> Memory:
     session.commit()
     session.refresh(memory)
     _log_operation(session, memory.id, OperationType.ADD, reason="created")
+    _index_to_es(memory)
     return memory
 
 
@@ -52,6 +78,7 @@ def update_memory(session: Session, memory_id: UUID, data: MemoryUpdate) -> Memo
     session.commit()
     session.refresh(memory)
     _log_operation(session, memory.id, OperationType.UPDATE, reason="manual_update", before=before)
+    _index_to_es(memory)
     return memory
 
 
@@ -63,6 +90,7 @@ def delete_memory(session: Session, memory_id: UUID) -> bool:
     memory.updated_at = datetime.now(timezone.utc)
     session.commit()
     _log_operation(session, memory.id, OperationType.DELETE, reason="deleted")
+    es_service.delete_memory_doc(memory_id)
     return True
 
 
@@ -126,6 +154,7 @@ def _apply_update(session: Session, result: AUDNResult) -> Memory | None:
     session.commit()
     session.refresh(memory)
     _log_operation(session, memory.id, OperationType.UPDATE, reason=result.reason, before=before)
+    _index_to_es(memory)
     return memory
 
 
@@ -139,6 +168,7 @@ def _apply_delete(session: Session, result: AUDNResult) -> Memory | None:
     memory.updated_at = datetime.now(timezone.utc)
     session.commit()
     _log_operation(session, memory.id, OperationType.DELETE, reason=result.reason)
+    es_service.delete_memory_doc(UUID(result.target_id))
     return memory
 
 

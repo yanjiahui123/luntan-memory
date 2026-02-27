@@ -17,6 +17,11 @@ class Settings(BaseSettings):
     # Elasticsearch
     es_url: str = "http://localhost:9200"
     es_index_prefix: str = "forum_memory"
+    es_enabled: bool = True
+    es_username: str = ""
+    es_password: str = ""
+    es_verify_certs: bool = True
+    es_knn_num_candidates: int = 100
 
     # LLM
     llm_provider: str = "openai"

@@ -1,9 +1,10 @@
 """Memory search service — sync.
 
 The 4-stage pipeline: preprocess → recall → rerank → env_match.
-ES integration marked as TODO; currently falls back to simple SQL LIKE.
+Uses ES hybrid search (BM25 + knn) for recall, falls back to SQL LIKE if ES unavailable.
 """
 
+import logging
 from uuid import UUID
 
 from sqlmodel import Session, select
@@ -15,6 +16,9 @@ from forum_memory.schemas.memory import MemorySearchRequest, MemorySearchRespons
 from forum_memory.core.prompts import QUERY_REWRITE_SYSTEM, QUERY_REWRITE_USER
 from forum_memory.providers import get_provider
 from forum_memory.config import get_settings
+from forum_memory.services import es_service
+
+logger = logging.getLogger(__name__)
 
 
 def search_memories(session: Session, req: MemorySearchRequest) -> MemorySearchResponse:
@@ -27,14 +31,36 @@ def search_memories(session: Session, req: MemorySearchRequest) -> MemorySearchR
 
 
 def find_similar(session: Session, namespace_id: UUID, content: str, top_k: int = 5) -> list[dict]:
-    """Find similar memories for AUDN dedup. Returns list of dicts."""
+    """Find similar memories for AUDN dedup via ES knn, fallback to text overlap."""
+    # Try ES knn search
+    try:
+        provider = get_provider()
+        content_embedding = provider.embed(content)
+        es_hits = es_service.knn_search(
+            namespace_id=namespace_id,
+            query_embedding=content_embedding,
+            limit=top_k,
+        )
+        if es_hits:
+            memory_ids = [UUID(h["memory_id"]) for h in es_hits]
+            stmt = select(Memory).where(Memory.id.in_(memory_ids))
+            memories_map = {str(m.id): m for m in session.exec(stmt).all()}
+            results = []
+            for hit in es_hits:
+                m = memories_map.get(hit["memory_id"])
+                if m:
+                    results.append({"id": str(m.id), "content": m.content, "authority": m.authority})
+            return results
+    except Exception:
+        logger.exception("ES find_similar failed, falling back to text overlap")
+
+    # Fallback: SQL + text_overlap
     stmt = (
         select(Memory)
         .where(Memory.namespace_id == namespace_id, Memory.status == MemoryStatus.ACTIVE)
         .limit(top_k * 10)
     )
     memories = list(session.exec(stmt).all())
-    # TODO: replace with vector similarity search via ES
     results = []
     for m in memories:
         if _text_overlap(content, m.content) > 0.2:
@@ -78,17 +104,42 @@ def _apply_dictionary(query: str, dictionary: dict) -> str:
 
 
 def _recall(session: Session, ns_id: UUID, query: str, limit: int) -> list[Memory]:
-    """Recall candidates — TODO: replace with ES hybrid search."""
+    """Recall candidates via ES hybrid search, fallback to SQL LIKE."""
+    # Try ES hybrid search
+    try:
+        provider = get_provider()
+        query_embedding = provider.embed(query)
+        es_hits = es_service.hybrid_search(
+            namespace_id=ns_id,
+            query_text=query,
+            query_embedding=query_embedding,
+            limit=limit,
+        )
+        if es_hits:
+            memory_ids = [UUID(h["memory_id"]) for h in es_hits]
+            return _fetch_memories_by_ids(session, memory_ids)
+    except Exception:
+        logger.exception("ES recall failed, falling back to SQL")
+
+    # Fallback: SQL LIKE
     stmt = (
         select(Memory)
         .where(Memory.namespace_id == ns_id, Memory.status == MemoryStatus.ACTIVE)
         .limit(limit)
     )
-    # Simple LIKE fallback
     keywords = query.split()
     for kw in keywords[:3]:
         stmt = stmt.where(Memory.content.contains(kw))
     return list(session.exec(stmt).all())
+
+
+def _fetch_memories_by_ids(session: Session, memory_ids: list[UUID]) -> list[Memory]:
+    """Fetch Memory objects by IDs, preserving ES ranking order."""
+    if not memory_ids:
+        return []
+    stmt = select(Memory).where(Memory.id.in_(memory_ids))
+    memories_map = {m.id: m for m in session.exec(stmt).all()}
+    return [memories_map[mid] for mid in memory_ids if mid in memories_map]
 
 
 def _simple_rank(candidates: list[Memory], query: str, top_k: int) -> list[Memory]:
