@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { threadApi, feedbackApi } from '../api/client';
+import { threadApi, feedbackApi, memoryApi } from '../api/client';
 import { useAsync } from '../hooks/useAsync';
-import { Loading, ErrorMsg, StatusBadge, Badge, TimeAgo, ConfirmModal } from '../components/UI';
+import { Loading, ErrorMsg, StatusBadge, Badge, TimeAgo, ConfirmModal, KnowledgeTypeBadge } from '../components/UI';
 
 export default function ThreadDetail() {
   const { threadId } = useParams();
@@ -56,7 +56,7 @@ export default function ThreadDetail() {
       {/* Comments */}
       <h3 style={{ fontSize: 15, fontWeight: 600, marginBottom: 12 }}>回答 ({comments?.length || 0})</h3>
       {comments?.map(c => (
-        <CommentCard key={c.id} comment={c} threadStatus={thread.status} onResolve={() => setResolveTarget(c.id)} />
+        <CommentCard key={c.id} comment={c} thread={thread} onResolve={() => setResolveTarget(c.id)} />
       ))}
 
       {/* Reply box */}
@@ -80,8 +80,12 @@ export default function ThreadDetail() {
   );
 }
 
-function CommentCard({ comment, threadStatus, onResolve }) {
+function CommentCard({ comment, thread, onResolve }) {
   const [feedbackGiven, setFeedbackGiven] = useState(null);
+  const [upvotes, setUpvotes] = useState(comment.upvote_count || 0);
+  const [upvoted, setUpvoted] = useState(false);
+  const [relatedMemories, setRelatedMemories] = useState(null);
+  const [showMemories, setShowMemories] = useState(false);
   const isAi = comment.is_ai;
   const isBest = comment.is_best_answer;
 
@@ -91,6 +95,28 @@ function CommentCard({ comment, threadStatus, onResolve }) {
       await feedbackApi.submit(mid, { feedback_type: type });
     }
     setFeedbackGiven(type);
+  }
+
+  async function handleUpvote() {
+    if (upvoted) return;
+    try {
+      const updated = await threadApi.upvoteComment(comment.thread_id, comment.id);
+      setUpvotes(updated.upvote_count);
+      setUpvoted(true);
+
+      // Trigger memory search (decoupled from forum API)
+      const result = await memoryApi.search({
+        query: comment.content,
+        namespace_id: thread.namespace_id,
+        top_k: 3,
+      });
+      if (result.hits?.length > 0) {
+        setRelatedMemories(result.hits);
+        setShowMemories(true);
+      }
+    } catch (err) {
+      console.error('Upvote failed:', err);
+    }
   }
 
   return (
@@ -115,18 +141,47 @@ function CommentCard({ comment, threadStatus, onResolve }) {
       )}
 
       <div className="comment-actions">
+        <button
+          className={`btn-sm ${upvoted ? 'btn-primary' : 'btn-secondary'}`}
+          onClick={handleUpvote}
+          disabled={upvoted}
+        >
+          👍 {upvotes}
+        </button>
         {isAi && (
           <>
-            <button className={`btn-sm ${feedbackGiven === 'useful' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => handleFeedback('useful')}>👍 有用</button>
-            <button className={`btn-sm ${feedbackGiven === 'not_useful' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => handleFeedback('not_useful')}>👎 没用</button>
-            <button className={`btn-sm ${feedbackGiven === 'wrong' ? 'btn-danger' : 'btn-secondary'}`} onClick={() => handleFeedback('wrong')}>⚠️ 错误</button>
+            <button className={`btn-sm ${feedbackGiven === 'useful' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => handleFeedback('useful')}>有用</button>
+            <button className={`btn-sm ${feedbackGiven === 'not_useful' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => handleFeedback('not_useful')}>没用</button>
+            <button className={`btn-sm ${feedbackGiven === 'wrong' ? 'btn-danger' : 'btn-secondary'}`} onClick={() => handleFeedback('wrong')}>错误</button>
           </>
         )}
         <div style={{ flex: 1 }} />
-        {threadStatus === 'OPEN' && !isBest && (
+        {thread.status === 'OPEN' && !isBest && (
           <button className="btn-success" onClick={onResolve}>✓ 采纳此回答</button>
         )}
       </div>
+
+      {/* Related memories from upvote */}
+      {showMemories && relatedMemories?.length > 0 && (
+        <div style={{ marginTop: 10, padding: 12, background: 'var(--surface-alt)', borderRadius: 'var(--radius)', fontSize: 13 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+            <span style={{ fontWeight: 600, color: 'var(--text-sec)' }}>🧠 相关知识</span>
+            <button className="btn-sm btn-secondary" onClick={() => setShowMemories(false)} style={{ fontSize: 11 }}>收起</button>
+          </div>
+          {relatedMemories.map((hit, i) => (
+            <div key={i} style={{ padding: '6px 0', borderTop: i > 0 ? '1px solid var(--border)' : 'none' }}>
+              <div style={{ lineHeight: 1.6, color: 'var(--text)' }}>
+                {hit.memory.content.length > 100 ? hit.memory.content.slice(0, 100) + '...' : hit.memory.content}
+              </div>
+              <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginTop: 4 }}>
+                {hit.memory.knowledge_type && <KnowledgeTypeBadge type={hit.memory.knowledge_type} />}
+                <span style={{ fontSize: 11, color: 'var(--text-ter)' }}>相关度 {hit.score.toFixed(2)}</span>
+                <Link to={`/admin/memories/${hit.memory.id}`} style={{ fontSize: 11, marginLeft: 'auto' }}>查看详情 →</Link>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

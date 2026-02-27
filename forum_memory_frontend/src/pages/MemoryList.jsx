@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { memoryApi } from '../api/client';
 import { useAsync } from '../hooks/useAsync';
-import { Loading, ErrorMsg, EmptyState, AuthorityBadge, LifecycleBadge, Badge, QualityDot, TimeAgo } from '../components/UI';
+import { Loading, ErrorMsg, EmptyState, AuthorityBadge, LifecycleBadge, Badge, QualityDot, TimeAgo, KnowledgeTypeBadge } from '../components/UI';
 
 export default function MemoryList() {
   const [filters, setFilters] = useState({ authority: '', status: '', pending_confirm: '', page: 1 });
@@ -77,6 +77,7 @@ function MemoryRow({ memory }) {
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
           <AuthorityBadge authority={memory.authority} />
           <LifecycleBadge status={memory.status} />
+          {memory.knowledge_type && <KnowledgeTypeBadge type={memory.knowledge_type} />}
           {memory.tags?.map(t => <Badge key={t} type="gray">{t}</Badge>)}
           {memory.pending_human_confirm && <Badge type="amber">⏳ 待确认</Badge>}
         </div>

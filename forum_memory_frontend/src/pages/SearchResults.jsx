@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { memoryApi, threadApi } from '../api/client';
 import { useAsync } from '../hooks/useAsync';
-import { Loading, EmptyState, AuthorityBadge, Badge } from '../components/UI';
+import { Loading, EmptyState, AuthorityBadge, Badge, KnowledgeTypeBadge } from '../components/UI';
 
 export default function SearchResults() {
   const [params] = useSearchParams();
@@ -69,6 +69,7 @@ function SearchHit({ hit }) {
       <div style={{ fontSize: 14, lineHeight: 1.7, marginBottom: 8 }}>{m.content}</div>
       <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
         <AuthorityBadge authority={m.authority} />
+        {m.knowledge_type && <KnowledgeTypeBadge type={m.knowledge_type} />}
         {m.tags?.map(t => <Badge key={t} type="gray">{t}</Badge>)}
         <span style={{ fontSize: 12, color: 'var(--text-ter)', marginLeft: 'auto' }}>
           相关度 {hit.score.toFixed(2)}

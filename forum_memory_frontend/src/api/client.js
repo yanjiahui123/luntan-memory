@@ -69,6 +69,7 @@ export const threadApi = {
   timeoutClose: (id) => post(`/threads/${id}/timeout-close`),
   comments: (id) => get(`/threads/${id}/comments`),
   addComment: (id, content) => post(`/threads/${id}/comments`, { thread_id: id, content }),
+  upvoteComment: (threadId, commentId) => post(`/threads/${threadId}/comments/${commentId}/upvote`),
 };
 
 // ── Memories ─────────────────────────────────

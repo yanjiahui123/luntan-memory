@@ -123,6 +123,17 @@ def _mark_best_answer(session: Session, comment_id: UUID) -> None:
         comment.is_best_answer = True
 
 
+def upvote_comment(session: Session, comment_id: UUID) -> Comment:
+    """Increment the upvote count on a comment."""
+    comment = session.get(Comment, comment_id)
+    if not comment:
+        raise ValueError("Comment not found")
+    comment.upvote_count += 1
+    session.commit()
+    session.refresh(comment)
+    return comment
+
+
 def _increment_comment_count(session: Session, thread_id: UUID) -> None:
     thread = session.get(Thread, thread_id)
     if thread:

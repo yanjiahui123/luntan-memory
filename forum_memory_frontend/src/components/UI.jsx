@@ -88,3 +88,17 @@ export function QualityDot({ score }) {
   const color = score > 0.8 ? 'var(--green)' : score > 0.5 ? 'var(--text)' : 'var(--red)';
   return <span style={{ color, fontWeight: 700 }}>{score.toFixed(2)}</span>;
 }
+
+export const KNOWLEDGE_TYPE_LABELS = {
+  how_to: '操作指南',
+  troubleshoot: '故障排查',
+  best_practice: '最佳实践',
+  gotcha: '常见陷阱',
+  faq: '常见问题',
+};
+
+export function KnowledgeTypeBadge({ type }) {
+  if (!type) return null;
+  const label = KNOWLEDGE_TYPE_LABELS[type] || type;
+  return <Badge type="gray">{label}</Badge>;
+}

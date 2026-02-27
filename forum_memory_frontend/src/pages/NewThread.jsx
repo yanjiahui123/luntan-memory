@@ -2,13 +2,10 @@ import React, { useState } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { threadApi } from '../api/client';
 
-const KNOWLEDGE_TYPES = ['', 'how_to', 'troubleshoot', 'best_practice', 'gotcha', 'faq'];
-const PRIORITIES = ['', 'P0', 'P1', 'P2', 'P3'];
-
 export default function NewThread() {
   const { boardId } = useParams();
   const navigate = useNavigate();
-  const [form, setForm] = useState({ title: '', content: '', tags: '', knowledge_type: '', environment: '', priority: '' });
+  const [form, setForm] = useState({ title: '', content: '', tags: '', environment: '' });
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState(null);
 
@@ -27,9 +24,7 @@ export default function NewThread() {
         title: form.title.trim(),
         content: form.content.trim(),
         tags: form.tags ? form.tags.split(',').map(t => t.trim()).filter(Boolean) : null,
-        knowledge_type: form.knowledge_type || null,
         environment: form.environment || null,
-        priority: form.priority || null,
       };
       const thread = await threadApi.create(data);
       navigate(`/threads/${thread.id}`);
@@ -61,29 +56,14 @@ export default function NewThread() {
           <textarea placeholder="详细描述你遇到的问题，支持 Markdown 和代码块..." value={form.content} onChange={e => update('content', e.target.value)} style={{ minHeight: 160 }} required />
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 16 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 24 }}>
           <div>
             <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6 }}>技术分类标签</label>
             <input placeholder="逗号分隔: 超时, 配置, K8s" value={form.tags} onChange={e => update('tags', e.target.value)} />
           </div>
           <div>
-            <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6 }}>知识类型</label>
-            <select value={form.knowledge_type} onChange={e => update('knowledge_type', e.target.value)}>
-              {KNOWLEDGE_TYPES.map(k => <option key={k} value={k}>{k || '-- 不选择 --'}</option>)}
-            </select>
-          </div>
-        </div>
-
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 24 }}>
-          <div>
             <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6 }}>适用环境</label>
             <input placeholder="如: JDK17, K8s, 生产环境" value={form.environment} onChange={e => update('environment', e.target.value)} />
-          </div>
-          <div>
-            <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6 }}>紧急程度</label>
-            <select value={form.priority} onChange={e => update('priority', e.target.value)}>
-              {PRIORITIES.map(p => <option key={p} value={p}>{p || '-- 不选择 --'}</option>)}
-            </select>
           </div>
         </div>
 

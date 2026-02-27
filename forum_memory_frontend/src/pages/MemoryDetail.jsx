@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Link, useParams, useNavigate } from 'react-router-dom';
 import { memoryApi, feedbackApi } from '../api/client';
 import { useAsync } from '../hooks/useAsync';
-import { Loading, ErrorMsg, AuthorityBadge, LifecycleBadge, Badge, QualityDot, ConfirmModal } from '../components/UI';
+import { Loading, ErrorMsg, AuthorityBadge, LifecycleBadge, Badge, QualityDot, ConfirmModal, KnowledgeTypeBadge } from '../components/UI';
 
 export default function MemoryDetail() {
   const { memoryId } = useParams();
@@ -76,7 +76,7 @@ export default function MemoryDetail() {
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 12 }}>
               {memory.tags?.map(t => <Badge key={t} type="gray">{t}</Badge>)}
               {memory.environment && <Badge type="gray">🌍 {memory.environment}</Badge>}
-              {memory.knowledge_type && <Badge type="gray">📂 {memory.knowledge_type}</Badge>}
+              {memory.knowledge_type && <KnowledgeTypeBadge type={memory.knowledge_type} />}
             </div>
           </div>
 

@@ -60,3 +60,11 @@ def list_comments(thread_id: UUID, session: Session = Depends(get_db)):
 @router.post("/{thread_id}/comments", response_model=CommentRead, status_code=201)
 def add_comment(thread_id: UUID, data: CommentCreate, session: Session = Depends(get_db), user_id: UUID = Depends(get_current_user_id)):
     return thread_service.add_comment(session, data, user_id)
+
+
+@router.post("/{thread_id}/comments/{comment_id}/upvote", response_model=CommentRead)
+def upvote_comment(thread_id: UUID, comment_id: UUID, session: Session = Depends(get_db)):
+    try:
+        return thread_service.upvote_comment(session, comment_id)
+    except ValueError as e:
+        raise HTTPException(404, str(e))
