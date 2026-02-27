@@ -10,6 +10,8 @@ from forum_memory.models.event import DomainEvent
 from forum_memory.models.enums import ThreadStatus, ResolvedType
 from forum_memory.core.state_machine import can_transition
 from forum_memory.schemas.thread import ThreadCreate, CommentCreate
+from forum_memory.schemas.memory import MemorySearchRequest
+from forum_memory.core.prompts import AI_ANSWER_SYSTEM, AI_ANSWER_USER
 
 
 def list_threads(
@@ -129,6 +131,60 @@ def upvote_comment(session: Session, comment_id: UUID) -> Comment:
     if not comment:
         raise ValueError("Comment not found")
     comment.upvote_count += 1
+    session.commit()
+    session.refresh(comment)
+    return comment
+
+
+def generate_ai_answer(session: Session, thread_id: UUID) -> Comment:
+    """Search memories and generate an AI answer for a thread."""
+    from forum_memory.services.search_service import search_memories
+    from forum_memory.providers import get_provider
+
+    thread = session.get(Thread, thread_id)
+    if not thread:
+        raise ValueError("Thread not found")
+
+    # Search related memories
+    search_req = MemorySearchRequest(
+        query=f"{thread.title}\n{thread.content}",
+        namespace_id=thread.namespace_id,
+        top_k=5,
+    )
+    search_result = search_memories(session, search_req)
+
+    # Build memory context for prompt
+    if search_result.hits:
+        memories_text = "\n\n".join(
+            f"[M-{str(h.memory.id)[:8]}] {h.memory.content}"
+            for h in search_result.hits
+        )
+        cited_ids = [h.memory.id for h in search_result.hits]
+    else:
+        memories_text = "(no relevant memories found)"
+        cited_ids = []
+
+    # Generate answer via LLM
+    provider = get_provider()
+    answer = provider.complete([
+        {"role": "system", "content": AI_ANSWER_SYSTEM},
+        {"role": "user", "content": AI_ANSWER_USER.format(
+            question=f"{thread.title}\n{thread.content}",
+            memories=memories_text,
+        )},
+    ])
+
+    # Create AI comment
+    comment = Comment(
+        thread_id=thread_id,
+        author_id=None,
+        content=answer,
+        is_ai=True,
+        author_role="ai",
+        cited_memory_ids=[str(mid) for mid in cited_ids],
+    )
+    session.add(comment)
+    _increment_comment_count(session, thread_id)
     session.commit()
     session.refresh(comment)
     return comment

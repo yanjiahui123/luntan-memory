@@ -70,6 +70,7 @@ export const threadApi = {
   comments: (id) => get(`/threads/${id}/comments`),
   addComment: (id, content) => post(`/threads/${id}/comments`, { thread_id: id, content }),
   upvoteComment: (threadId, commentId) => post(`/threads/${threadId}/comments/${commentId}/upvote`),
+  aiAnswer: (threadId) => post(`/threads/${threadId}/ai-answer`),
 };
 
 // ── Memories ─────────────────────────────────

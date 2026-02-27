@@ -16,6 +16,9 @@ def get_provider() -> LLMProvider:
     if settings.llm_provider == "openai":
         from forum_memory.providers.openai_provider import OpenAIProvider
         _instance = OpenAIProvider()
+    elif settings.llm_provider == "custom":
+        from forum_memory.providers.custom_provider import CustomProvider
+        _instance = CustomProvider()
     else:
         raise ValueError(f"Unknown LLM provider: {settings.llm_provider}")
     return _instance

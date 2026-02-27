@@ -26,6 +26,15 @@ class Settings(BaseSettings):
     llm_embedding_model: str = "text-embedding-3-small"
     embedding_dimension: int = 1536
 
+    # Custom provider (when llm_provider == "custom")
+    custom_llm_url: str = ""
+    custom_embed_url: str = ""
+    custom_rerank_url: str = ""
+    custom_api_key: str = ""
+    custom_llm_model: str = ""
+    custom_embed_model: str = ""
+    custom_rerank_model: str = ""
+
     # Forum defaults
     thread_timeout_days: int = 7
     max_compress_messages: int = 10

@@ -10,6 +10,7 @@ export default function ThreadDetail() {
   const { data: comments, refetch: refetchComments } = useAsync(() => threadApi.comments(threadId), [threadId]);
   const [replyText, setReplyText] = useState('');
   const [resolveTarget, setResolveTarget] = useState(null);
+  const [aiLoading, setAiLoading] = useState(false);
 
   async function handleReply() {
     if (!replyText.trim()) return;
@@ -53,8 +54,29 @@ export default function ThreadDetail() {
         </div>
       </div>
 
-      {/* Comments */}
-      <h3 style={{ fontSize: 15, fontWeight: 600, marginBottom: 12 }}>回答 ({comments?.length || 0})</h3>
+      {/* AI Answer + Comments */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+        <h3 style={{ fontSize: 15, fontWeight: 600, margin: 0 }}>回答 ({comments?.length || 0})</h3>
+        {thread.status === 'OPEN' && (
+          <button
+            className="btn-primary"
+            disabled={aiLoading}
+            onClick={async () => {
+              setAiLoading(true);
+              try {
+                await threadApi.aiAnswer(threadId);
+                refetchComments();
+              } catch (err) {
+                alert('AI 回答生成失败: ' + err.message);
+              } finally {
+                setAiLoading(false);
+              }
+            }}
+          >
+            {aiLoading ? '生成中...' : '🤖 AI 回答'}
+          </button>
+        )}
+      </div>
       {comments?.map(c => (
         <CommentCard key={c.id} comment={c} thread={thread} onResolve={() => setResolveTarget(c.id)} />
       ))}

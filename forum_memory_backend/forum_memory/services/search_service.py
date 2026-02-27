@@ -45,8 +45,28 @@ def find_similar(session: Session, namespace_id: UUID, content: str, top_k: int 
 def _preprocess_query(session: Session, req: MemorySearchRequest) -> str:
     ns = session.get(Namespace, req.namespace_id)
     if not ns or not ns.dictionary:
-        return req.query
-    return _apply_dictionary(req.query, ns.dictionary)
+        query = req.query
+        dictionary = {}
+    else:
+        query = _apply_dictionary(req.query, ns.dictionary)
+        dictionary = ns.dictionary
+
+    # LLM query rewrite for better recall
+    try:
+        provider = get_provider()
+        rewritten = provider.complete(
+            [
+                {"role": "system", "content": QUERY_REWRITE_SYSTEM},
+                {"role": "user", "content": QUERY_REWRITE_USER.format(
+                    query=query, dictionary=dictionary,
+                )},
+            ],
+        )
+        if rewritten and rewritten.strip():
+            return rewritten.strip()
+    except Exception:
+        pass  # fallback to dictionary-only result
+    return query
 
 
 def _apply_dictionary(query: str, dictionary: dict) -> str:
@@ -72,10 +92,21 @@ def _recall(session: Session, ns_id: UUID, query: str, limit: int) -> list[Memor
 
 
 def _simple_rank(candidates: list[Memory], query: str, top_k: int) -> list[Memory]:
-    """Simple text-based ranking. TODO: replace with reranker model."""
-    scored = [(m, _text_overlap(query, m.content)) for m in candidates]
-    scored.sort(key=lambda x: x[1], reverse=True)
-    return [m for m, _ in scored[:top_k]]
+    """Rank candidates using provider rerank, fallback to text overlap."""
+    if not candidates:
+        return []
+    try:
+        provider = get_provider()
+        docs = [m.content for m in candidates]
+        scores = provider.rerank(query, docs)
+        scored = list(zip(candidates, scores))
+        scored.sort(key=lambda x: x[1], reverse=True)
+        return [m for m, _ in scored[:top_k]]
+    except Exception:
+        # fallback to text overlap
+        scored = [(m, _text_overlap(query, m.content)) for m in candidates]
+        scored.sort(key=lambda x: x[1], reverse=True)
+        return [m for m, _ in scored[:top_k]]
 
 
 def _text_overlap(a: str, b: str) -> float:

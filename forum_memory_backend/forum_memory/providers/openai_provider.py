@@ -37,3 +37,16 @@ class OpenAIProvider(LLMProvider):
             input=texts,
         )
         return [d.embedding for d in resp.data]
+
+    def rerank(self, query: str, documents: list[str]) -> list[float]:
+        """Fallback rerank using embedding cosine similarity."""
+        import math
+        q_emb = self.embed(query)
+        d_embs = self.embed_batch(documents)
+        scores = []
+        for d_emb in d_embs:
+            dot = sum(a * b for a, b in zip(q_emb, d_emb))
+            norm_q = math.sqrt(sum(a * a for a in q_emb))
+            norm_d = math.sqrt(sum(b * b for b in d_emb))
+            scores.append(dot / (norm_q * norm_d) if norm_q and norm_d else 0.0)
+        return scores

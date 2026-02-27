@@ -17,3 +17,7 @@ class LLMProvider(ABC):
     @abstractmethod
     def embed_batch(self, texts: list[str]) -> list[list[float]]:
         """Embed a batch of texts."""
+
+    @abstractmethod
+    def rerank(self, query: str, documents: list[str]) -> list[float]:
+        """Rerank documents by relevance to query. Returns scores."""
