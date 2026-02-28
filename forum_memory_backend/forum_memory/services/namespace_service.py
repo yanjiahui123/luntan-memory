@@ -1,6 +1,8 @@
 """Namespace (board) service — sync."""
 
+import re
 import logging
+import uuid as _uuid
 from uuid import UUID
 
 from sqlmodel import Session, select, func
@@ -15,6 +17,26 @@ from forum_memory.config import get_settings
 logger = logging.getLogger(__name__)
 
 
+def slugify(text: str) -> str:
+    """Convert arbitrary text to an ES-safe slug (lowercase, no spaces/special chars).
+
+    Rules: lowercase, replace non-alphanumeric (except -) with _, collapse
+    consecutive underscores, strip leading/trailing _ or -.
+    """
+    s = text.lower()
+    s = re.sub(r"[^a-z0-9\u4e00-\u9fff\-]", "_", s)      # keep letters, digits, CJK, hyphen
+    s = re.sub(r"[_]+", "_", s)                             # collapse underscores
+    s = s.strip("_-")
+    return s or "board"
+
+
+def generate_namespace_name(display_name: str) -> str:
+    """Auto-generate a unique, ES-safe internal name: {slug}_{8-hex}."""
+    slug = slugify(display_name)
+    short_id = _uuid.uuid4().hex[:8]
+    return f"{slug}_{short_id}"
+
+
 def list_namespaces(session: Session) -> list[Namespace]:
     """Return all active namespaces."""
     stmt = select(Namespace).where(Namespace.is_active == True)
@@ -27,9 +49,10 @@ def get_namespace(session: Session, ns_id: UUID) -> Namespace | None:
 
 def create_namespace(session: Session, data: NamespaceCreate, owner_id: UUID) -> Namespace:
     settings = get_settings()
-    index_name = f"{settings.es_index_prefix}_{data.name}"
+    name = generate_namespace_name(data.display_name)
+    index_name = f"{settings.es_index_prefix}_{name}"
     ns = Namespace(
-        name=data.name,
+        name=name,
         display_name=data.display_name,
         description=data.description,
         access_mode=data.access_mode,

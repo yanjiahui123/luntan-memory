@@ -5,7 +5,6 @@ from pydantic import BaseModel
 
 
 class NamespaceCreate(BaseModel):
-    name: str
     display_name: str
     description: str | None = None
     access_mode: str = "public"

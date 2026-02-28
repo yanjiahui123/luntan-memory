@@ -1,9 +1,10 @@
 """Backfill ES index names for existing namespaces and re-index memories.
 
 For each namespace that doesn't have an es_index_name:
-1. Generate and store the index name
-2. Create the ES index
-3. Re-index all ACTIVE memories into the new per-namespace index
+1. Generate a safe slug-based name (if current name is ES-incompatible)
+2. Generate and store the ES index name
+3. Create the ES index
+4. Re-index all ACTIVE memories into the new per-namespace index
 
 Usage: python -m forum_memory.scripts.backfill_es_indices
 """
@@ -19,6 +20,7 @@ from forum_memory.models.enums import MemoryStatus
 from forum_memory.config import get_settings
 from forum_memory.providers import get_provider
 from forum_memory.services.es_service import ensure_index_by_name, bulk_reindex
+from forum_memory.services.namespace_service import generate_namespace_name
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
@@ -45,8 +47,14 @@ def main():
         logger.info("Found %d namespaces to backfill", len(namespaces))
 
         for ns in namespaces:
-            index_name = f"{settings.es_index_prefix}_{ns.name}"
-            logger.info("Backfilling namespace '%s' -> ES index '%s'", ns.name, index_name)
+            # Generate a safe internal name from display_name
+            safe_name = generate_namespace_name(ns.display_name)
+            index_name = f"{settings.es_index_prefix}_{safe_name}"
+            logger.info("Backfilling namespace '%s' -> name='%s', ES index '%s'",
+                        ns.display_name, safe_name, index_name)
+
+            # Update namespace name to be ES-safe
+            ns.name = safe_name
 
             # Update DB
             ns.es_index_name = index_name

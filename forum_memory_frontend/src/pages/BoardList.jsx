@@ -59,7 +59,7 @@ function BoardCard({ board }) {
 }
 
 function CreateBoardModal({ onClose, onCreated }) {
-  const [form, setForm] = useState({ name: '', display_name: '', description: '', access_mode: 'public' });
+  const [form, setForm] = useState({ display_name: '', description: '', access_mode: 'public' });
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState(null);
 
@@ -69,12 +69,11 @@ function CreateBoardModal({ onClose, onCreated }) {
 
   async function handleSubmit(e) {
     e.preventDefault();
-    if (!form.name.trim() || !form.display_name.trim()) return;
+    if (!form.display_name.trim()) return;
     setSubmitting(true);
     setError(null);
     try {
       await namespaceApi.create({
-        name: form.name.trim(),
         display_name: form.display_name.trim(),
         description: form.description.trim() || null,
         access_mode: form.access_mode,
@@ -93,11 +92,7 @@ function CreateBoardModal({ onClose, onCreated }) {
         <h3 style={{ marginBottom: 16, fontSize: 16, fontWeight: 700 }}>创建新板块</h3>
         <form onSubmit={handleSubmit}>
           <div style={{ marginBottom: 14 }}>
-            <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6 }}>板块标识 *</label>
-            <input placeholder="英文标识，如: backend-issues" value={form.name} onChange={e => update('name', e.target.value)} required />
-          </div>
-          <div style={{ marginBottom: 14 }}>
-            <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6 }}>显示名称 *</label>
+            <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6 }}>板块名称 *</label>
             <input placeholder="如: 后端问题" value={form.display_name} onChange={e => update('display_name', e.target.value)} required />
           </div>
           <div style={{ marginBottom: 14 }}>
@@ -113,7 +108,7 @@ function CreateBoardModal({ onClose, onCreated }) {
             </select>
           </div>
 
-          {error && <div style={{ color: 'var(--red)', fontSize: 13, marginBottom: 12 }}>❌ {error}</div>}
+          {error && <div style={{ color: 'var(--red)', fontSize: 13, marginBottom: 12 }}>错误: {error}</div>}
 
           <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
             <button type="button" className="btn-secondary" onClick={onClose}>取消</button>
