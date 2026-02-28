@@ -172,6 +172,81 @@ def _apply_delete(session: Session, result: AUDNResult) -> Memory | None:
     return memory
 
 
+def transition_cold_memories(session: Session, cold_days: int = 180) -> int:
+    """Transition ACTIVE memories inactive for cold_days to COLD status."""
+    from datetime import timedelta
+    cutoff = datetime.now(timezone.utc) - timedelta(days=cold_days)
+    stmt = (
+        select(Memory)
+        .where(Memory.status == MemoryStatus.ACTIVE)
+        .where(
+            # Use last_retrieved_at if available, otherwise fall back to updated_at
+            (Memory.last_retrieved_at < cutoff) | (
+                (Memory.last_retrieved_at == None) & (Memory.updated_at < cutoff)  # noqa: E711
+            )
+        )
+    )
+    memories = list(session.exec(stmt).all())
+    count = 0
+    for m in memories:
+        before = _snapshot(m)
+        m.status = MemoryStatus.COLD
+        m.updated_at = datetime.now(timezone.utc)
+        session.commit()
+        _log_operation(session, m.id, OperationType.ARCHIVE, reason=f"inactive {cold_days}+ days → COLD", before=before)
+        es_service.delete_memory_doc(m.id)  # COLD memories don't participate in search
+        count += 1
+    logger.info("Transitioned %d memories to COLD", count)
+    return count
+
+
+def transition_archived_memories(session: Session, archive_days: int = 365) -> int:
+    """Transition COLD memories inactive for archive_days to ARCHIVED status."""
+    from datetime import timedelta
+    cutoff = datetime.now(timezone.utc) - timedelta(days=archive_days)
+    stmt = (
+        select(Memory)
+        .where(Memory.status == MemoryStatus.COLD)
+        .where(Memory.updated_at < cutoff)
+    )
+    memories = list(session.exec(stmt).all())
+    count = 0
+    for m in memories:
+        before = _snapshot(m)
+        m.status = MemoryStatus.ARCHIVED
+        m.updated_at = datetime.now(timezone.utc)
+        session.commit()
+        _log_operation(session, m.id, OperationType.ARCHIVE, reason=f"inactive {archive_days}+ days → ARCHIVED", before=before)
+        count += 1
+    logger.info("Transitioned %d memories to ARCHIVED", count)
+    return count
+
+
+def bulk_refresh_quality(session: Session) -> int:
+    """Refresh quality score for all ACTIVE memories. Returns count updated."""
+    stmt = select(Memory).where(Memory.status == MemoryStatus.ACTIVE)
+    memories = list(session.exec(stmt).all())
+    count = 0
+    for m in memories:
+        old_score = m.quality_score
+        new_score = compute_quality_score(
+            useful=m.useful_count,
+            not_useful=m.not_useful_count,
+            wrong=m.wrong_count,
+            outdated=m.outdated_count,
+            source_role=m.source_role,
+            retrieve_count=m.retrieve_count,
+            created_at=m.created_at,
+        )
+        if abs(new_score - old_score) > 0.001:
+            m.quality_score = new_score
+            session.commit()
+            _index_to_es(m)  # sync updated score to ES
+            count += 1
+    logger.info("Refreshed quality for %d memories", count)
+    return count
+
+
 def _apply_filters(stmt, ns_id, authority, status, pending):
     if ns_id:
         stmt = stmt.where(Memory.namespace_id == ns_id)

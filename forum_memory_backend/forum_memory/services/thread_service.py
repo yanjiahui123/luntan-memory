@@ -1,7 +1,8 @@
 """Thread and comment service — sync."""
 
+import logging
 from uuid import UUID
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 
 from sqlmodel import Session, select
 
@@ -12,6 +13,8 @@ from forum_memory.core.state_machine import can_transition
 from forum_memory.schemas.thread import ThreadCreate, CommentCreate
 from forum_memory.schemas.memory import MemorySearchRequest
 from forum_memory.core.prompts import AI_ANSWER_SYSTEM, AI_ANSWER_USER
+
+logger = logging.getLogger(__name__)
 
 
 def list_threads(
@@ -188,6 +191,26 @@ def generate_ai_answer(session: Session, thread_id: UUID) -> Comment:
     session.commit()
     session.refresh(comment)
     return comment
+
+
+def batch_timeout_threads(session: Session, timeout_days: int = 7) -> int:
+    """Batch timeout-close OPEN threads older than timeout_days. Returns count closed."""
+    cutoff = datetime.now(timezone.utc) - timedelta(days=timeout_days)
+    stmt = (
+        select(Thread)
+        .where(Thread.status == ThreadStatus.OPEN)
+        .where(Thread.created_at < cutoff)
+    )
+    threads = list(session.exec(stmt).all())
+    count = 0
+    for t in threads:
+        try:
+            timeout_close_thread(session, t.id)
+            count += 1
+        except ValueError:
+            logger.warning("Cannot timeout-close thread %s, skipping", t.id)
+    logger.info("Batch timeout-closed %d threads", count)
+    return count
 
 
 def _increment_comment_count(session: Session, thread_id: UUID) -> None:

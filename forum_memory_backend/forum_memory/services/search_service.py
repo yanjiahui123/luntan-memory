@@ -6,6 +6,7 @@ Uses ES hybrid search (BM25 + knn) for recall, falls back to SQL LIKE if ES unav
 
 import logging
 from uuid import UUID
+from datetime import datetime, timezone
 
 from sqlmodel import Session, select
 
@@ -26,7 +27,7 @@ def search_memories(session: Session, req: MemorySearchRequest) -> MemorySearchR
     expanded = _preprocess_query(session, req)
     candidates = _recall(session, req.namespace_id, expanded, req.top_k * 5)
     ranked = _simple_rank(candidates, expanded, req.top_k)
-    hits = _build_hits(ranked, req.environment)
+    hits = _build_hits(session, ranked, req.environment)
     return MemorySearchResponse(hits=hits, query_expanded=expanded, total_recalled=len(candidates))
 
 
@@ -169,9 +170,13 @@ def _text_overlap(a: str, b: str) -> float:
     return len(inter) / max(len(tokens_a), len(tokens_b))
 
 
-def _build_hits(memories: list[Memory], env: str | None) -> list[MemorySearchHit]:
+def _build_hits(session: Session, memories: list[Memory], env: str | None) -> list[MemorySearchHit]:
+    now = datetime.now(timezone.utc)
     hits = []
     for m in memories:
+        # Update retrieval stats
+        m.retrieve_count += 1
+        m.last_retrieved_at = now
         env_match = _check_env(m.environment, env)
         warning = None if env_match else "环境不匹配，请确认适用性"
         hit = MemorySearchHit(
@@ -181,6 +186,8 @@ def _build_hits(memories: list[Memory], env: str | None) -> list[MemorySearchHit
             env_warning=warning,
         )
         hits.append(hit)
+    if memories:
+        session.commit()
     return hits
 
 

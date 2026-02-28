@@ -1,6 +1,7 @@
 """Memory (knowledge unit) model."""
 
 from uuid import UUID
+from datetime import datetime
 
 from sqlmodel import Field
 from sqlalchemy import Column, Text, JSON
@@ -45,6 +46,7 @@ class Memory(UUIDMixin, TimestampMixin, table=True):
     # Retrieval stats
     retrieve_count: int = Field(default=0)
     cite_count: int = Field(default=0)
+    last_retrieved_at: datetime | None = Field(default=None)
 
     # Human confirmation flag
     pending_human_confirm: bool = Field(default=False)

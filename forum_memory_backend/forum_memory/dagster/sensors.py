@@ -1,4 +1,4 @@
-"""Dagster sensor — polls DomainEvent table for thread.resolved events."""
+"""Dagster sensors — event polling and scheduled lifecycle tasks."""
 
 import logging
 
@@ -10,6 +10,8 @@ from forum_memory.models.event import DomainEvent
 
 logger = logging.getLogger(__name__)
 
+
+# ── Event-driven: thread.resolved → extract memories ─────
 
 @sensor(job_name="extract_memories_job", minimum_interval_seconds=30)
 def thread_resolved_sensor(context: SensorEvaluationContext):
@@ -46,3 +48,30 @@ def thread_resolved_sensor(context: SensorEvaluationContext):
                     }
                 },
             )
+
+
+# ── Scheduled: thread timeout (every hour) ───────────────
+
+@sensor(job_name="timeout_threads_job", minimum_interval_seconds=3600)
+def thread_timeout_sensor(context: SensorEvaluationContext):
+    """Periodically trigger thread timeout-close check."""
+    yield RunRequest(run_key=f"timeout-{context.cursor or '0'}")
+    context.update_cursor(str(int(context.cursor or '0') + 1))
+
+
+# ── Scheduled: memory lifecycle (daily) ──────────────────
+
+@sensor(job_name="lifecycle_memories_job", minimum_interval_seconds=86400)
+def memory_lifecycle_sensor(context: SensorEvaluationContext):
+    """Daily trigger for memory COLD/ARCHIVED transitions."""
+    yield RunRequest(run_key=f"lifecycle-{context.cursor or '0'}")
+    context.update_cursor(str(int(context.cursor or '0') + 1))
+
+
+# ── Scheduled: quality refresh (daily) ───────────────────
+
+@sensor(job_name="refresh_quality_job", minimum_interval_seconds=86400)
+def quality_refresh_sensor(context: SensorEvaluationContext):
+    """Daily trigger for quality score refresh."""
+    yield RunRequest(run_key=f"quality-{context.cursor or '0'}")
+    context.update_cursor(str(int(context.cursor or '0') + 1))
