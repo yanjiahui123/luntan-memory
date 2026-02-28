@@ -27,6 +27,7 @@ class NamespaceRead(BaseModel):
     config: dict
     dictionary: dict
     is_active: bool
+    es_index_name: str | None = None
     model_config = {"from_attributes": True}
 
 

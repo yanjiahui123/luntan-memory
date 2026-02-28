@@ -6,9 +6,10 @@ from forum_memory.models.enums import (
 
 # Valid transitions: from_status -> set of allowed to_statuses
 VALID_TRANSITIONS: dict[ThreadStatus, set[ThreadStatus]] = {
-    ThreadStatus.OPEN: {ThreadStatus.RESOLVED, ThreadStatus.TIMEOUT_CLOSED},
-    ThreadStatus.RESOLVED: set(),
-    ThreadStatus.TIMEOUT_CLOSED: set(),
+    ThreadStatus.OPEN: {ThreadStatus.RESOLVED, ThreadStatus.TIMEOUT_CLOSED, ThreadStatus.DELETED},
+    ThreadStatus.RESOLVED: {ThreadStatus.DELETED},
+    ThreadStatus.TIMEOUT_CLOSED: {ThreadStatus.DELETED},
+    ThreadStatus.DELETED: set(),
 }
 
 # Map resolved_type to default authority for extracted memories

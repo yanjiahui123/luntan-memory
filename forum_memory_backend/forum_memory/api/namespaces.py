@@ -52,6 +52,19 @@ def update_namespace(
     return ns
 
 
+@router.delete("/{ns_id}", response_model=NamespaceRead)
+def delete_namespace(
+    ns_id: UUID,
+    session: Session = Depends(get_db),
+    admin: User = Depends(require_admin),
+):
+    """仅超级管理员可删除板块（软删除）。"""
+    try:
+        return namespace_service.delete_namespace(session, ns_id)
+    except ValueError as e:
+        raise HTTPException(404, str(e))
+
+
 @router.get("/{ns_id}/stats", response_model=NamespaceStats)
 def get_stats(ns_id: UUID, session: Session = Depends(get_db)):
     return namespace_service.get_stats(session, ns_id)

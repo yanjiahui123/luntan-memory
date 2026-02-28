@@ -49,6 +49,7 @@ export const namespaceApi = {
   get: (id) => get(`/namespaces/${id}`),
   create: (data) => post('/namespaces', data),
   update: (id, data) => put(`/namespaces/${id}`, data),
+  delete: (id) => del(`/namespaces/${id}`),
   stats: (id) => get(`/namespaces/${id}/stats`),
   updateDict: (id, entries) => put(`/namespaces/${id}/dictionary`, { entries }),
 };
@@ -65,6 +66,7 @@ export const threadApi = {
   },
   get: (id) => get(`/threads/${id}`),
   create: (data) => post('/threads', data),
+  delete: (id) => del(`/threads/${id}`),
   resolve: (id, bestAnswerId) => post(`/threads/${id}/resolve`, { best_answer_id: bestAnswerId }),
   timeoutClose: (id) => post(`/threads/${id}/timeout-close`),
   comments: (id) => get(`/threads/${id}/comments`),

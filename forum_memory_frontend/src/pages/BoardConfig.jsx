@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { namespaceApi } from '../api/client';
 import { useAsync } from '../hooks/useAsync';
-import { Loading, ErrorMsg, EmptyState } from '../components/UI';
+import { Loading, ErrorMsg, EmptyState, ConfirmModal } from '../components/UI';
 
 export default function BoardConfig() {
   const { data: boards, loading, error } = useAsync(() => namespaceApi.list());
@@ -59,8 +60,10 @@ function BoardConfigPanel({ boardId }) {
 }
 
 function InfoTab({ board, onUpdate }) {
+  const navigate = useNavigate();
   const [form, setForm] = useState({ display_name: board.display_name, description: board.description || '', access_mode: board.access_mode });
   const [saving, setSaving] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   async function handleSave() {
     setSaving(true);
@@ -90,7 +93,22 @@ function InfoTab({ board, onUpdate }) {
           <option value="restricted">受限</option>
         </select>
       </div>
-      <button className="btn-primary" onClick={handleSave} disabled={saving}>{saving ? '保存中...' : '保存'}</button>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <button className="btn-primary" onClick={handleSave} disabled={saving}>{saving ? '保存中...' : '保存'}</button>
+        <button className="btn-danger" onClick={() => setShowDeleteConfirm(true)}>删除板块</button>
+      </div>
+
+      <ConfirmModal
+        open={showDeleteConfirm}
+        title="删除板块"
+        message={`确认删除板块「${board.display_name}」？删除后板块将不再显示，其下帖子也将不可访问。`}
+        onConfirm={async () => {
+          await namespaceApi.delete(board.id);
+          setShowDeleteConfirm(false);
+          navigate('/boards');
+        }}
+        onCancel={() => setShowDeleteConfirm(false)}
+      />
     </div>
   );
 }

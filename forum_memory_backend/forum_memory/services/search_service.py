@@ -33,6 +33,8 @@ def search_memories(session: Session, req: MemorySearchRequest) -> MemorySearchR
 
 def find_similar(session: Session, namespace_id: UUID, content: str, top_k: int = 5) -> list[dict]:
     """Find similar memories for AUDN dedup via ES knn, fallback to text overlap."""
+    ns = session.get(Namespace, namespace_id)
+    es_index = ns.es_index_name if ns else None
     # Try ES knn search
     try:
         provider = get_provider()
@@ -41,6 +43,7 @@ def find_similar(session: Session, namespace_id: UUID, content: str, top_k: int 
             namespace_id=namespace_id,
             query_embedding=content_embedding,
             limit=top_k,
+            index_name=es_index,
         )
         if es_hits:
             memory_ids = [UUID(h["memory_id"]) for h in es_hits]
@@ -106,6 +109,8 @@ def _apply_dictionary(query: str, dictionary: dict) -> str:
 
 def _recall(session: Session, ns_id: UUID, query: str, limit: int) -> list[Memory]:
     """Recall candidates via ES hybrid search, fallback to SQL LIKE."""
+    ns = session.get(Namespace, ns_id)
+    es_index = ns.es_index_name if ns else None
     # Try ES hybrid search
     try:
         provider = get_provider()
@@ -115,6 +120,7 @@ def _recall(session: Session, ns_id: UUID, query: str, limit: int) -> list[Memor
             query_text=query,
             query_embedding=query_embedding,
             limit=limit,
+            index_name=es_index,
         )
         if es_hits:
             memory_ids = [UUID(h["memory_id"]) for h in es_hits]

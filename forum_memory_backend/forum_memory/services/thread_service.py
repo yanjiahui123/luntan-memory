@@ -24,7 +24,7 @@ def list_threads(
     page: int = 1,
     size: int = 20,
 ) -> list[Thread]:
-    stmt = select(Thread).order_by(Thread.created_at.desc())
+    stmt = select(Thread).where(Thread.status != ThreadStatus.DELETED).order_by(Thread.created_at.desc())
     if namespace_id:
         stmt = stmt.where(Thread.namespace_id == namespace_id)
     if status:
@@ -90,6 +90,20 @@ def timeout_close_thread(session: Session, thread_id: UUID) -> Thread:
     session.commit()
     session.refresh(thread)
     _emit_event(session, "thread.timeout_closed", "Thread", thread.id, thread.namespace_id)
+    return thread
+
+
+def delete_thread(session: Session, thread_id: UUID) -> Thread:
+    """Soft-delete a thread (admin only)."""
+    thread = session.get(Thread, thread_id)
+    if not thread:
+        raise ValueError("Thread not found")
+    if not can_transition(thread.status, ThreadStatus.DELETED):
+        raise ValueError(f"Cannot delete thread in {thread.status} state")
+    thread.status = ThreadStatus.DELETED
+    session.commit()
+    session.refresh(thread)
+    _emit_event(session, "thread.deleted", "Thread", thread.id, thread.namespace_id)
     return thread
 
 

@@ -32,16 +32,15 @@ def get_es_client() -> Elasticsearch | None:
     return _client
 
 
-def _index_name() -> str:
+def _default_index_name() -> str:
     return f"{get_settings().es_index_prefix}_memories"
 
 
-def ensure_index() -> None:
-    """Create the ES index with correct mapping if it doesn't exist."""
+def ensure_index_by_name(name: str) -> None:
+    """Create an ES index with correct mapping if it doesn't exist."""
     es = get_es_client()
     if not es:
         return
-    name = _index_name()
     if es.indices.exists(index=name):
         return
 
@@ -74,6 +73,11 @@ def ensure_index() -> None:
     logger.info("Created ES index: %s (dims=%d)", name, settings_cfg.embedding_dimension)
 
 
+def ensure_index() -> None:
+    """Create the default global ES index."""
+    ensure_index_by_name(_default_index_name())
+
+
 # ── Document CRUD ────────────────────────────────────────
 
 def index_memory(
@@ -86,12 +90,14 @@ def index_memory(
     tags: list | None = None,
     knowledge_type: str | None = None,
     quality_score: float = 0.5,
+    index_name: str | None = None,
 ) -> bool:
     """Index or update a memory document. Returns True on success."""
     es = get_es_client()
     if not es:
         return False
     try:
+        name = index_name or _default_index_name()
         doc = {
             "memory_id": str(memory_id),
             "namespace_id": str(namespace_id),
@@ -103,20 +109,21 @@ def index_memory(
             "knowledge_type": knowledge_type or "",
             "quality_score": quality_score,
         }
-        es.index(index=_index_name(), id=str(memory_id), document=doc)
+        es.index(index=name, id=str(memory_id), document=doc)
         return True
     except Exception:
         logger.exception("Failed to index memory %s", memory_id)
         return False
 
 
-def delete_memory_doc(memory_id: UUID) -> bool:
+def delete_memory_doc(memory_id: UUID, index_name: str | None = None) -> bool:
     """Remove a memory document from ES. Returns True on success."""
     es = get_es_client()
     if not es:
         return False
     try:
-        es.delete(index=_index_name(), id=str(memory_id))
+        name = index_name or _default_index_name()
+        es.delete(index=name, id=str(memory_id))
         return True
     except NotFoundError:
         return True  # already gone
@@ -133,6 +140,7 @@ def hybrid_search(
     query_embedding: list[float],
     limit: int = 50,
     status_filter: str = "ACTIVE",
+    index_name: str | None = None,
 ) -> list[dict]:
     """BM25 + knn hybrid search with RRF fusion.
 
@@ -142,7 +150,7 @@ def hybrid_search(
     if not es:
         return []
     settings = get_settings()
-    name = _index_name()
+    name = index_name or _default_index_name()
 
     filter_clauses = [
         {"term": {"namespace_id": str(namespace_id)}},
@@ -179,6 +187,7 @@ def knn_search(
     query_embedding: list[float],
     limit: int = 5,
     status_filter: str = "ACTIVE",
+    index_name: str | None = None,
 ) -> list[dict]:
     """Pure knn vector search (for AUDN find_similar).
 
@@ -188,7 +197,7 @@ def knn_search(
     if not es:
         return []
     settings = get_settings()
-    name = _index_name()
+    name = index_name or _default_index_name()
 
     filter_clauses = [
         {"term": {"namespace_id": str(namespace_id)}},
@@ -221,7 +230,7 @@ def _parse_hits(resp: dict) -> list[dict]:
 
 # ── Bulk ─────────────────────────────────────────────────
 
-def bulk_reindex(memories: list[dict], batch_size: int = 100) -> int:
+def bulk_reindex(memories: list[dict], batch_size: int = 100, index_name: str | None = None) -> int:
     """Bulk index memory dicts into ES. Returns success count.
 
     Each dict: memory_id, namespace_id, content, embedding, status,
@@ -230,7 +239,7 @@ def bulk_reindex(memories: list[dict], batch_size: int = 100) -> int:
     es = get_es_client()
     if not es:
         return 0
-    name = _index_name()
+    name = index_name or _default_index_name()
 
     actions = [
         {

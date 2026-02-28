@@ -21,11 +21,26 @@ async def lifespan(app: FastAPI):
         logger.info("Database tables initialized successfully")
     except Exception as e:
         logger.error("Failed to initialize database: %s", e)
-    # Initialize ES index (non-fatal if ES unavailable)
+    # Initialize ES indices (non-fatal if ES unavailable)
     try:
-        from forum_memory.services.es_service import ensure_index
+        from forum_memory.services.es_service import ensure_index, ensure_index_by_name
+        # Ensure default fallback index
         ensure_index()
-        logger.info("Elasticsearch index ensured")
+        # Ensure per-namespace indices
+        from sqlmodel import Session, select
+        from forum_memory.database import engine as db_engine
+        from forum_memory.models.namespace import Namespace
+        with Session(db_engine) as session:
+            namespaces = session.exec(
+                select(Namespace).where(Namespace.is_active == True)
+            ).all()
+            for ns in namespaces:
+                if ns.es_index_name:
+                    try:
+                        ensure_index_by_name(ns.es_index_name)
+                    except Exception:
+                        logger.warning("Failed to ensure ES index %s", ns.es_index_name)
+        logger.info("Elasticsearch indices ensured")
     except Exception as e:
         logger.warning("Elasticsearch index creation failed (non-fatal): %s", e)
     yield

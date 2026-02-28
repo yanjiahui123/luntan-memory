@@ -5,7 +5,8 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlmodel import Session
 
-from forum_memory.api.deps import get_db, get_current_user_id
+from forum_memory.api.deps import get_db, get_current_user_id, require_admin
+from forum_memory.models.user import User
 from forum_memory.schemas.thread import ThreadCreate, ThreadRead, ThreadResolve, CommentCreate, CommentRead
 from forum_memory.services import thread_service
 
@@ -70,6 +71,19 @@ def ai_answer(thread_id: UUID, session: Session = Depends(get_db)):
         raise HTTPException(400, str(e))
     except Exception as e:
         raise HTTPException(500, f"AI answer generation failed: {e}")
+
+
+@router.delete("/{thread_id}", response_model=ThreadRead)
+def delete_thread(
+    thread_id: UUID,
+    session: Session = Depends(get_db),
+    admin: User = Depends(require_admin),
+):
+    """仅超级管理员可删除帖子（软删除）。"""
+    try:
+        return thread_service.delete_thread(session, thread_id)
+    except ValueError as e:
+        raise HTTPException(404, str(e))
 
 
 @router.post("/{thread_id}/comments/{comment_id}/upvote", response_model=CommentRead)

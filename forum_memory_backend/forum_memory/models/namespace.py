@@ -20,3 +20,4 @@ class Namespace(UUIDMixin, TimestampMixin, table=True):
     config: dict = Field(default_factory=dict, sa_column=Column(JSON, nullable=False, server_default="{}"))
     dictionary: dict = Field(default_factory=dict, sa_column=Column("dictionary", JSON, nullable=False, server_default="{}"))
     is_active: bool = Field(default=True)
+    es_index_name: str | None = Field(default=None, max_length=200)

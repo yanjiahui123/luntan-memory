@@ -1,10 +1,11 @@
-"""Bulk re-index all active memories from PG to ES (per-namespace).
+"""Backfill ES index names for existing namespaces and re-index memories.
 
-For each namespace with an es_index_name, re-indexes its memories into the
-namespace-specific ES index. Falls back to the global index for namespaces
-without es_index_name.
+For each namespace that doesn't have an es_index_name:
+1. Generate and store the index name
+2. Create the ES index
+3. Re-index all ACTIVE memories into the new per-namespace index
 
-Usage: python -m forum_memory.scripts.reindex_memories
+Usage: python -m forum_memory.scripts.backfill_es_indices
 """
 
 import logging
@@ -12,11 +13,12 @@ import logging
 from sqlmodel import Session, select
 
 from forum_memory.database import engine
-from forum_memory.models.memory import Memory
 from forum_memory.models.namespace import Namespace
+from forum_memory.models.memory import Memory
 from forum_memory.models.enums import MemoryStatus
+from forum_memory.config import get_settings
 from forum_memory.providers import get_provider
-from forum_memory.services.es_service import ensure_index, ensure_index_by_name, bulk_reindex
+from forum_memory.services.es_service import ensure_index_by_name, bulk_reindex
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
@@ -25,40 +27,46 @@ BATCH_SIZE = 50
 
 
 def main():
-    # Ensure default fallback index
-    logger.info("Ensuring default ES index exists...")
-    ensure_index()
-
+    settings = get_settings()
     provider = get_provider()
 
     with Session(engine) as session:
-        # Get all active namespaces
-        namespaces = list(session.exec(
-            select(Namespace).where(Namespace.is_active == True)  # noqa: E712
-        ).all())
+        # Find namespaces without es_index_name
+        stmt = select(Namespace).where(
+            Namespace.is_active == True,  # noqa: E712
+            Namespace.es_index_name == None,  # noqa: E711
+        )
+        namespaces = list(session.exec(stmt).all())
+
+        if not namespaces:
+            logger.info("All namespaces already have ES index names. Nothing to backfill.")
+            return
+
+        logger.info("Found %d namespaces to backfill", len(namespaces))
 
         for ns in namespaces:
-            index_name = ns.es_index_name
-            if index_name:
-                logger.info("Ensuring ES index '%s' for namespace '%s'", index_name, ns.name)
-                try:
-                    ensure_index_by_name(index_name)
-                except Exception:
-                    logger.exception("Failed to create ES index %s, using default", index_name)
-                    index_name = None
+            index_name = f"{settings.es_index_prefix}_{ns.name}"
+            logger.info("Backfilling namespace '%s' -> ES index '%s'", ns.name, index_name)
 
-            stmt = select(Memory).where(
+            # Update DB
+            ns.es_index_name = index_name
+            session.commit()
+
+            # Create ES index
+            try:
+                ensure_index_by_name(index_name)
+            except Exception:
+                logger.exception("Failed to create ES index %s, skipping", index_name)
+                continue
+
+            # Find and re-index memories for this namespace
+            mem_stmt = select(Memory).where(
                 Memory.namespace_id == ns.id,
                 Memory.status == MemoryStatus.ACTIVE,
             )
-            memories = list(session.exec(stmt).all())
+            memories = list(session.exec(mem_stmt).all())
             total = len(memories)
-
-            if total == 0:
-                logger.info("  Namespace '%s': no active memories, skipping", ns.name)
-                continue
-
-            logger.info("  Namespace '%s': %d active memories to reindex", ns.name, total)
+            logger.info("  Found %d active memories to re-index", total)
 
             indexed = 0
             for i in range(0, total, BATCH_SIZE):
@@ -92,7 +100,7 @@ def main():
 
             logger.info("  Namespace '%s' complete: %d/%d memories indexed", ns.name, indexed, total)
 
-    logger.info("Reindex complete")
+    logger.info("Backfill complete")
 
 
 if __name__ == "__main__":

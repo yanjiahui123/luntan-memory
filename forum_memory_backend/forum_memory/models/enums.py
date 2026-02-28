@@ -9,6 +9,7 @@ class ThreadStatus(str, Enum):
     OPEN = "OPEN"
     RESOLVED = "RESOLVED"
     TIMEOUT_CLOSED = "TIMEOUT_CLOSED"
+    DELETED = "DELETED"
 
 
 class ResolvedType(str, Enum):

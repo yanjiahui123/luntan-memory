@@ -1,16 +1,20 @@
-import React, { useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
-import { threadApi, feedbackApi, memoryApi } from '../api/client';
+import React, { useState, useEffect } from 'react';
+import { Link, useParams, useNavigate } from 'react-router-dom';
+import { threadApi, feedbackApi, memoryApi, userApi } from '../api/client';
 import { useAsync } from '../hooks/useAsync';
 import { Loading, ErrorMsg, StatusBadge, Badge, TimeAgo, ConfirmModal, KnowledgeTypeBadge } from '../components/UI';
 
 export default function ThreadDetail() {
   const { threadId } = useParams();
+  const navigate = useNavigate();
   const { data: thread, loading, error, refetch } = useAsync(() => threadApi.get(threadId), [threadId]);
   const { data: comments, refetch: refetchComments } = useAsync(() => threadApi.comments(threadId), [threadId]);
+  const { data: me } = useAsync(() => userApi.me(), []);
   const [replyText, setReplyText] = useState('');
   const [resolveTarget, setResolveTarget] = useState(null);
   const [aiLoading, setAiLoading] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const isSuperAdmin = me?.role === 'super_admin';
 
   async function handleReply() {
     if (!replyText.trim()) return;
@@ -25,6 +29,15 @@ export default function ThreadDetail() {
     refetch();
     refetchComments();
   }
+
+  // Auto-poll for AI answer on new threads (first 2 minutes, every 10s)
+  useEffect(() => {
+    if (thread?.status === 'OPEN' && thread?.comment_count === 0) {
+      const interval = setInterval(() => refetchComments(), 10000);
+      const timeout = setTimeout(() => clearInterval(interval), 120000);
+      return () => { clearInterval(interval); clearTimeout(timeout); };
+    }
+  }, [thread?.id, thread?.comment_count]);
 
   if (loading) return <Loading />;
   if (error) return <ErrorMsg message={error} />;
@@ -47,10 +60,19 @@ export default function ThreadDetail() {
         </div>
         <h1 style={{ fontSize: 18, fontWeight: 700, marginBottom: 10 }}>{thread.title}</h1>
         <div style={{ fontSize: 14, lineHeight: 1.8, color: 'var(--text)', whiteSpace: 'pre-wrap' }}>{thread.content}</div>
-        <div style={{ display: 'flex', gap: 16, marginTop: 14, fontSize: 12, color: 'var(--text-ter)' }}>
+        <div style={{ display: 'flex', gap: 16, marginTop: 14, fontSize: 12, color: 'var(--text-ter)', alignItems: 'center' }}>
           <span>👁 {thread.view_count} 浏览</span>
           <span>💬 {thread.comment_count} 回复</span>
           <TimeAgo date={thread.created_at} />
+          {isSuperAdmin && (
+            <button
+              className="btn-sm btn-danger"
+              style={{ marginLeft: 'auto' }}
+              onClick={() => setShowDeleteConfirm(true)}
+            >
+              删除帖子
+            </button>
+          )}
         </div>
       </div>
 
@@ -73,10 +95,17 @@ export default function ThreadDetail() {
               }
             }}
           >
-            {aiLoading ? '生成中...' : '🤖 AI 回答'}
+            {aiLoading ? '生成中...' : '🤖 重新生成 AI 回答'}
           </button>
         )}
       </div>
+
+      {/* AI auto-answer waiting indicator */}
+      {thread.status === 'OPEN' && (!comments || comments.length === 0) && (
+        <div className="card" style={{ padding: 16, marginBottom: 12, textAlign: 'center', color: 'var(--text-sec)', fontSize: 13 }}>
+          AI 正在分析您的问题，回答将在稍后自动出现...
+        </div>
+      )}
       {comments?.map(c => (
         <CommentCard key={c.id} comment={c} thread={thread} onResolve={() => setResolveTarget(c.id)} />
       ))}
@@ -97,6 +126,18 @@ export default function ThreadDetail() {
         message="确认采纳并关闭帖子？关闭后系统将自动提取知识到记忆库。"
         onConfirm={handleResolve}
         onCancel={() => setResolveTarget(null)}
+      />
+
+      <ConfirmModal
+        open={showDeleteConfirm}
+        title="删除帖子"
+        message="确认删除此帖子？删除后帖子将不再显示在列表中。"
+        onConfirm={async () => {
+          await threadApi.delete(threadId);
+          setShowDeleteConfirm(false);
+          navigate(`/boards/${thread.namespace_id}/threads`);
+        }}
+        onCancel={() => setShowDeleteConfirm(false)}
       />
     </div>
   );

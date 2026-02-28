@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from sqlmodel import Session, select
 
 from forum_memory.models.memory import Memory
+from forum_memory.models.namespace import Namespace
 from forum_memory.models.operation_log import OperationLog
 from forum_memory.models.enums import Authority, MemoryStatus, OperationType, AUDNAction
 from forum_memory.core.quality import compute_quality_score
@@ -17,7 +18,13 @@ from forum_memory.services import es_service
 logger = logging.getLogger(__name__)
 
 
-def _index_to_es(memory: Memory) -> None:
+def _resolve_es_index(session: Session, namespace_id: UUID) -> str | None:
+    """Look up the namespace's ES index name. Returns None if not set."""
+    ns = session.get(Namespace, namespace_id)
+    return ns.es_index_name if ns else None
+
+
+def _index_to_es(memory: Memory, index_name: str | None = None) -> None:
     """Generate embedding and index to ES. Fire-and-forget on failure."""
     try:
         from forum_memory.providers import get_provider
@@ -33,6 +40,7 @@ def _index_to_es(memory: Memory) -> None:
             tags=memory.tags,
             knowledge_type=memory.knowledge_type,
             quality_score=memory.quality_score,
+            index_name=index_name,
         )
     except Exception:
         logger.exception("Failed to index memory %s to ES (non-fatal)", memory.id)
@@ -63,7 +71,8 @@ def create_memory(session: Session, data: MemoryCreate) -> Memory:
     session.commit()
     session.refresh(memory)
     _log_operation(session, memory.id, OperationType.ADD, reason="created")
-    _index_to_es(memory)
+    index_name = _resolve_es_index(session, memory.namespace_id)
+    _index_to_es(memory, index_name=index_name)
     return memory
 
 
@@ -78,7 +87,8 @@ def update_memory(session: Session, memory_id: UUID, data: MemoryUpdate) -> Memo
     session.commit()
     session.refresh(memory)
     _log_operation(session, memory.id, OperationType.UPDATE, reason="manual_update", before=before)
-    _index_to_es(memory)
+    index_name = _resolve_es_index(session, memory.namespace_id)
+    _index_to_es(memory, index_name=index_name)
     return memory
 
 
@@ -86,11 +96,12 @@ def delete_memory(session: Session, memory_id: UUID) -> bool:
     memory = session.get(Memory, memory_id)
     if not memory:
         return False
+    index_name = _resolve_es_index(session, memory.namespace_id)
     memory.status = MemoryStatus.DELETED
     memory.updated_at = datetime.now(timezone.utc)
     session.commit()
     _log_operation(session, memory.id, OperationType.DELETE, reason="deleted")
-    es_service.delete_memory_doc(memory_id)
+    es_service.delete_memory_doc(memory_id, index_name=index_name)
     return True
 
 
@@ -154,7 +165,8 @@ def _apply_update(session: Session, result: AUDNResult) -> Memory | None:
     session.commit()
     session.refresh(memory)
     _log_operation(session, memory.id, OperationType.UPDATE, reason=result.reason, before=before)
-    _index_to_es(memory)
+    index_name = _resolve_es_index(session, memory.namespace_id)
+    _index_to_es(memory, index_name=index_name)
     return memory
 
 
@@ -164,11 +176,12 @@ def _apply_delete(session: Session, result: AUDNResult) -> Memory | None:
     memory = session.get(Memory, UUID(result.target_id))
     if not memory or memory.authority == Authority.LOCKED:
         return None
+    index_name = _resolve_es_index(session, memory.namespace_id)
     memory.status = MemoryStatus.DELETED
     memory.updated_at = datetime.now(timezone.utc)
     session.commit()
     _log_operation(session, memory.id, OperationType.DELETE, reason=result.reason)
-    es_service.delete_memory_doc(UUID(result.target_id))
+    es_service.delete_memory_doc(UUID(result.target_id), index_name=index_name)
     return memory
 
 
@@ -190,11 +203,12 @@ def transition_cold_memories(session: Session, cold_days: int = 180) -> int:
     count = 0
     for m in memories:
         before = _snapshot(m)
+        index_name = _resolve_es_index(session, m.namespace_id)
         m.status = MemoryStatus.COLD
         m.updated_at = datetime.now(timezone.utc)
         session.commit()
         _log_operation(session, m.id, OperationType.ARCHIVE, reason=f"inactive {cold_days}+ days → COLD", before=before)
-        es_service.delete_memory_doc(m.id)  # COLD memories don't participate in search
+        es_service.delete_memory_doc(m.id, index_name=index_name)  # COLD memories don't participate in search
         count += 1
     logger.info("Transitioned %d memories to COLD", count)
     return count
@@ -241,7 +255,8 @@ def bulk_refresh_quality(session: Session) -> int:
         if abs(new_score - old_score) > 0.001:
             m.quality_score = new_score
             session.commit()
-            _index_to_es(m)  # sync updated score to ES
+            index_name = _resolve_es_index(session, m.namespace_id)
+            _index_to_es(m, index_name=index_name)  # sync updated score to ES
             count += 1
     logger.info("Refreshed quality for %d memories", count)
     return count

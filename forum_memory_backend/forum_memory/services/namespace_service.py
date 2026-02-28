@@ -1,5 +1,6 @@
 """Namespace (board) service — sync."""
 
+import logging
 from uuid import UUID
 
 from sqlmodel import Session, select, func
@@ -9,6 +10,9 @@ from forum_memory.models.thread import Thread
 from forum_memory.models.memory import Memory
 from forum_memory.models.enums import ThreadStatus, Authority, ResolvedType
 from forum_memory.schemas.namespace import NamespaceCreate, NamespaceUpdate, NamespaceStats
+from forum_memory.config import get_settings
+
+logger = logging.getLogger(__name__)
 
 
 def list_namespaces(session: Session) -> list[Namespace]:
@@ -22,16 +26,25 @@ def get_namespace(session: Session, ns_id: UUID) -> Namespace | None:
 
 
 def create_namespace(session: Session, data: NamespaceCreate, owner_id: UUID) -> Namespace:
+    settings = get_settings()
+    index_name = f"{settings.es_index_prefix}_{data.name}"
     ns = Namespace(
         name=data.name,
         display_name=data.display_name,
         description=data.description,
         access_mode=data.access_mode,
         owner_id=owner_id,
+        es_index_name=index_name,
     )
     session.add(ns)
     session.commit()
     session.refresh(ns)
+    # Create the ES index for this namespace
+    try:
+        from forum_memory.services.es_service import ensure_index_by_name
+        ensure_index_by_name(index_name)
+    except Exception:
+        logger.warning("Failed to create ES index %s (non-fatal)", index_name)
     return ns
 
 
@@ -42,6 +55,17 @@ def update_namespace(session: Session, ns_id: UUID, data: NamespaceUpdate) -> Na
     update_dict = data.model_dump(exclude_unset=True)
     for key, val in update_dict.items():
         setattr(ns, key, val)
+    session.commit()
+    session.refresh(ns)
+    return ns
+
+
+def delete_namespace(session: Session, ns_id: UUID) -> Namespace:
+    """Soft-delete a namespace (set is_active=False)."""
+    ns = session.get(Namespace, ns_id)
+    if not ns:
+        raise ValueError("Namespace not found")
+    ns.is_active = False
     session.commit()
     session.refresh(ns)
     return ns
