@@ -18,7 +18,7 @@ router = APIRouter(prefix="/namespaces", tags=["namespaces"])
 
 
 class ModeratorAdd(BaseModel):
-    user_id: UUID
+    employee_id: str
 
 
 @router.get("", response_model=list[NamespaceRead])
@@ -125,19 +125,25 @@ def add_moderator(
     session: Session = Depends(get_db),
     admin: User = Depends(require_admin),
 ):
-    """仅超级管理员可指派板块管理员。"""
+    """仅超级管理员可指派板块管理员。通过工号查找用户。"""
     ns = namespace_service.get_namespace(session, ns_id)
     if not ns:
-        raise HTTPException(404, "Namespace not found")
+        raise HTTPException(404, "板块不存在")
 
-    target_user = session.get(User, data.user_id)
+    # 通过工号查找用户
+    target_user = session.exec(
+        select(User).where(User.employee_id == data.employee_id.strip(), User.is_active == True)
+    ).first()
     if not target_user:
-        raise HTTPException(404, "用户不存在")
+        raise HTTPException(404, f"工号 {data.employee_id} 不存在或已停用")
+
+    if target_user.role == SystemRole.SUPER_ADMIN:
+        raise HTTPException(400, "超级管理员无需指派为板块管理员")
 
     # Check duplicate
     existing = session.exec(
         select(NamespaceModerator).where(
-            NamespaceModerator.user_id == data.user_id,
+            NamespaceModerator.user_id == target_user.id,
             NamespaceModerator.namespace_id == ns_id,
         )
     ).first()
@@ -149,7 +155,7 @@ def add_moderator(
         target_user.role = SystemRole.BOARD_ADMIN
         session.add(target_user)
 
-    mod = NamespaceModerator(user_id=data.user_id, namespace_id=ns_id)
+    mod = NamespaceModerator(user_id=target_user.id, namespace_id=ns_id)
     session.add(mod)
     session.commit()
     session.refresh(target_user)

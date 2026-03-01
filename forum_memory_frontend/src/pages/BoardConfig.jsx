@@ -232,17 +232,22 @@ function KBConfigTab({ board, onUpdate }) {
 
 function ModeratorsTab({ boardId }) {
   const { data: moderators, loading, refetch } = useAsync(() => namespaceApi.listModerators(boardId), [boardId]);
-  const { data: allUsers } = useAsync(() => userApi.list());
-  const [selectedUserId, setSelectedUserId] = useState('');
+  const [employeeId, setEmployeeId] = useState('');
+  const [adding, setAdding] = useState(false);
+  const [errMsg, setErrMsg] = useState('');
 
   async function handleAdd() {
-    if (!selectedUserId) return;
+    if (!employeeId.trim()) return;
+    setAdding(true);
+    setErrMsg('');
     try {
-      await namespaceApi.addModerator(boardId, selectedUserId);
-      setSelectedUserId('');
+      await namespaceApi.addModerator(boardId, employeeId.trim());
+      setEmployeeId('');
       refetch();
     } catch (err) {
-      alert(err.message);
+      setErrMsg(err.message);
+    } finally {
+      setAdding(false);
     }
   }
 
@@ -257,13 +262,10 @@ function ModeratorsTab({ boardId }) {
 
   if (loading) return <Loading />;
 
-  const modIds = new Set(moderators?.map(m => m.id) || []);
-  const availableUsers = allUsers?.filter(u => !modIds.has(u.id) && u.role !== 'super_admin') || [];
-
   return (
     <div className="card" style={{ padding: 20 }}>
       <p style={{ fontSize: 13, color: 'var(--text-sec)', marginBottom: 16 }}>
-        管理此板块的管理员，板块管理员可以修改板块配置、管理帖子和记忆。
+        管理此板块的管理员，板块管理员可以修改板块配置、管理帖子和记忆。输入用户工号即可添加为板块管理员。
       </p>
 
       {moderators?.length > 0 ? (
@@ -283,15 +285,19 @@ function ModeratorsTab({ boardId }) {
         <p style={{ color: 'var(--text-ter)', fontSize: 13, marginBottom: 16 }}>暂无板块管理员</p>
       )}
 
-      <div style={{ display: 'flex', gap: 8 }}>
-        <select value={selectedUserId} onChange={e => setSelectedUserId(e.target.value)} style={{ flex: 1 }}>
-          <option value="">选择用户...</option>
-          {availableUsers.map(u => (
-            <option key={u.id} value={u.id}>{u.display_name} ({u.employee_id})</option>
-          ))}
-        </select>
-        <button className="btn-primary" onClick={handleAdd} disabled={!selectedUserId}>添加</button>
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+        <input
+          placeholder="输入用户工号"
+          value={employeeId}
+          onChange={e => { setEmployeeId(e.target.value); setErrMsg(''); }}
+          onKeyDown={e => e.key === 'Enter' && handleAdd()}
+          style={{ flex: 1 }}
+        />
+        <button className="btn-primary" onClick={handleAdd} disabled={!employeeId.trim() || adding}>
+          {adding ? '添加中...' : '添加'}
+        </button>
       </div>
+      {errMsg && <p style={{ color: 'var(--danger)', fontSize: 13, marginTop: 8 }}>{errMsg}</p>}
     </div>
   );
 }

@@ -54,7 +54,7 @@ export const namespaceApi = {
   aggregateStats: () => get('/namespaces/stats/aggregate'),
   updateDict: (id, entries) => put(`/namespaces/${id}/dictionary`, { entries }),
   listModerators: (id) => get(`/namespaces/${id}/moderators`),
-  addModerator: (id, userId) => post(`/namespaces/${id}/moderators`, { user_id: userId }),
+  addModerator: (id, employeeId) => post(`/namespaces/${id}/moderators`, { employee_id: employeeId }),
   removeModerator: (id, userId) => del(`/namespaces/${id}/moderators/${userId}`),
 };
 
