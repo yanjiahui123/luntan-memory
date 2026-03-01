@@ -1,14 +1,17 @@
 """Thread API routes — sync."""
 
+import logging
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlmodel import Session
 
-from forum_memory.api.deps import get_db, get_current_user_id, require_admin
+from forum_memory.api.deps import get_db, get_current_user, get_current_user_id, check_board_permission
 from forum_memory.models.user import User
 from forum_memory.schemas.thread import ThreadCreate, ThreadRead, ThreadResolve, CommentCreate, CommentRead
 from forum_memory.services import thread_service
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/threads", tags=["threads"])
 
@@ -34,7 +37,13 @@ def get_thread(thread_id: UUID, session: Session = Depends(get_db)):
 
 @router.post("", response_model=ThreadRead, status_code=201)
 def create_thread(data: ThreadCreate, session: Session = Depends(get_db), user_id: UUID = Depends(get_current_user_id)):
-    return thread_service.create_thread(session, data, user_id)
+    thread = thread_service.create_thread(session, data, user_id)
+    # 同步生成 AI 回答，失败不影响帖子创建
+    try:
+        thread_service.generate_ai_answer(session, thread.id)
+    except Exception:
+        logger.exception("Auto AI answer failed for thread %s", thread.id)
+    return thread
 
 
 @router.post("/{thread_id}/resolve", response_model=ThreadRead)
@@ -73,17 +82,18 @@ def ai_answer(thread_id: UUID, session: Session = Depends(get_db)):
         raise HTTPException(500, f"AI answer generation failed: {e}")
 
 
-@router.delete("/{thread_id}", response_model=ThreadRead)
+@router.delete("/{thread_id}", status_code=204)
 def delete_thread(
     thread_id: UUID,
     session: Session = Depends(get_db),
-    admin: User = Depends(require_admin),
+    user: User = Depends(get_current_user),
 ):
-    """仅超级管理员可删除帖子（软删除）。"""
-    try:
-        return thread_service.delete_thread(session, thread_id)
-    except ValueError as e:
-        raise HTTPException(404, str(e))
+    """板块管理员或超级管理员可删除帖子。"""
+    thread = thread_service.get_thread(session, thread_id)
+    if not thread:
+        raise HTTPException(404, "Thread not found")
+    check_board_permission(thread.namespace_id, session, user)
+    thread_service.delete_thread(session, thread_id)
 
 
 @router.post("/{thread_id}/comments/{comment_id}/upvote", response_model=CommentRead)

@@ -7,6 +7,7 @@ from sqlmodel import Session, select
 
 from forum_memory.database import get_session
 from forum_memory.models.user import User
+from forum_memory.models.namespace_moderator import NamespaceModerator
 from forum_memory.models.enums import SystemRole
 
 
@@ -47,3 +48,21 @@ def require_admin(user: User = Depends(get_current_user)) -> User:
     if user.role != SystemRole.SUPER_ADMIN:
         raise HTTPException(403, "需要超级管理员权限")
     return user
+
+
+def check_board_permission(
+    ns_id: UUID,
+    session: Session,
+    user: User,
+) -> None:
+    """检查用户是否有板块管理权限（超级管理员或该板块的管理员）。"""
+    if user.role == SystemRole.SUPER_ADMIN:
+        return
+    if user.role == SystemRole.BOARD_ADMIN:
+        stmt = select(NamespaceModerator).where(
+            NamespaceModerator.user_id == user.id,
+            NamespaceModerator.namespace_id == ns_id,
+        )
+        if session.exec(stmt).first():
+            return
+    raise HTTPException(403, "需要板块管理权限")

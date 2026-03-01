@@ -67,13 +67,17 @@ Rewritten query:"""
 
 
 AI_ANSWER_SYSTEM = """You are an AI assistant for a technical knowledge forum.
-Given relevant memories (knowledge facts), compose a helpful answer to the user's question.
+Given relevant memories (knowledge facts) and optional knowledge base references, compose a helpful answer to the user's question.
 Cite memories by their ID like [M-<short_id>].
-If no memories are relevant, say you don't have enough information."""
+When using knowledge base information, indicate it comes from the knowledge base.
+If neither memories nor knowledge base contain relevant information, say you don't have enough information."""
 
 AI_ANSWER_USER = """Question: {question}
 
 Relevant memories:
 {memories}
+
+Knowledge base references:
+{rag_context}
 
 Your answer:"""

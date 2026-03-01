@@ -37,6 +37,7 @@ class NamespaceStats(BaseModel):
     total_memories: int = 0
     locked_memories: int = 0
     ai_resolve_rate: float = 0.0
+    pending_count: int = 0
 
 
 class DictionaryUpdate(BaseModel):

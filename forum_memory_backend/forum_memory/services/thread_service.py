@@ -94,7 +94,7 @@ def timeout_close_thread(session: Session, thread_id: UUID) -> Thread:
 
 
 def delete_thread(session: Session, thread_id: UUID) -> Thread:
-    """Soft-delete a thread (admin only)."""
+    """Soft-delete a thread."""
     thread = session.get(Thread, thread_id)
     if not thread:
         raise ValueError("Thread not found")
@@ -154,17 +154,21 @@ def upvote_comment(session: Session, comment_id: UUID) -> Comment:
 
 
 def generate_ai_answer(session: Session, thread_id: UUID) -> Comment:
-    """Search memories and generate an AI answer for a thread."""
+    """Search memories, query RAG if configured, and generate an AI answer for a thread."""
     from forum_memory.services.search_service import search_memories
+    from forum_memory.services.rag_service import query_rag
+    from forum_memory.models.namespace import Namespace
     from forum_memory.providers import get_provider
 
     thread = session.get(Thread, thread_id)
     if not thread:
         raise ValueError("Thread not found")
 
+    question = f"{thread.title}\n{thread.content}"
+
     # Search related memories
     search_req = MemorySearchRequest(
-        query=f"{thread.title}\n{thread.content}",
+        query=question,
         namespace_id=thread.namespace_id,
         top_k=5,
     )
@@ -181,13 +185,24 @@ def generate_ai_answer(session: Session, thread_id: UUID) -> Comment:
         memories_text = "(no relevant memories found)"
         cited_ids = []
 
+    # Query RAG knowledge base if configured
+    rag_context = "(no knowledge base configured)"
+    namespace = session.get(Namespace, thread.namespace_id)
+    if namespace:
+        kb_sn_list = (namespace.config or {}).get("kb_sn_list", [])
+        if kb_sn_list:
+            rag_result = query_rag(kb_sn_list, question)
+            if rag_result:
+                rag_context = rag_result
+
     # Generate answer via LLM
     provider = get_provider()
     answer = provider.complete([
         {"role": "system", "content": AI_ANSWER_SYSTEM},
         {"role": "user", "content": AI_ANSWER_USER.format(
-            question=f"{thread.title}\n{thread.content}",
+            question=question,
             memories=memories_text,
+            rag_context=rag_context,
         )},
     ])
 

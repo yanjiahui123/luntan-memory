@@ -16,8 +16,8 @@ const ADMIN_NAV = [
 export default function Layout() {
   const location = useLocation();
   const navigate = useNavigate();
-  const isAdmin = location.pathname.startsWith('/admin');
-  const nav = isAdmin ? ADMIN_NAV : FORUM_NAV;
+  const isAdminPage = location.pathname.startsWith('/admin');
+  const nav = isAdminPage ? ADMIN_NAV : FORUM_NAV;
 
   const [currentUser, setCurrentUser] = useState(null);
   const [showUserMenu, setShowUserMenu] = useState(false);
@@ -33,27 +33,38 @@ export default function Layout() {
     if (!inputId.trim()) return;
     setEmployeeId(inputId.trim());
     setShowUserMenu(false);
-    // 重新加载用户信息
     userApi.me()
-      .then(u => { setCurrentUser(u); window.location.reload(); })
+      .then(u => {
+        setCurrentUser(u);
+        const hasAdminRole = u.role === 'super_admin' || u.role === 'board_admin';
+        if (!hasAdminRole && location.pathname.startsWith('/admin')) {
+          window.location.href = '/boards';
+        } else {
+          window.location.reload();
+        }
+      })
       .catch(() => { setCurrentUser(null); alert('工号不存在或未注册'); });
   }
 
   const displayName = currentUser?.display_name || '未登录';
   const initial = displayName[0] || '?';
   const isSuperAdmin = currentUser?.role === 'super_admin';
+  const isAdmin = isSuperAdmin || currentUser?.role === 'board_admin';
+
+  const roleLabel = isSuperAdmin ? '超级管理员' : currentUser?.role === 'board_admin' ? '板块管理员' : '普通用户';
+  const roleColor = isAdmin ? 'var(--green)' : 'var(--text-ter)';
 
   return (
     <>
       {/* ── Topbar ─────────────────────────────── */}
       <header className="topbar">
-        <Link to="/boards" className="topbar__logo" style={{ textDecoration: 'none' }}>💡 知识论坛</Link>
+        <Link to="/boards" className="topbar__logo" style={{ textDecoration: 'none' }}>知识论坛</Link>
         <div style={{ flex: 1 }} />
         <input className="topbar__search" placeholder="搜索问题或知识..." onKeyDown={e => { if (e.key === 'Enter' && e.target.value) navigate(`/search?q=${encodeURIComponent(e.target.value)}`); }} />
         <nav className="topbar__nav">
-          <button className={`topbar__link ${!isAdmin ? 'topbar__link--active' : ''}`} onClick={() => navigate('/boards')}>论坛</button>
-          {isSuperAdmin && (
-            <button className={`topbar__link ${isAdmin ? 'topbar__link--active' : ''}`} onClick={() => navigate('/admin')}>管理后台</button>
+          <button className={`topbar__link ${!isAdminPage ? 'topbar__link--active' : ''}`} onClick={() => navigate('/boards')}>论坛</button>
+          {isAdmin && (
+            <button className={`topbar__link ${isAdminPage ? 'topbar__link--active' : ''}`} onClick={() => navigate('/admin')}>管理后台</button>
           )}
         </nav>
 
@@ -61,7 +72,7 @@ export default function Layout() {
         <div style={{ position: 'relative' }}>
           <div
             className="topbar__avatar"
-            style={{ cursor: 'pointer', background: isSuperAdmin ? 'var(--green)' : 'var(--accent)' }}
+            style={{ cursor: 'pointer', background: isAdmin ? 'var(--green)' : 'var(--accent)' }}
             onClick={() => setShowUserMenu(!showUserMenu)}
             title={currentUser ? `${displayName} (${currentUser.employee_id})` : '未登录'}
           >
@@ -79,8 +90,8 @@ export default function Layout() {
                 <div style={{ marginBottom: 12, paddingBottom: 10, borderBottom: '1px solid var(--border)' }}>
                   <div style={{ fontWeight: 700, fontSize: 14 }}>{displayName}</div>
                   <div style={{ fontSize: 12, color: 'var(--text-sec)' }}>工号: {currentUser.employee_id}</div>
-                  <div style={{ fontSize: 12, color: isSuperAdmin ? 'var(--green)' : 'var(--text-ter)' }}>
-                    {isSuperAdmin ? '🛡 超级管理员' : '👤 普通用户'}
+                  <div style={{ fontSize: 12, color: roleColor }}>
+                    {roleLabel}
                   </div>
                 </div>
               )}
@@ -102,7 +113,7 @@ export default function Layout() {
 
       {/* ── Sidebar ────────────────────────────── */}
       <aside className="sidebar">
-        <div className="sidebar__section">{isAdmin ? '管理菜单' : '导航'}</div>
+        <div className="sidebar__section">{isAdminPage ? '管理菜单' : '导航'}</div>
         {nav.map(item => (
           <Link key={item.path} to={item.path} className={`sidebar__item ${location.pathname === item.path ? 'sidebar__item--active' : ''}`}>
             {item.icon} {item.label}

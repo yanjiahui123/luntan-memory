@@ -13,6 +13,7 @@ dependencies = [
     "pydantic-settings>=2.1",
     "openai>=1.12",
     "elasticsearch>=8.9,<9.0",
+    "requests>=2.31",
     "dagster>=1.6",
     "dagster-webserver>=1.6",
 ]

@@ -47,6 +47,10 @@ class Settings(BaseSettings):
     reranker_top_k: int = 5
     recall_top_k: int = 50
 
+    # RAG knowledge base
+    rag_base_url: str = ""
+    rag_timeout: int = 30
+
     # Quality thresholds
     wrong_feedback_threshold: int = 3
     promote_useful_ratio: float = 0.8

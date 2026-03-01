@@ -51,7 +51,11 @@ export const namespaceApi = {
   update: (id, data) => put(`/namespaces/${id}`, data),
   delete: (id) => del(`/namespaces/${id}`),
   stats: (id) => get(`/namespaces/${id}/stats`),
+  aggregateStats: () => get('/namespaces/stats/aggregate'),
   updateDict: (id, entries) => put(`/namespaces/${id}/dictionary`, { entries }),
+  listModerators: (id) => get(`/namespaces/${id}/moderators`),
+  addModerator: (id, userId) => post(`/namespaces/${id}/moderators`, { user_id: userId }),
+  removeModerator: (id, userId) => del(`/namespaces/${id}/moderators/${userId}`),
 };
 
 // ── Threads ──────────────────────────────────

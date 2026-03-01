@@ -1,6 +1,7 @@
 import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import Layout from './components/Layout';
+import AdminGuard from './components/AdminGuard';
 
 import BoardList from './pages/BoardList';
 import ThreadList from './pages/ThreadList';
@@ -26,12 +27,14 @@ export default function App() {
           <Route path="/threads/:threadId" element={<ThreadDetail />} />
           <Route path="/search" element={<SearchResults />} />
 
-          {/* Admin routes */}
-          <Route path="/admin" element={<AdminDashboard />} />
-          <Route path="/admin/memories" element={<MemoryList />} />
-          <Route path="/admin/memories/:memoryId" element={<MemoryDetail />} />
-          <Route path="/admin/pending" element={<PendingCenter />} />
-          <Route path="/admin/settings" element={<BoardConfig />} />
+          {/* Admin routes — protected by AdminGuard */}
+          <Route element={<AdminGuard />}>
+            <Route path="/admin" element={<AdminDashboard />} />
+            <Route path="/admin/memories" element={<MemoryList />} />
+            <Route path="/admin/memories/:memoryId" element={<MemoryDetail />} />
+            <Route path="/admin/pending" element={<PendingCenter />} />
+            <Route path="/admin/settings" element={<BoardConfig />} />
+          </Route>
         </Route>
       </Routes>
     </BrowserRouter>

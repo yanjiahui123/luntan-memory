@@ -1,15 +1,17 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
-import { namespaceApi, memoryApi } from '../api/client';
+import { namespaceApi } from '../api/client';
 import { useAsync } from '../hooks/useAsync';
 import { Loading, ErrorMsg } from '../components/UI';
 
 export default function AdminDashboard() {
   const { data: boards, loading, error } = useAsync(() => namespaceApi.list());
-  const { data: memories } = useAsync(() => memoryApi.list({ page: 1, size: 1 }));
+  const { data: stats } = useAsync(() => namespaceApi.aggregateStats());
 
   if (loading) return <Loading />;
   if (error) return <ErrorMsg message={error} />;
+
+  const aiRate = stats ? `${(stats.ai_resolve_rate * 100).toFixed(1)}%` : '--%';
 
   return (
     <div>
@@ -18,9 +20,9 @@ export default function AdminDashboard() {
       {/* Stat cards */}
       <div className="stat-grid">
         <StatCard label="板块总数" value={boards?.length || 0} sub="全部板块" color="var(--accent)" />
-        <StatCard label="AI 解决率" value="--%" sub="需要统计数据" color="var(--green)" />
-        <StatCard label="待处理事项" value="--" sub="查看详情" color="var(--red)" link="/admin/pending" />
-        <StatCard label="记忆总数" value={memories?.length || '--'} sub="全部记忆" color="var(--purple)" link="/admin/memories" />
+        <StatCard label="AI 解决率" value={aiRate} sub={stats ? `${stats.resolved_threads} 已解决` : '加载中'} color="var(--green)" />
+        <StatCard label="待处理事项" value={stats?.pending_count ?? '--'} sub="查看详情" color="var(--red)" link="/admin/pending" />
+        <StatCard label="记忆总数" value={stats?.total_memories ?? '--'} sub={stats ? `${stats.locked_memories} 已锁定` : '全部记忆'} color="var(--purple)" link="/admin/memories" />
       </div>
 
       {/* Two columns */}
@@ -42,21 +44,21 @@ export default function AdminDashboard() {
 
         {/* Quick actions */}
         <div className="card" style={{ padding: 16 }}>
-          <h3 style={{ fontSize: 14, fontWeight: 700, marginBottom: 12 }}>⚡ 快速操作</h3>
+          <h3 style={{ fontSize: 14, fontWeight: 700, marginBottom: 12 }}>快速操作</h3>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             <Link to="/admin/pending" style={{ textDecoration: 'none' }}>
               <div style={{ padding: 12, borderRadius: 'var(--radius)', border: '1px solid var(--border)', fontSize: 13, display: 'flex', justifyContent: 'space-between' }}>
-                <span>📋 处理待审事项</span> <span>→</span>
+                <span>处理待审事项</span> <span>&rarr;</span>
               </div>
             </Link>
             <Link to="/admin/memories" style={{ textDecoration: 'none' }}>
               <div style={{ padding: 12, borderRadius: 'var(--radius)', border: '1px solid var(--border)', fontSize: 13, display: 'flex', justifyContent: 'space-between' }}>
-                <span>🧠 管理记忆库</span> <span>→</span>
+                <span>管理记忆库</span> <span>&rarr;</span>
               </div>
             </Link>
             <Link to="/admin/settings" style={{ textDecoration: 'none' }}>
               <div style={{ padding: 12, borderRadius: 'var(--radius)', border: '1px solid var(--border)', fontSize: 13, display: 'flex', justifyContent: 'space-between' }}>
-                <span>⚙️ 板块配置</span> <span>→</span>
+                <span>板块配置</span> <span>&rarr;</span>
               </div>
             </Link>
           </div>

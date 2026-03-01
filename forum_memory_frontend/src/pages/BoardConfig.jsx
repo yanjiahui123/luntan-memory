@@ -1,25 +1,29 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { namespaceApi } from '../api/client';
+import { namespaceApi, userApi } from '../api/client';
 import { useAsync } from '../hooks/useAsync';
 import { Loading, ErrorMsg, EmptyState, ConfirmModal } from '../components/UI';
 
 export default function BoardConfig() {
   const { data: boards, loading, error } = useAsync(() => namespaceApi.list());
   const [selectedId, setSelectedId] = useState(null);
+  const [currentUser, setCurrentUser] = useState(null);
 
-  // Auto-select first board
+  useEffect(() => {
+    userApi.me().then(setCurrentUser).catch(() => {});
+  }, []);
+
   const boardId = selectedId || boards?.[0]?.id;
+  const isSuperAdmin = currentUser?.role === 'super_admin';
 
   if (loading) return <Loading />;
   if (error) return <ErrorMsg message={error} />;
-  if (!boards?.length) return <EmptyState icon="📂" message="还没有板块" />;
+  if (!boards?.length) return <EmptyState icon="" message="还没有板块" />;
 
   return (
     <div>
       <h1 className="page-title" style={{ marginBottom: 20 }}>板块配置</h1>
 
-      {/* Board selector */}
       <div style={{ marginBottom: 20 }}>
         <label style={{ fontSize: 13, fontWeight: 600, marginRight: 8 }}>选择板块:</label>
         <select value={boardId || ''} onChange={e => setSelectedId(e.target.value)} style={{ width: 'auto', minWidth: 200 }}>
@@ -27,12 +31,12 @@ export default function BoardConfig() {
         </select>
       </div>
 
-      {boardId && <BoardConfigPanel boardId={boardId} />}
+      {boardId && <BoardConfigPanel boardId={boardId} isSuperAdmin={isSuperAdmin} />}
     </div>
   );
 }
 
-function BoardConfigPanel({ boardId }) {
+function BoardConfigPanel({ boardId, isSuperAdmin }) {
   const { data: board, loading, refetch } = useAsync(() => namespaceApi.get(boardId), [boardId]);
   const [tab, setTab] = useState('info');
 
@@ -41,7 +45,11 @@ function BoardConfigPanel({ boardId }) {
   const tabs = [
     { key: 'info', label: '基本信息' },
     { key: 'dict', label: '黑话字典' },
+    { key: 'kb', label: '知识库配置' },
   ];
+  if (isSuperAdmin) {
+    tabs.push({ key: 'moderators', label: '板块管理员' });
+  }
 
   return (
     <div>
@@ -55,6 +63,8 @@ function BoardConfigPanel({ boardId }) {
 
       {tab === 'info' && <InfoTab board={board} onUpdate={refetch} />}
       {tab === 'dict' && <DictTab board={board} onUpdate={refetch} />}
+      {tab === 'kb' && <KBConfigTab board={board} onUpdate={refetch} />}
+      {tab === 'moderators' && isSuperAdmin && <ModeratorsTab boardId={boardId} />}
     </div>
   );
 }
@@ -128,7 +138,6 @@ function DictTab({ board, onUpdate }) {
   }
 
   async function handleRemove(key) {
-    // Remove by setting to empty (backend should handle)
     const updated = { ...dict };
     delete updated[key];
     await namespaceApi.update(board.id, { config: { ...board.config, dictionary: updated } });
@@ -162,6 +171,126 @@ function DictTab({ board, onUpdate }) {
         <input placeholder="黑话" value={newSlang} onChange={e => setNewSlang(e.target.value)} style={{ flex: 1 }} />
         <input placeholder="标准名称" value={newCanonical} onChange={e => setNewCanonical(e.target.value)} style={{ flex: 1 }} />
         <button className="btn-primary" onClick={handleAdd}>添加</button>
+      </div>
+    </div>
+  );
+}
+
+function KBConfigTab({ board, onUpdate }) {
+  const kbList = board.config?.kb_sn_list || [];
+  const [newSn, setNewSn] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  async function handleAdd() {
+    if (!newSn.trim()) return;
+    const updated = [...kbList, newSn.trim()];
+    setSaving(true);
+    try {
+      await namespaceApi.update(board.id, { config: { ...board.config, kb_sn_list: updated } });
+      setNewSn('');
+      onUpdate();
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleRemove(index) {
+    const updated = kbList.filter((_, i) => i !== index);
+    await namespaceApi.update(board.id, { config: { ...board.config, kb_sn_list: updated } });
+    onUpdate();
+  }
+
+  return (
+    <div className="card" style={{ padding: 20 }}>
+      <p style={{ fontSize: 13, color: 'var(--text-sec)', marginBottom: 16 }}>
+        配置外部知识库序列号，AI 回答时会结合知识库检索结果生成更准确的回答。
+      </p>
+
+      {kbList.length > 0 ? (
+        <table className="dict-table" style={{ marginBottom: 16 }}>
+          <thead><tr><th>知识库序列号</th><th style={{ width: 60 }}>操作</th></tr></thead>
+          <tbody>
+            {kbList.map((sn, i) => (
+              <tr key={i}>
+                <td style={{ fontFamily: 'monospace', fontSize: 13 }}>{sn}</td>
+                <td><button className="btn-danger btn-sm" onClick={() => handleRemove(i)}>删除</button></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      ) : (
+        <p style={{ color: 'var(--text-ter)', fontSize: 13, marginBottom: 16 }}>暂未配置知识库</p>
+      )}
+
+      <div style={{ display: 'flex', gap: 8 }}>
+        <input placeholder="输入知识库序列号" value={newSn} onChange={e => setNewSn(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleAdd()} style={{ flex: 1 }} />
+        <button className="btn-primary" onClick={handleAdd} disabled={saving}>{saving ? '添加中...' : '添加'}</button>
+      </div>
+    </div>
+  );
+}
+
+function ModeratorsTab({ boardId }) {
+  const { data: moderators, loading, refetch } = useAsync(() => namespaceApi.listModerators(boardId), [boardId]);
+  const { data: allUsers } = useAsync(() => userApi.list());
+  const [selectedUserId, setSelectedUserId] = useState('');
+
+  async function handleAdd() {
+    if (!selectedUserId) return;
+    try {
+      await namespaceApi.addModerator(boardId, selectedUserId);
+      setSelectedUserId('');
+      refetch();
+    } catch (err) {
+      alert(err.message);
+    }
+  }
+
+  async function handleRemove(userId) {
+    try {
+      await namespaceApi.removeModerator(boardId, userId);
+      refetch();
+    } catch (err) {
+      alert(err.message);
+    }
+  }
+
+  if (loading) return <Loading />;
+
+  const modIds = new Set(moderators?.map(m => m.id) || []);
+  const availableUsers = allUsers?.filter(u => !modIds.has(u.id) && u.role !== 'super_admin') || [];
+
+  return (
+    <div className="card" style={{ padding: 20 }}>
+      <p style={{ fontSize: 13, color: 'var(--text-sec)', marginBottom: 16 }}>
+        管理此板块的管理员，板块管理员可以修改板块配置、管理帖子和记忆。
+      </p>
+
+      {moderators?.length > 0 ? (
+        <table className="dict-table" style={{ marginBottom: 16 }}>
+          <thead><tr><th>姓名</th><th>工号</th><th style={{ width: 60 }}>操作</th></tr></thead>
+          <tbody>
+            {moderators.map(m => (
+              <tr key={m.id}>
+                <td style={{ fontWeight: 600 }}>{m.display_name}</td>
+                <td style={{ color: 'var(--text-sec)' }}>{m.employee_id}</td>
+                <td><button className="btn-danger btn-sm" onClick={() => handleRemove(m.id)}>移除</button></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      ) : (
+        <p style={{ color: 'var(--text-ter)', fontSize: 13, marginBottom: 16 }}>暂无板块管理员</p>
+      )}
+
+      <div style={{ display: 'flex', gap: 8 }}>
+        <select value={selectedUserId} onChange={e => setSelectedUserId(e.target.value)} style={{ flex: 1 }}>
+          <option value="">选择用户...</option>
+          {availableUsers.map(u => (
+            <option key={u.id} value={u.id}>{u.display_name} ({u.employee_id})</option>
+          ))}
+        </select>
+        <button className="btn-primary" onClick={handleAdd} disabled={!selectedUserId}>添加</button>
       </div>
     </div>
   );

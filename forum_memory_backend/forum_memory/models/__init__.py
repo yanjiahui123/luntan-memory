@@ -2,6 +2,7 @@
 
 from forum_memory.models.user import User
 from forum_memory.models.namespace import Namespace
+from forum_memory.models.namespace_moderator import NamespaceModerator
 from forum_memory.models.thread import Thread, Comment
 from forum_memory.models.memory import Memory
 from forum_memory.models.extraction import ExtractionRecord
@@ -10,7 +11,7 @@ from forum_memory.models.operation_log import OperationLog
 from forum_memory.models.event import DomainEvent
 
 __all__ = [
-    "User", "Namespace", "Thread", "Comment",
+    "User", "Namespace", "NamespaceModerator", "Thread", "Comment",
     "Memory", "ExtractionRecord", "Feedback",
     "OperationLog", "DomainEvent",
 ]

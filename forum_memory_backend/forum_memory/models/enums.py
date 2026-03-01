@@ -60,6 +60,7 @@ ROLE_WEIGHT: dict[UserRole, float] = {
 class SystemRole(str, Enum):
     """System-level user role for access control."""
     SUPER_ADMIN = "super_admin"
+    BOARD_ADMIN = "board_admin"
     USER = "user"
 
 

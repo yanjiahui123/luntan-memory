@@ -10,7 +10,7 @@ from sqlmodel import Session, select, func
 from forum_memory.models.namespace import Namespace
 from forum_memory.models.thread import Thread
 from forum_memory.models.memory import Memory
-from forum_memory.models.enums import ThreadStatus, Authority, ResolvedType
+from forum_memory.models.enums import ThreadStatus, Authority, ResolvedType, MemoryStatus
 from forum_memory.schemas.namespace import NamespaceCreate, NamespaceUpdate, NamespaceStats
 from forum_memory.config import get_settings
 
@@ -131,10 +131,57 @@ def _count_threads(session: Session, ns_id: UUID, status: ThreadStatus | None) -
 
 
 def _count_memories(session: Session, ns_id: UUID, authority: Authority | None) -> int:
-    stmt = select(func.count()).select_from(Memory).where(Memory.namespace_id == ns_id)
+    stmt = (
+        select(func.count()).select_from(Memory)
+        .where(Memory.namespace_id == ns_id)
+        .where(Memory.status != MemoryStatus.DELETED)
+    )
     if authority:
         stmt = stmt.where(Memory.authority == authority)
     return session.exec(stmt).one()
+
+
+def get_aggregate_stats(session: Session) -> NamespaceStats:
+    """Compute aggregate stats across all active namespaces."""
+    total_threads = session.exec(select(func.count()).select_from(Thread)).one()
+    open_threads = session.exec(
+        select(func.count()).select_from(Thread).where(Thread.status == ThreadStatus.OPEN)
+    ).one()
+    resolved_threads = session.exec(
+        select(func.count()).select_from(Thread).where(Thread.status == ThreadStatus.RESOLVED)
+    ).one()
+    total_memories = session.exec(
+        select(func.count()).select_from(Memory).where(Memory.status != MemoryStatus.DELETED)
+    ).one()
+    locked_memories = session.exec(
+        select(func.count()).select_from(Memory)
+        .where(Memory.status != MemoryStatus.DELETED)
+        .where(Memory.authority == Authority.LOCKED)
+    ).one()
+
+    ai_rate = 0.0
+    if resolved_threads > 0:
+        ai_count = session.exec(
+            select(func.count()).select_from(Thread)
+            .where(Thread.resolved_type == ResolvedType.AI_RESOLVED)
+        ).one()
+        ai_rate = round(ai_count / resolved_threads, 4)
+
+    pending_count = session.exec(
+        select(func.count()).select_from(Memory)
+        .where(Memory.status != MemoryStatus.DELETED)
+        .where(Memory.pending_human_confirm == True)
+    ).one()
+
+    return NamespaceStats(
+        total_threads=total_threads,
+        open_threads=open_threads,
+        resolved_threads=resolved_threads,
+        total_memories=total_memories,
+        locked_memories=locked_memories,
+        ai_resolve_rate=ai_rate,
+        pending_count=pending_count,
+    )
 
 
 def _ai_resolve_rate(session: Session, ns_id: UUID) -> float:
