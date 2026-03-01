@@ -233,6 +233,7 @@ function KBConfigTab({ board, onUpdate }) {
 function ModeratorsTab({ boardId }) {
   const { data: moderators, loading, refetch } = useAsync(() => namespaceApi.listModerators(boardId), [boardId]);
   const [employeeId, setEmployeeId] = useState('');
+  const [displayName, setDisplayName] = useState('');
   const [adding, setAdding] = useState(false);
   const [errMsg, setErrMsg] = useState('');
 
@@ -241,8 +242,9 @@ function ModeratorsTab({ boardId }) {
     setAdding(true);
     setErrMsg('');
     try {
-      await namespaceApi.addModerator(boardId, employeeId.trim());
+      await namespaceApi.addModerator(boardId, employeeId.trim(), displayName.trim() || undefined);
       setEmployeeId('');
+      setDisplayName('');
       refetch();
     } catch (err) {
       setErrMsg(err.message);
@@ -265,7 +267,7 @@ function ModeratorsTab({ boardId }) {
   return (
     <div className="card" style={{ padding: 20 }}>
       <p style={{ fontSize: 13, color: 'var(--text-sec)', marginBottom: 16 }}>
-        管理此板块的管理员，板块管理员可以修改板块配置、管理帖子和记忆。输入用户工号即可添加为板块管理员。
+        输入工号即可添加板块管理员。若该工号用户尚未注册，系统将自动创建账号。
       </p>
 
       {moderators?.length > 0 ? (
@@ -287,9 +289,16 @@ function ModeratorsTab({ boardId }) {
 
       <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
         <input
-          placeholder="输入用户工号"
+          placeholder="工号（必填）"
           value={employeeId}
           onChange={e => { setEmployeeId(e.target.value); setErrMsg(''); }}
+          onKeyDown={e => e.key === 'Enter' && handleAdd()}
+          style={{ flex: 1 }}
+        />
+        <input
+          placeholder="姓名（选填）"
+          value={displayName}
+          onChange={e => setDisplayName(e.target.value)}
           onKeyDown={e => e.key === 'Enter' && handleAdd()}
           style={{ flex: 1 }}
         />

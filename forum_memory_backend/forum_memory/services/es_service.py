@@ -157,28 +157,40 @@ def hybrid_search(
         {"term": {"status": status_filter}},
     ]
 
+    search_kwargs = dict(
+        index=name,
+        size=limit,
+        query={
+            "bool": {
+                "must": {"match": {"content": query_text}},
+                "filter": filter_clauses,
+            }
+        },
+        knn={
+            "field": "embedding",
+            "query_vector": query_embedding,
+            "k": limit,
+            "num_candidates": settings.es_knn_num_candidates,
+            "filter": {"bool": {"filter": filter_clauses}},
+        },
+    )
+
+    # Try with RRF first; fall back to plain hybrid if RRF unavailable
     try:
-        resp = es.search(
-            index=name,
-            size=limit,
-            query={
-                "bool": {
-                    "must": {"match": {"content": query_text}},
-                    "filter": filter_clauses,
-                }
-            },
-            knn={
-                "field": "embedding",
-                "query_vector": query_embedding,
-                "k": limit,
-                "num_candidates": settings.es_knn_num_candidates,
-                "filter": {"bool": {"filter": filter_clauses}},
-            },
-            rank={"rrf": {"window_size": limit, "rank_constant": 60}},
-        )
+        resp = es.search(**search_kwargs, rank={"rrf": {"window_size": limit, "rank_constant": 60}})
+        return _parse_hits(resp)
+    except Exception as rrf_err:
+        if "rrf" in str(rrf_err).lower():
+            logger.info("RRF not available, falling back to plain hybrid search")
+        else:
+            logger.exception("ES hybrid search failed")
+            return []
+
+    try:
+        resp = es.search(**search_kwargs)
         return _parse_hits(resp)
     except Exception:
-        logger.exception("ES hybrid search failed")
+        logger.exception("ES hybrid search (no RRF) failed")
         return []
 
 

@@ -47,10 +47,16 @@ def get_namespace(session: Session, ns_id: UUID) -> Namespace | None:
     return session.get(Namespace, ns_id)
 
 
-def create_namespace(session: Session, data: NamespaceCreate, owner_id: UUID) -> Namespace:
+def _generate_es_index_name() -> str:
+    """Generate ES-safe index name using UUID (always lowercase ASCII)."""
     settings = get_settings()
+    short_id = _uuid.uuid4().hex[:12]
+    return f"{settings.es_index_prefix}_{short_id}"
+
+
+def create_namespace(session: Session, data: NamespaceCreate, owner_id: UUID) -> Namespace:
     name = generate_namespace_name(data.display_name)
-    index_name = f"{settings.es_index_prefix}_{name}"
+    index_name = _generate_es_index_name()
     ns = Namespace(
         name=name,
         display_name=data.display_name,

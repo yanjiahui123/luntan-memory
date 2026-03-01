@@ -19,6 +19,7 @@ router = APIRouter(prefix="/namespaces", tags=["namespaces"])
 
 class ModeratorAdd(BaseModel):
     employee_id: str
+    display_name: str | None = None  # 用户不存在时用于自动创建
 
 
 @router.get("", response_model=list[NamespaceRead])
@@ -125,17 +126,34 @@ def add_moderator(
     session: Session = Depends(get_db),
     admin: User = Depends(require_admin),
 ):
-    """仅超级管理员可指派板块管理员。通过工号查找用户。"""
+    """仅超级管理员可指派板块管理员。通过工号查找用户，不存在则自动创建。"""
     ns = namespace_service.get_namespace(session, ns_id)
     if not ns:
         raise HTTPException(404, "板块不存在")
 
-    # 通过工号查找用户
+    employee_id = data.employee_id.strip()
+    if not employee_id:
+        raise HTTPException(400, "工号不能为空")
+
+    # 通过工号查找用户，不存在则自动创建
     target_user = session.exec(
-        select(User).where(User.employee_id == data.employee_id.strip(), User.is_active == True)
+        select(User).where(User.employee_id == employee_id)
     ).first()
+
+    if target_user and not target_user.is_active:
+        raise HTTPException(400, f"工号 {employee_id} 已停用")
+
     if not target_user:
-        raise HTTPException(404, f"工号 {data.employee_id} 不存在或已停用")
+        display = data.display_name or employee_id
+        target_user = User(
+            employee_id=employee_id,
+            username=employee_id,
+            display_name=display,
+            email=f"{employee_id}@placeholder.local",
+            role=SystemRole.BOARD_ADMIN,
+        )
+        session.add(target_user)
+        session.flush()
 
     if target_user.role == SystemRole.SUPER_ADMIN:
         raise HTTPException(400, "超级管理员无需指派为板块管理员")
