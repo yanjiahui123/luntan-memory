@@ -10,6 +10,10 @@ class FeedbackCreate(BaseModel):
     comment: str | None = None
 
 
+class FeedbackWithdraw(BaseModel):
+    feedback_type: str
+
+
 class FeedbackRead(BaseModel):
     id: UUID
     memory_id: UUID

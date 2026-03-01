@@ -22,6 +22,31 @@ from forum_memory.providers import get_provider
 logger = logging.getLogger(__name__)
 
 
+def re_extract(session: Session, thread_id: UUID) -> list[UUID]:
+    """Clear old extraction record and re-run extraction pipeline.
+    Marks old memories from this thread as DELETED, then re-extracts."""
+    from forum_memory.models.memory import Memory
+    from forum_memory.services import es_service
+
+    # 1. Delete old extraction record
+    stmt = select(ExtractionRecord).where(ExtractionRecord.thread_id == thread_id)
+    old_records = list(session.exec(stmt).all())
+    for rec in old_records:
+        session.delete(rec)
+
+    # 2. Soft-delete old memories sourced from this thread
+    mem_stmt = select(Memory).where(Memory.source_id == thread_id, Memory.status != MemoryStatus.DELETED)
+    old_memories = list(session.exec(mem_stmt).all())
+    for m in old_memories:
+        m.status = MemoryStatus.DELETED
+        es_service.delete_memory_doc(m.id)
+
+    session.commit()
+
+    # 3. Re-run extraction
+    return run_extraction(session, thread_id)
+
+
 def run_extraction(session: Session, thread_id: UUID) -> list[UUID]:
     """Run full extraction pipeline for a resolved thread. Returns created memory IDs."""
     if _already_extracted(session, thread_id):

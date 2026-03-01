@@ -76,6 +76,7 @@ export const threadApi = {
   comments: (id) => get(`/threads/${id}/comments`),
   addComment: (id, content) => post(`/threads/${id}/comments`, { thread_id: id, content }),
   upvoteComment: (threadId, commentId) => post(`/threads/${threadId}/comments/${commentId}/upvote`),
+  deleteComment: (threadId, commentId) => del(`/threads/${threadId}/comments/${commentId}`),
   aiAnswer: (threadId) => post(`/threads/${threadId}/ai-answer`),
 };
 
@@ -93,11 +94,34 @@ export const memoryApi = {
   changeAuthority: (id, data) => put(`/memories/${id}/authority`, data),
   search: (data) => post('/memories/search', data),
   extract: (threadId) => post(`/memories/extract/${threadId}`),
+  batchGet: (ids) => post('/memories/batch', { ids }),
+  tags: (namespaceId) => {
+    const q = new URLSearchParams();
+    if (namespaceId) q.set('namespace_id', namespaceId);
+    return get(`/memories/tags?${q}`);
+  },
 };
 
 // ── Feedback ─────────────────────────────────
 export const feedbackApi = {
   submit: (memoryId, data) => post(`/memories/${memoryId}/feedback`, data),
+  withdraw: (memoryId, data) => request(`/memories/${memoryId}/feedback`, { method: 'DELETE', body: JSON.stringify(data) }),
   list: (memoryId) => get(`/memories/${memoryId}/feedback`),
   summary: (memoryId) => get(`/memories/${memoryId}/feedback/summary`),
+};
+
+// ── Uploads ──────────────────────────────────
+export const uploadApi = {
+  upload: (file) => {
+    const form = new FormData();
+    form.append('file', file);
+    return fetch(`${BASE}/uploads`, {
+      method: 'POST',
+      headers: { 'X-Employee-Id': getEmployeeId() },
+      body: form,
+    }).then(res => {
+      if (!res.ok) throw new Error('Upload failed');
+      return res.json();
+    });
+  },
 };

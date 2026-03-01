@@ -55,6 +55,10 @@ class AuthorityChange(BaseModel):
     reason: str | None = None
 
 
+class MemoryBatchRequest(BaseModel):
+    ids: list[UUID]
+
+
 class MemorySearchRequest(BaseModel):
     query: str
     namespace_id: UUID

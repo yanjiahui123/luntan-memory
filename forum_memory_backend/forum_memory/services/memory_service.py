@@ -52,11 +52,13 @@ def list_memories(
     authority: str | None = None,
     status: str | None = None,
     pending_confirm: bool | None = None,
+    knowledge_type: str | None = None,
+    tags: str | None = None,
     page: int = 1,
     size: int = 20,
 ) -> list[Memory]:
     stmt = select(Memory).order_by(Memory.updated_at.desc())
-    stmt = _apply_filters(stmt, namespace_id, authority, status, pending_confirm)
+    stmt = _apply_filters(stmt, namespace_id, authority, status, pending_confirm, knowledge_type, tags)
     stmt = stmt.offset((page - 1) * size).limit(size)
     return list(session.exec(stmt).all())
 
@@ -68,6 +70,15 @@ def get_memory(session: Session, memory_id: UUID) -> Memory | None:
 def create_memory(session: Session, data: MemoryCreate) -> Memory:
     memory = Memory(**data.model_dump())
     session.add(memory)
+    session.commit()
+    session.refresh(memory)
+    # Compute initial quality score based on source_role and freshness
+    memory.quality_score = compute_quality_score(
+        useful=0, not_useful=0, wrong=0, outdated=0,
+        source_role=memory.source_role,
+        retrieve_count=0,
+        created_at=memory.created_at,
+    )
     session.commit()
     session.refresh(memory)
     _log_operation(session, memory.id, OperationType.ADD, reason="created")
@@ -262,7 +273,30 @@ def bulk_refresh_quality(session: Session) -> int:
     return count
 
 
-def _apply_filters(stmt, ns_id, authority, status, pending):
+def list_all_tags(session: Session, namespace_id: UUID | None = None) -> list[str]:
+    """Return all distinct tags across memories."""
+    stmt = select(Memory.tags).where(Memory.status != MemoryStatus.DELETED)
+    if namespace_id:
+        stmt = stmt.where(Memory.namespace_id == namespace_id)
+    rows = session.exec(stmt).all()
+    tag_set = set()
+    for tags in rows:
+        if tags:
+            for t in tags:
+                if t:
+                    tag_set.add(t)
+    return sorted(tag_set)
+
+
+def batch_get_memories(session: Session, ids: list[UUID]) -> list[Memory]:
+    """Fetch multiple memories by IDs."""
+    if not ids:
+        return []
+    stmt = select(Memory).where(Memory.id.in_(ids))
+    return list(session.exec(stmt).all())
+
+
+def _apply_filters(stmt, ns_id, authority, status, pending, knowledge_type=None, tags=None):
     if ns_id:
         stmt = stmt.where(Memory.namespace_id == ns_id)
     if authority:
@@ -271,6 +305,15 @@ def _apply_filters(stmt, ns_id, authority, status, pending):
         stmt = stmt.where(Memory.status == status)
     if pending:
         stmt = stmt.where(Memory.pending_human_confirm == True)
+    if knowledge_type:
+        stmt = stmt.where(Memory.knowledge_type == knowledge_type)
+    if tags:
+        # Filter memories that contain the specified tag
+        from sqlalchemy import cast, String
+        for tag in tags.split(","):
+            tag = tag.strip()
+            if tag:
+                stmt = stmt.where(Memory.tags.cast(String).contains(tag))
     return stmt
 
 

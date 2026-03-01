@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { threadApi } from '../api/client';
+import ImagePasteTextarea from '../components/ImagePasteTextarea';
 
 export default function NewThread() {
   const { boardId } = useParams();
@@ -53,7 +54,7 @@ export default function NewThread() {
 
         <div style={{ marginBottom: 16 }}>
           <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6 }}>详细描述 *</label>
-          <textarea placeholder="详细描述你遇到的问题，支持 Markdown 和代码块..." value={form.content} onChange={e => update('content', e.target.value)} style={{ minHeight: 160 }} required />
+          <ImagePasteTextarea placeholder="详细描述你遇到的问题，支持粘贴图片、Markdown 和代码块..." value={form.content} onChange={v => update('content', v)} style={{ minHeight: 160 }} required />
         </div>
 
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 24 }}>

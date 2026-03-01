@@ -45,6 +45,7 @@ class CommentCreate(BaseModel):
 class CommentRead(BaseModel):
     id: UUID
     thread_id: UUID
+    author_id: UUID | None = None
     content: str
     author_role: str
     is_ai: bool
@@ -53,3 +54,10 @@ class CommentRead(BaseModel):
     cited_memory_ids: list | None
     created_at: datetime
     model_config = {"from_attributes": True}
+
+
+class UpvoteResponse(BaseModel):
+    id: UUID
+    thread_id: UUID
+    upvote_count: int
+    voted: bool

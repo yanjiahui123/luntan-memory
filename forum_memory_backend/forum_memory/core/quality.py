@@ -12,8 +12,11 @@ def _safe_ratio(num: int, denom: int) -> float:
 
 
 def _useful_ratio(useful: int, not_useful: int, wrong: int) -> float:
-    """Compute useful ratio from feedback counts."""
+    """Compute useful ratio from feedback counts.
+    Returns 0.5 (neutral) when no feedback exists yet."""
     total = useful + not_useful + wrong
+    if total == 0:
+        return 0.5
     return _safe_ratio(useful, total)
 
 

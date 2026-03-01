@@ -51,6 +51,10 @@ class Settings(BaseSettings):
     rag_base_url: str = ""
     rag_timeout: int = 30
 
+    # File uploads
+    upload_dir: str = "uploads"
+    upload_max_size_mb: int = 5
+
     # Quality thresholds
     wrong_feedback_threshold: int = 3
     promote_useful_ratio: float = 0.8

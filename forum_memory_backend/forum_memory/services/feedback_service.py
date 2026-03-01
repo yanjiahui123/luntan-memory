@@ -53,6 +53,39 @@ def get_summary(session: Session, memory_id: UUID) -> FeedbackSummary:
     )
 
 
+def withdraw_feedback(session: Session, memory_id: UUID, feedback_type: str, user_id: UUID | None = None) -> bool:
+    """Remove a user's feedback on a memory. Returns True if feedback was found and removed."""
+    stmt = select(Feedback).where(
+        Feedback.memory_id == memory_id,
+        Feedback.feedback_type == FeedbackType(feedback_type),
+    )
+    if user_id:
+        stmt = stmt.where(Feedback.user_id == user_id)
+    fb = session.exec(stmt.order_by(Feedback.created_at.desc())).first()
+    if not fb:
+        return False
+    session.delete(fb)
+    _decrement_counter(session, memory_id, feedback_type)
+    session.commit()
+    refresh_quality(session, memory_id)
+    return True
+
+
+def _decrement_counter(session: Session, memory_id: UUID, feedback_type: str) -> None:
+    memory = session.get(Memory, memory_id)
+    if not memory:
+        return
+    counter_map = {
+        "useful": "useful_count",
+        "not_useful": "not_useful_count",
+        "wrong": "wrong_count",
+        "outdated": "outdated_count",
+    }
+    attr = counter_map.get(feedback_type)
+    if attr:
+        setattr(memory, attr, max(0, getattr(memory, attr) - 1))
+
+
 def _update_counter(session: Session, memory_id: UUID, feedback_type: str) -> None:
     memory = session.get(Memory, memory_id)
     if not memory:

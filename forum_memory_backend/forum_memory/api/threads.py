@@ -8,7 +8,7 @@ from sqlmodel import Session
 
 from forum_memory.api.deps import get_db, get_current_user, get_current_user_id, check_board_permission
 from forum_memory.models.user import User
-from forum_memory.schemas.thread import ThreadCreate, ThreadRead, ThreadResolve, CommentCreate, CommentRead
+from forum_memory.schemas.thread import ThreadCreate, ThreadRead, ThreadResolve, CommentCreate, CommentRead, UpvoteResponse
 from forum_memory.services import thread_service
 
 logger = logging.getLogger(__name__)
@@ -96,9 +96,33 @@ def delete_thread(
     thread_service.delete_thread(session, thread_id)
 
 
-@router.post("/{thread_id}/comments/{comment_id}/upvote", response_model=CommentRead)
-def upvote_comment(thread_id: UUID, comment_id: UUID, session: Session = Depends(get_db)):
+@router.post("/{thread_id}/comments/{comment_id}/upvote", response_model=UpvoteResponse)
+def upvote_comment(thread_id: UUID, comment_id: UUID, session: Session = Depends(get_db), user_id: UUID = Depends(get_current_user_id)):
     try:
-        return thread_service.upvote_comment(session, comment_id)
+        comment, voted = thread_service.toggle_upvote(session, comment_id, user_id)
+        return UpvoteResponse(
+            id=comment.id, thread_id=comment.thread_id, upvote_count=comment.upvote_count, voted=voted,
+        )
     except ValueError as e:
         raise HTTPException(404, str(e))
+
+
+@router.delete("/{thread_id}/comments/{comment_id}")
+def delete_comment(
+    thread_id: UUID,
+    comment_id: UUID,
+    session: Session = Depends(get_db),
+    user_id: UUID = Depends(get_current_user_id),
+):
+    try:
+        thread = thread_service.delete_comment(session, comment_id, user_id)
+        # Re-extract memories if thread was resolved
+        if thread.resolved_type:
+            from forum_memory.services import extraction_service
+            try:
+                extraction_service.re_extract(session, thread_id)
+            except Exception:
+                pass  # Non-fatal: extraction failure shouldn't block comment deletion
+        return {"ok": True}
+    except ValueError as e:
+        raise HTTPException(400, str(e))

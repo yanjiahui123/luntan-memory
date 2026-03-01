@@ -142,15 +142,44 @@ def _mark_best_answer(session: Session, comment_id: UUID) -> None:
         comment.is_best_answer = True
 
 
-def upvote_comment(session: Session, comment_id: UUID) -> Comment:
-    """Increment the upvote count on a comment."""
+def toggle_upvote(session: Session, comment_id: UUID, user_id: UUID) -> tuple[Comment, bool]:
+    """Toggle upvote on a comment. Returns (comment, voted)."""
+    from forum_memory.models.vote import CommentVote
     comment = session.get(Comment, comment_id)
     if not comment:
         raise ValueError("Comment not found")
-    comment.upvote_count += 1
+
+    existing = session.exec(
+        select(CommentVote).where(CommentVote.comment_id == comment_id, CommentVote.user_id == user_id)
+    ).first()
+
+    if existing:
+        session.delete(existing)
+        comment.upvote_count = max(0, comment.upvote_count - 1)
+        voted = False
+    else:
+        session.add(CommentVote(comment_id=comment_id, user_id=user_id))
+        comment.upvote_count += 1
+        voted = True
+
     session.commit()
     session.refresh(comment)
-    return comment
+    return comment, voted
+
+
+def delete_comment(session: Session, comment_id: UUID, user_id: UUID) -> Thread:
+    """Delete a comment. Returns the parent thread."""
+    comment = session.get(Comment, comment_id)
+    if not comment:
+        raise ValueError("Comment not found")
+    thread = session.get(Thread, comment.thread_id)
+    if not thread:
+        raise ValueError("Thread not found")
+    session.delete(comment)
+    thread.comment_count = max(0, thread.comment_count - 1)
+    session.commit()
+    session.refresh(thread)
+    return thread
 
 
 def generate_ai_answer(session: Session, thread_id: UUID) -> Comment:

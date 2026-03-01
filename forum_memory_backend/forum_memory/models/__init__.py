@@ -9,9 +9,10 @@ from forum_memory.models.extraction import ExtractionRecord
 from forum_memory.models.feedback import Feedback
 from forum_memory.models.operation_log import OperationLog
 from forum_memory.models.event import DomainEvent
+from forum_memory.models.vote import CommentVote
 
 __all__ = [
     "User", "Namespace", "NamespaceModerator", "Thread", "Comment",
     "Memory", "ExtractionRecord", "Feedback",
-    "OperationLog", "DomainEvent",
+    "OperationLog", "DomainEvent", "CommentVote",
 ]

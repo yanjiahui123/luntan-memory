@@ -2,7 +2,36 @@ import React, { useState, useEffect } from 'react';
 import { Link, useParams, useNavigate } from 'react-router-dom';
 import { threadApi, feedbackApi, memoryApi, userApi } from '../api/client';
 import { useAsync } from '../hooks/useAsync';
-import { Loading, ErrorMsg, StatusBadge, Badge, TimeAgo, ConfirmModal, KnowledgeTypeBadge } from '../components/UI';
+import { Loading, ErrorMsg, StatusBadge, Badge, TimeAgo, ConfirmModal, KnowledgeTypeBadge, QualityDot } from '../components/UI';
+import ImagePasteTextarea from '../components/ImagePasteTextarea';
+
+/** Render text with markdown images: ![alt](url) → <img> tags */
+function renderMarkdownContent(text) {
+  if (!text) return null;
+  const parts = [];
+  const regex = /!\[([^\]]*)\]\(([^)]+)\)/g;
+  let lastIndex = 0;
+  let match;
+  let key = 0;
+  while ((match = regex.exec(text)) !== null) {
+    if (match.index > lastIndex) {
+      parts.push(<span key={key++}>{text.slice(lastIndex, match.index)}</span>);
+    }
+    parts.push(
+      <img
+        key={key++}
+        src={match[2]}
+        alt={match[1]}
+        style={{ maxWidth: '100%', borderRadius: 'var(--radius)', margin: '8px 0', display: 'block' }}
+      />
+    );
+    lastIndex = regex.lastIndex;
+  }
+  if (lastIndex < text.length) {
+    parts.push(<span key={key++}>{text.slice(lastIndex)}</span>);
+  }
+  return parts.length > 0 ? parts : text;
+}
 
 export default function ThreadDetail() {
   const { threadId } = useParams();
@@ -59,7 +88,7 @@ export default function ThreadDetail() {
           {thread.environment && <Badge type="gray">🌍 {thread.environment}</Badge>}
         </div>
         <h1 style={{ fontSize: 18, fontWeight: 700, marginBottom: 10 }}>{thread.title}</h1>
-        <div style={{ fontSize: 14, lineHeight: 1.8, color: 'var(--text)', whiteSpace: 'pre-wrap' }}>{thread.content}</div>
+        <div style={{ fontSize: 14, lineHeight: 1.8, color: 'var(--text)', whiteSpace: 'pre-wrap' }}>{renderMarkdownContent(thread.content)}</div>
         <div style={{ display: 'flex', gap: 16, marginTop: 14, fontSize: 12, color: 'var(--text-ter)', alignItems: 'center' }}>
           <span>👁 {thread.view_count} 浏览</span>
           <span>💬 {thread.comment_count} 回复</span>
@@ -107,13 +136,13 @@ export default function ThreadDetail() {
         </div>
       )}
       {comments?.map(c => (
-        <CommentCard key={c.id} comment={c} thread={thread} onResolve={() => setResolveTarget(c.id)} />
+        <CommentCard key={c.id} comment={c} thread={thread} onResolve={() => setResolveTarget(c.id)} onDelete={refetchComments} />
       ))}
 
       {/* Reply box */}
       {thread.status === 'OPEN' && (
         <div className="card" style={{ padding: 16, marginTop: 16 }}>
-          <textarea placeholder="写下你的回答... (支持 Markdown)" value={replyText} onChange={e => setReplyText(e.target.value)} style={{ marginBottom: 12 }} />
+          <ImagePasteTextarea placeholder="写下你的回答... (支持粘贴图片和 Markdown)" value={replyText} onChange={setReplyText} style={{ marginBottom: 12 }} />
           <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
             <button className="btn-primary" onClick={handleReply} disabled={!replyText.trim()}>发送回复</button>
           </div>
@@ -143,39 +172,74 @@ export default function ThreadDetail() {
   );
 }
 
-function CommentCard({ comment, thread, onResolve }) {
+function CommentCard({ comment, thread, onResolve, onDelete }) {
   const [feedbackGiven, setFeedbackGiven] = useState(null);
   const [upvotes, setUpvotes] = useState(comment.upvote_count || 0);
   const [upvoted, setUpvoted] = useState(false);
   const [relatedMemories, setRelatedMemories] = useState(null);
   const [showMemories, setShowMemories] = useState(false);
+  const [citedMemories, setCitedMemories] = useState(null);
+  const [showCitations, setShowCitations] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const isAi = comment.is_ai;
   const isBest = comment.is_best_answer;
+  const hasCitations = comment.cited_memory_ids?.length > 0;
+
+  async function handleDelete() {
+    try {
+      await threadApi.deleteComment(comment.thread_id, comment.id);
+      setShowDeleteConfirm(false);
+      if (onDelete) onDelete();
+    } catch (err) {
+      console.error('Delete failed:', err);
+    }
+  }
+
+  // Load cited memory details for AI comments
+  useEffect(() => {
+    if (isAi && hasCitations) {
+      memoryApi.batchGet(comment.cited_memory_ids).then(setCitedMemories).catch(() => {});
+    }
+  }, [isAi, comment.cited_memory_ids]);
 
   async function handleFeedback(type) {
-    if (!comment.cited_memory_ids?.length) return;
-    for (const mid of comment.cited_memory_ids) {
-      await feedbackApi.submit(mid, { feedback_type: type });
+    if (!hasCitations) return;
+    try {
+      if (feedbackGiven === type) {
+        // Toggle off: withdraw feedback
+        for (const mid of comment.cited_memory_ids) {
+          await feedbackApi.withdraw(mid, { feedback_type: type });
+        }
+        setFeedbackGiven(null);
+      } else {
+        // Submit new feedback
+        for (const mid of comment.cited_memory_ids) {
+          await feedbackApi.submit(mid, { feedback_type: type });
+        }
+        setFeedbackGiven(type);
+      }
+    } catch (err) {
+      console.error('Feedback failed:', err);
     }
-    setFeedbackGiven(type);
   }
 
   async function handleUpvote() {
-    if (upvoted) return;
     try {
-      const updated = await threadApi.upvoteComment(comment.thread_id, comment.id);
-      setUpvotes(updated.upvote_count);
-      setUpvoted(true);
+      const result = await threadApi.upvoteComment(comment.thread_id, comment.id);
+      setUpvotes(result.upvote_count);
+      setUpvoted(result.voted);
 
-      // Trigger memory search (decoupled from forum API)
-      const result = await memoryApi.search({
-        query: comment.content,
-        namespace_id: thread.namespace_id,
-        top_k: 3,
-      });
-      if (result.hits?.length > 0) {
-        setRelatedMemories(result.hits);
-        setShowMemories(true);
+      // Trigger memory search on first upvote
+      if (result.voted && !relatedMemories) {
+        const searchResult = await memoryApi.search({
+          query: comment.content,
+          namespace_id: thread.namespace_id,
+          top_k: 3,
+        });
+        if (searchResult.hits?.length > 0) {
+          setRelatedMemories(searchResult.hits);
+          setShowMemories(true);
+        }
       }
     } catch (err) {
       console.error('Upvote failed:', err);
@@ -195,11 +259,43 @@ function CommentCard({ comment, thread, onResolve }) {
         <span style={{ marginLeft: 'auto', fontSize: 12, color: 'var(--text-ter)' }}><TimeAgo date={comment.created_at} /></span>
       </div>
 
-      <div style={{ fontSize: 14, lineHeight: 1.8, whiteSpace: 'pre-wrap' }}>{comment.content}</div>
+      <div style={{ fontSize: 14, lineHeight: 1.8, whiteSpace: 'pre-wrap' }}>{renderMarkdownContent(comment.content)}</div>
 
-      {isAi && comment.cited_memory_ids?.length > 0 && (
-        <div style={{ fontSize: 12, color: 'var(--purple)', marginTop: 8 }}>
-          📎 引用记忆: {comment.cited_memory_ids.map(id => <Link key={id} to={`/admin/memories/${id}`} style={{ marginRight: 6 }}>[{id.slice(0, 8)}]</Link>)}
+      {/* Collapsible citation cards */}
+      {isAi && hasCitations && (
+        <div style={{ marginTop: 10 }}>
+          <button
+            className="btn-sm btn-secondary"
+            onClick={() => setShowCitations(!showCitations)}
+            style={{ fontSize: 12, display: 'flex', alignItems: 'center', gap: 4 }}
+          >
+            📎 引用了 {comment.cited_memory_ids.length} 条知识记忆 {showCitations ? '▾' : '▸'}
+          </button>
+
+          {showCitations && citedMemories && (
+            <div style={{ marginTop: 8, padding: 12, background: 'var(--purple-light)', borderRadius: 'var(--radius)', border: '1px solid var(--border)' }}>
+              {citedMemories.map((mem, i) => (
+                <div key={mem.id} style={{ padding: '8px 0', borderTop: i > 0 ? '1px solid var(--border)' : 'none' }}>
+                  <div style={{ fontSize: 13, lineHeight: 1.6, color: 'var(--text)' }}>
+                    {mem.content.length > 120 ? mem.content.slice(0, 120) + '...' : mem.content}
+                  </div>
+                  <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginTop: 4, flexWrap: 'wrap' }}>
+                    {mem.knowledge_type && <KnowledgeTypeBadge type={mem.knowledge_type} />}
+                    {mem.tags?.map(t => <Badge key={t} type="gray">{t}</Badge>)}
+                    <QualityDot score={mem.quality_score} />
+                    {mem.source_id && (
+                      <Link to={`/threads/${mem.source_id}`} style={{ fontSize: 11, color: 'var(--text-sec)' }}>来源帖子</Link>
+                    )}
+                    <Link to={`/admin/memories/${mem.id}`} style={{ fontSize: 11, marginLeft: 'auto' }}>查看详情 →</Link>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {showCitations && !citedMemories && (
+            <div style={{ marginTop: 8, fontSize: 12, color: 'var(--text-ter)' }}>加载中...</div>
+          )}
         </div>
       )}
 
@@ -207,11 +303,10 @@ function CommentCard({ comment, thread, onResolve }) {
         <button
           className={`btn-sm ${upvoted ? 'btn-primary' : 'btn-secondary'}`}
           onClick={handleUpvote}
-          disabled={upvoted}
         >
           👍 {upvotes}
         </button>
-        {isAi && (
+        {isAi && hasCitations && (
           <>
             <button className={`btn-sm ${feedbackGiven === 'useful' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => handleFeedback('useful')}>有用</button>
             <button className={`btn-sm ${feedbackGiven === 'not_useful' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => handleFeedback('not_useful')}>没用</button>
@@ -219,10 +314,21 @@ function CommentCard({ comment, thread, onResolve }) {
           </>
         )}
         <div style={{ flex: 1 }} />
+        {!isBest && (
+          <button className="btn-sm btn-danger" onClick={() => setShowDeleteConfirm(true)} style={{ fontSize: 11 }}>删除</button>
+        )}
         {thread.status === 'OPEN' && !isBest && (
           <button className="btn-success" onClick={onResolve}>✓ 采纳此回答</button>
         )}
       </div>
+
+      <ConfirmModal
+        open={showDeleteConfirm}
+        title="删除评论"
+        message="确认删除此评论？如果帖子已解决，将重新提取知识记忆。"
+        onConfirm={handleDelete}
+        onCancel={() => setShowDeleteConfirm(false)}
+      />
 
       {/* Related memories from upvote */}
       {showMemories && relatedMemories?.length > 0 && (

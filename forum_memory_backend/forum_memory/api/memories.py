@@ -9,6 +9,7 @@ from forum_memory.api.deps import get_db
 from forum_memory.schemas.memory import (
     MemoryCreate, MemoryUpdate, MemoryRead,
     AuthorityChange, MemorySearchRequest, MemorySearchResponse,
+    MemoryBatchRequest,
 )
 from forum_memory.services import memory_service, search_service, extraction_service
 
@@ -21,11 +22,29 @@ def list_memories(
     authority: str | None = None,
     status: str | None = None,
     pending_confirm: bool | None = None,
+    knowledge_type: str | None = None,
+    tags: str | None = None,
     page: int = Query(1, ge=1),
     size: int = Query(20, ge=1, le=100),
     session: Session = Depends(get_db),
 ):
-    return memory_service.list_memories(session, namespace_id, authority, status, pending_confirm, page, size)
+    return memory_service.list_memories(
+        session, namespace_id, authority, status, pending_confirm,
+        knowledge_type, tags, page, size,
+    )
+
+
+@router.get("/tags", response_model=list[str])
+def list_tags(
+    namespace_id: UUID | None = None,
+    session: Session = Depends(get_db),
+):
+    return memory_service.list_all_tags(session, namespace_id)
+
+
+@router.post("/batch", response_model=list[MemoryRead])
+def batch_get(data: MemoryBatchRequest, session: Session = Depends(get_db)):
+    return memory_service.batch_get_memories(session, data.ids)
 
 
 @router.get("/{memory_id}", response_model=MemoryRead)
