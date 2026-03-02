@@ -28,6 +28,79 @@ function chipLabel(key, val, namespaces) {
 // Keys that produce a visible chip when set
 const CHIP_KEYS = ['namespace_id', 'authority', 'status', 'knowledge_type', 'tags', 'pending_confirm'];
 
+// ─── TagFilter ────────────────────────────────────────────────────────────────
+
+function TagFilter({ allTags, selectedRaw, onSet }) {
+  const [tagQ, setTagQ] = useState('');
+  const selected = selectedRaw ? selectedRaw.split(',').map(t => t.trim()).filter(Boolean) : [];
+
+  const filtered = tagQ.trim()
+    ? allTags.filter(t => t.toLowerCase().includes(tagQ.trim().toLowerCase()))
+    : allTags;
+
+  function toggle(tag) {
+    const next = selected.includes(tag)
+      ? selected.filter(t => t !== tag)
+      : [...selected, tag];
+    onSet(next.join(','));
+  }
+
+  return (
+    <Section label="标签">
+      {/* Selected tags as small chips */}
+      {selected.length > 0 && (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginBottom: 6 }}>
+          {selected.map(tag => (
+            <span
+              key={tag}
+              style={{
+                display: 'inline-flex', alignItems: 'center', gap: 3,
+                padding: '2px 7px', borderRadius: 99,
+                background: 'var(--accent-light)', border: '1px solid var(--accent)',
+                fontSize: 11, color: 'var(--accent)',
+              }}
+            >
+              {tag}
+              <button
+                onClick={() => toggle(tag)}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, color: 'var(--accent)', fontSize: 13, lineHeight: 1 }}
+              >×</button>
+            </span>
+          ))}
+        </div>
+      )}
+
+      {/* Keyword input */}
+      <input
+        value={tagQ}
+        onChange={e => setTagQ(e.target.value)}
+        placeholder={`搜索标签（共 ${allTags.length} 个）...`}
+        style={{ width: '100%', fontSize: 12, padding: '5px 8px', marginBottom: 6, boxSizing: 'border-box' }}
+      />
+
+      {/* Filtered tag suggestions */}
+      <div style={{ maxHeight: 120, overflowY: 'auto', display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+        {filtered.length === 0
+          ? <span style={{ fontSize: 11, color: 'var(--text-ter)' }}>无匹配标签</span>
+          : filtered.map(tag => {
+              const active = selected.includes(tag);
+              return (
+                <button
+                  key={tag}
+                  className={`filter-pill ${active ? 'filter-pill--active' : ''}`}
+                  style={{ fontSize: 11, padding: '2px 8px' }}
+                  onClick={() => toggle(tag)}
+                >
+                  {tag}
+                </button>
+              );
+            })
+        }
+      </div>
+    </Section>
+  );
+}
+
 // ─── FilterDropdown ───────────────────────────────────────────────────────────
 
 function FilterDropdown({ filters, namespaces, allTags, onSet, onClearAll }) {
@@ -102,29 +175,13 @@ function FilterDropdown({ filters, namespaces, allTags, onSet, onClearAll }) {
             />
           </Section>
 
-          {/* Tags */}
+          {/* Tags — searchable */}
           {allTags.length > 0 && (
-            <Section label="标签">
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
-                {allTags.map(tag => {
-                  const selected = filters.tags?.split(',').map(t => t.trim()).includes(tag);
-                  return (
-                    <button
-                      key={tag}
-                      className={`filter-pill ${selected ? 'filter-pill--active' : ''}`}
-                      style={{ fontSize: 11, padding: '2px 8px' }}
-                      onClick={() => {
-                        const cur = filters.tags ? filters.tags.split(',').map(t => t.trim()).filter(Boolean) : [];
-                        const next = selected ? cur.filter(t => t !== tag) : [...cur, tag];
-                        onSet('tags', next.join(','));
-                      }}
-                    >
-                      {tag}
-                    </button>
-                  );
-                })}
-              </div>
-            </Section>
+            <TagFilter
+              allTags={allTags}
+              selectedRaw={filters.tags}
+              onSet={v => onSet('tags', v)}
+            />
           )}
 
           {/* Pending confirm */}
