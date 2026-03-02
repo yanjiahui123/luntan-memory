@@ -55,5 +55,6 @@ class Comment(UUIDMixin, TimestampMixin, table=True):
     upvote_count: int = Field(default=0)
     is_best_answer: bool = Field(default=False)
 
-    # AI-specific: memory IDs cited
+    # AI-specific: memory IDs cited, RAG context used
     cited_memory_ids: list | None = Field(default=None, sa_column=Column("cited_memory_ids", JSON))
+    rag_context: str | None = Field(default=None, sa_column=Column("rag_context", Text, nullable=True))

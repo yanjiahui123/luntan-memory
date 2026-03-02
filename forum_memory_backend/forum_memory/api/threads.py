@@ -37,13 +37,8 @@ def get_thread(thread_id: UUID, session: Session = Depends(get_db)):
 
 @router.post("", response_model=ThreadRead, status_code=201)
 def create_thread(data: ThreadCreate, session: Session = Depends(get_db), user_id: UUID = Depends(get_current_user_id)):
-    thread = thread_service.create_thread(session, data, user_id)
-    # 同步生成 AI 回答，失败不影响帖子创建
-    try:
-        thread_service.generate_ai_answer(session, thread.id)
-    except Exception:
-        logger.exception("Auto AI answer failed for thread %s", thread.id)
-    return thread
+    # AI 回答由 Dagster sensor 异步触发，此处不再同步调用
+    return thread_service.create_thread(session, data, user_id)
 
 
 @router.post("/{thread_id}/resolve", response_model=ThreadRead)

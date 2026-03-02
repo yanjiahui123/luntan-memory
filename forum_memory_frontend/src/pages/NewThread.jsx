@@ -71,7 +71,7 @@ export default function NewThread() {
         {error && <div style={{ color: 'var(--red)', fontSize: 13, marginBottom: 12 }}>❌ {error}</div>}
 
         <div style={{ display: 'flex', gap: 12 }}>
-          <button type="submit" className="btn-primary" disabled={submitting}>{submitting ? '发布中，AI 正在生成回答...' : '发布'}</button>
+          <button type="submit" className="btn-primary" disabled={submitting}>{submitting ? '发布中...' : '发布'}</button>
           <button type="button" className="btn-secondary" onClick={() => navigate(-1)}>取消</button>
         </div>
       </form>

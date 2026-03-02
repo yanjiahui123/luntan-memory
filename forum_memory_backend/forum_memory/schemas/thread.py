@@ -52,6 +52,7 @@ class CommentRead(BaseModel):
     upvote_count: int
     is_best_answer: bool
     cited_memory_ids: list | None
+    rag_context: str | None = None
     created_at: datetime
     model_config = {"from_attributes": True}
 

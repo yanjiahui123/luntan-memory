@@ -44,6 +44,7 @@ export default function ThreadDetail() {
   const [aiLoading, setAiLoading] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const isSuperAdmin = me?.role === 'super_admin';
+  const isAdmin = me?.role === 'super_admin' || me?.role === 'board_admin';
 
   async function handleReply() {
     if (!replyText.trim()) return;
@@ -136,7 +137,7 @@ export default function ThreadDetail() {
         </div>
       )}
       {comments?.map(c => (
-        <CommentCard key={c.id} comment={c} thread={thread} onResolve={() => setResolveTarget(c.id)} onDelete={refetchComments} />
+        <CommentCard key={c.id} comment={c} thread={thread} onResolve={() => setResolveTarget(c.id)} onDelete={refetchComments} isAdmin={isAdmin} />
       ))}
 
       {/* Reply box */}
@@ -172,7 +173,7 @@ export default function ThreadDetail() {
   );
 }
 
-function CommentCard({ comment, thread, onResolve, onDelete }) {
+function CommentCard({ comment, thread, onResolve, onDelete, isAdmin }) {
   const [feedbackGiven, setFeedbackGiven] = useState(null);
   const [upvotes, setUpvotes] = useState(comment.upvote_count || 0);
   const [upvoted, setUpvoted] = useState(false);
@@ -262,19 +263,22 @@ function CommentCard({ comment, thread, onResolve, onDelete }) {
       <div style={{ fontSize: 14, lineHeight: 1.8, whiteSpace: 'pre-wrap' }}>{renderMarkdownContent(comment.content)}</div>
 
       {/* Collapsible citation cards */}
-      {isAi && hasCitations && (
+      {isAi && (hasCitations || comment.rag_context) && (
         <div style={{ marginTop: 10 }}>
           <button
             className="btn-sm btn-secondary"
             onClick={() => setShowCitations(!showCitations)}
             style={{ fontSize: 12, display: 'flex', alignItems: 'center', gap: 4 }}
           >
-            📎 引用了 {comment.cited_memory_ids.length} 条知识记忆 {showCitations ? '▾' : '▸'}
+            📎 引用了 {comment.cited_memory_ids?.length || 0} 条知识记忆
+            {comment.rag_context ? ' + 📚知识库' : ''}
+            {' '}{showCitations ? '▾' : '▸'}
           </button>
 
-          {showCitations && citedMemories && (
+          {showCitations && (
             <div style={{ marginTop: 8, padding: 12, background: 'var(--purple-light)', borderRadius: 'var(--radius)', border: '1px solid var(--border)' }}>
-              {citedMemories.map((mem, i) => (
+              {/* Memory citation cards */}
+              {citedMemories ? citedMemories.map((mem, i) => (
                 <div key={mem.id} style={{ padding: '8px 0', borderTop: i > 0 ? '1px solid var(--border)' : 'none' }}>
                   <div style={{ fontSize: 13, lineHeight: 1.6, color: 'var(--text)' }}>
                     {mem.content.length > 120 ? mem.content.slice(0, 120) + '...' : mem.content}
@@ -286,15 +290,33 @@ function CommentCard({ comment, thread, onResolve, onDelete }) {
                     {mem.source_id && (
                       <Link to={`/threads/${mem.source_id}`} style={{ fontSize: 11, color: 'var(--text-sec)' }}>来源帖子</Link>
                     )}
-                    <Link to={`/admin/memories/${mem.id}`} style={{ fontSize: 11, marginLeft: 'auto' }}>查看详情 →</Link>
+                    {isAdmin && (
+                      <Link to={`/admin/memories/${mem.id}`} style={{ fontSize: 11, marginLeft: 'auto' }}>查看详情 →</Link>
+                    )}
                   </div>
                 </div>
-              ))}
-            </div>
-          )}
+              )) : hasCitations && (
+                <div style={{ fontSize: 12, color: 'var(--text-ter)', padding: '4px 0' }}>加载中...</div>
+              )}
 
-          {showCitations && !citedMemories && (
-            <div style={{ marginTop: 8, fontSize: 12, color: 'var(--text-ter)' }}>加载中...</div>
+              {/* RAG knowledge base section */}
+              {comment.rag_context && (
+                <div style={{
+                  marginTop: citedMemories?.length > 0 ? 10 : 0,
+                  paddingTop: citedMemories?.length > 0 ? 10 : 0,
+                  borderTop: citedMemories?.length > 0 ? '1px solid var(--border)' : 'none',
+                }}>
+                  <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-sec)', marginBottom: 4 }}>
+                    📚 知识库参考
+                  </div>
+                  <div style={{ fontSize: 12, lineHeight: 1.7, color: 'var(--text)', whiteSpace: 'pre-wrap' }}>
+                    {comment.rag_context.length > 300
+                      ? comment.rag_context.slice(0, 300) + '...'
+                      : comment.rag_context}
+                  </div>
+                </div>
+              )}
+            </div>
           )}
         </div>
       )}
@@ -345,7 +367,9 @@ function CommentCard({ comment, thread, onResolve, onDelete }) {
               <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginTop: 4 }}>
                 {hit.memory.knowledge_type && <KnowledgeTypeBadge type={hit.memory.knowledge_type} />}
                 <span style={{ fontSize: 11, color: 'var(--text-ter)' }}>相关度 {hit.score.toFixed(2)}</span>
-                <Link to={`/admin/memories/${hit.memory.id}`} style={{ fontSize: 11, marginLeft: 'auto' }}>查看详情 →</Link>
+                {isAdmin && (
+                  <Link to={`/admin/memories/${hit.memory.id}`} style={{ fontSize: 11, marginLeft: 'auto' }}>查看详情 →</Link>
+                )}
               </div>
             </div>
           ))}
