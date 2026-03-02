@@ -8,6 +8,7 @@ from forum_memory.api.memories import router as memory_router
 from forum_memory.api.feedback import router as fb_router
 from forum_memory.api.users import router as user_router
 from forum_memory.api.uploads import router as upload_router
+from forum_memory.api.admin import router as admin_router
 
 
 def register_routers(app: FastAPI) -> None:
@@ -18,3 +19,4 @@ def register_routers(app: FastAPI) -> None:
     app.include_router(memory_router, prefix=prefix)
     app.include_router(fb_router, prefix=prefix)
     app.include_router(upload_router, prefix=prefix)
+    app.include_router(admin_router, prefix=prefix)
