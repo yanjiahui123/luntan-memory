@@ -110,6 +110,35 @@ export const feedbackApi = {
   summary: (memoryId) => get(`/memories/${memoryId}/feedback/summary`),
 };
 
+// ── Admin ─────────────────────────────────────
+export const adminApi = {
+  /**
+   * 通过文件上传批量导入历史帖子。
+   * @param {string} namespaceId  - 目标板块 UUID
+   * @param {File[]} files        - JSON 文件或 ZIP 压缩包数组
+   * @param {object} opts         - { workers, skipExtraction, dryRun }
+   */
+  importTopicsUpload: (namespaceId, files, opts = {}) => {
+    const form = new FormData();
+    form.append('namespace_id', namespaceId);
+    form.append('workers', String(opts.workers ?? 4));
+    form.append('skip_extraction', String(opts.skipExtraction ?? false));
+    form.append('dry_run', String(opts.dryRun ?? false));
+    files.forEach(f => form.append('files', f));
+    return fetch(`${BASE}/admin/import-topics/upload`, {
+      method: 'POST',
+      headers: { 'X-Employee-Id': getEmployeeId() },
+      body: form,
+    }).then(async res => {
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ detail: res.statusText }));
+        throw new Error(err.detail || 'Import failed');
+      }
+      return res.json();
+    });
+  },
+};
+
 // ── Uploads ──────────────────────────────────
 export const uploadApi = {
   upload: (file) => {

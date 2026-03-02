@@ -13,6 +13,7 @@ import MemoryList from './pages/MemoryList';
 import MemoryDetail from './pages/MemoryDetail';
 import PendingCenter from './pages/PendingCenter';
 import BoardConfig from './pages/BoardConfig';
+import ImportTopics from './pages/ImportTopics';
 
 export default function App() {
   return (
@@ -34,6 +35,7 @@ export default function App() {
             <Route path="/admin/memories/:memoryId" element={<MemoryDetail />} />
             <Route path="/admin/pending" element={<PendingCenter />} />
             <Route path="/admin/settings" element={<BoardConfig />} />
+            <Route path="/admin/import" element={<ImportTopics />} />
           </Route>
         </Route>
       </Routes>

@@ -61,6 +61,11 @@ export default function AdminDashboard() {
                 <span>板块配置</span> <span>&rarr;</span>
               </div>
             </Link>
+            <Link to="/admin/import" style={{ textDecoration: 'none' }}>
+              <div style={{ padding: 12, borderRadius: 'var(--radius)', border: '1px solid var(--border)', fontSize: 13, display: 'flex', justifyContent: 'space-between' }}>
+                <span>📥 导入历史帖子</span> <span>&rarr;</span>
+              </div>
+            </Link>
           </div>
         </div>
       </div>
