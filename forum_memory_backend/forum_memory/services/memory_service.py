@@ -273,19 +273,34 @@ def bulk_refresh_quality(session: Session) -> int:
     return count
 
 
-def list_all_tags(session: Session, namespace_id: UUID | None = None) -> list[str]:
-    """Return all distinct tags across memories."""
+def list_all_tags(
+    session: Session,
+    namespace_id: UUID | None = None,
+    min_count: int = 2,
+) -> list[str]:
+    """Return tags sorted by frequency (descending), filtered by min_count.
+
+    Tags that appear only once are excluded by default (min_count=2) to avoid
+    polluting the filter UI with one-off AI-generated tags.
+    Pass min_count=1 to get all tags.
+    """
     stmt = select(Memory.tags).where(Memory.status != MemoryStatus.DELETED)
     if namespace_id:
         stmt = stmt.where(Memory.namespace_id == namespace_id)
     rows = session.exec(stmt).all()
-    tag_set = set()
+
+    counts: dict[str, int] = {}
     for tags in rows:
         if tags:
             for t in tags:
                 if t:
-                    tag_set.add(t)
-    return sorted(tag_set)
+                    counts[t] = counts.get(t, 0) + 1
+
+    # Filter by min_count, then sort by frequency desc, then alpha for ties
+    return [
+        tag for tag, _ in sorted(counts.items(), key=lambda x: (-x[1], x[0]))
+        if counts[tag] >= min_count
+    ]
 
 
 def batch_get_memories(session: Session, ids: list[UUID]) -> list[Memory]:

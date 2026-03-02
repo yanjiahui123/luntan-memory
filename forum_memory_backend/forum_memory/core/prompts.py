@@ -6,6 +6,7 @@ Given a resolved forum thread (question + discussion + accepted answer), extract
 Rules:
 - Each fact must be self-contained and understandable without the original thread.
 - Output as a JSON array of objects: [{"content": "...", "tags": ["..."], "knowledge_type": "how_to|troubleshoot|best_practice|gotcha|faq"}]
+- tags: use 1-3 short, broad category words only (e.g. "K8s", "timeout", "config"). Do NOT write sentence-length tags or overly specific values.
 - If no useful knowledge can be extracted, return an empty array [].
 - Be concise. No opinions, no fluff."""
 

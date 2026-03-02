@@ -37,9 +37,10 @@ def list_memories(
 @router.get("/tags", response_model=list[str])
 def list_tags(
     namespace_id: UUID | None = None,
+    min_count: int = Query(2, ge=1),
     session: Session = Depends(get_db),
 ):
-    return memory_service.list_all_tags(session, namespace_id)
+    return memory_service.list_all_tags(session, namespace_id, min_count=min_count)
 
 
 @router.post("/batch", response_model=list[MemoryRead])
