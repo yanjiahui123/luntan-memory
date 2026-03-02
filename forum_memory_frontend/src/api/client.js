@@ -82,10 +82,22 @@ export const threadApi = {
 
 // ── Memories ─────────────────────────────────
 export const memoryApi = {
-  list: (params = {}) => {
+  list: async (params = {}) => {
     const q = new URLSearchParams();
     Object.entries(params).forEach(([k, v]) => { if (v != null && v !== '') q.set(k, v); });
-    return get(`/memories?${q}`);
+    const res = await fetch(`${BASE}/memories?${q}`, {
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Employee-Id': getEmployeeId(),
+      },
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: res.statusText }));
+      throw new Error(err.detail || 'Request failed');
+    }
+    const items = await res.json();
+    const total = parseInt(res.headers.get('X-Total-Count') || '0', 10);
+    return { items, total };
   },
   get: (id) => get(`/memories/${id}`),
   create: (data) => post('/memories', data),

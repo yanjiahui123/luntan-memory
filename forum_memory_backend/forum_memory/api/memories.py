@@ -3,9 +3,11 @@
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import Response
 from sqlmodel import Session
 
-from forum_memory.api.deps import get_db
+from forum_memory.api.deps import get_db, get_current_user, check_namespace_read_access
+from forum_memory.models.user import User
 from forum_memory.schemas.memory import (
     MemoryCreate, MemoryUpdate, MemoryRead,
     AuthorityChange, MemorySearchRequest, MemorySearchResponse,
@@ -18,20 +20,28 @@ router = APIRouter(prefix="/memories", tags=["memories"])
 
 @router.get("", response_model=list[MemoryRead])
 def list_memories(
+    response: Response,
     namespace_id: UUID | None = None,
     authority: str | None = None,
     status: str | None = None,
     pending_confirm: bool | None = None,
     knowledge_type: str | None = None,
     tags: str | None = None,
+    q: str | None = None,
     page: int = Query(1, ge=1),
     size: int = Query(20, ge=1, le=100),
     session: Session = Depends(get_db),
 ):
-    return memory_service.list_memories(
+    items = memory_service.list_memories(
         session, namespace_id, authority, status, pending_confirm,
-        knowledge_type, tags, page, size,
+        knowledge_type, tags, q, page, size,
     )
+    total = memory_service.count_memories(
+        session, namespace_id, authority, status, pending_confirm,
+        knowledge_type, tags, q,
+    )
+    response.headers["X-Total-Count"] = str(total)
+    return items
 
 
 @router.get("/tags", response_model=list[str])
@@ -85,7 +95,8 @@ def change_authority(memory_id: UUID, data: AuthorityChange, session: Session = 
 
 
 @router.post("/search", response_model=MemorySearchResponse)
-def search(data: MemorySearchRequest, session: Session = Depends(get_db)):
+def search(data: MemorySearchRequest, session: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    check_namespace_read_access(data.namespace_id, session, user)
     return search_service.search_memories(session, data)
 
 

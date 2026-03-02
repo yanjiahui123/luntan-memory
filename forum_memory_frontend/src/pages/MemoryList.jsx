@@ -245,10 +245,13 @@ const EMPTY_FILTERS = {
   knowledge_type: '', tags: '', q: '', page: 1,
 };
 
+const PAGE_SIZE = 40;
+
 export default function MemoryList() {
   const [filters, setFilters] = useState(EMPTY_FILTERS);
   const [namespaces, setNamespaces] = useState([]);
   const [allTags, setAllTags] = useState([]);
+  const [debouncedQ, setDebouncedQ] = useState('');
 
   useEffect(() => {
     namespaceApi.list().then(setNamespaces).catch(() => {});
@@ -258,10 +261,22 @@ export default function MemoryList() {
     memoryApi.tags(filters.namespace_id || undefined).then(setAllTags).catch(() => {});
   }, [filters.namespace_id]);
 
-  const { data: memories, loading, error, refetch } = useAsync(
-    () => memoryApi.list({ ...cleanFilters(filters), size: 40 }),
-    [filters]
+  // Debounce keyword input (400ms)
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedQ(filters.q), 400);
+    return () => clearTimeout(timer);
+  }, [filters.q]);
+
+  // Build API params: use debouncedQ for the q field
+  const apiFilters = { ...cleanFilters(filters), ...(debouncedQ ? { q: debouncedQ } : {}), size: PAGE_SIZE };
+  const { data, loading, error, refetch } = useAsync(
+    () => memoryApi.list(apiFilters),
+    [debouncedQ, filters.namespace_id, filters.authority, filters.status, filters.pending_confirm, filters.knowledge_type, filters.tags, filters.page]
   );
+
+  const memories = data?.items;
+  const totalCount = data?.total || 0;
+  const totalPages = Math.ceil(totalCount / PAGE_SIZE);
 
   function setFilter(key, val) {
     setFilters(f => ({ ...f, [key]: val, page: 1 }));
@@ -269,16 +284,15 @@ export default function MemoryList() {
 
   function clearAll() {
     setFilters(EMPTY_FILTERS);
+    setDebouncedQ('');
   }
 
   // Active chips: all filter keys that have a non-empty value
   const activeChips = CHIP_KEYS.filter(k => filters[k]);
 
-  // Client-side keyword filter
+  // Keyword for highlighting (use raw input for instant visual feedback)
   const keyword = filters.q.trim().toLowerCase();
-  const displayed = keyword && memories
-    ? memories.filter(m => m.content.toLowerCase().includes(keyword))
-    : memories;
+  const displayed = memories;
 
   return (
     <div>
@@ -346,6 +360,29 @@ export default function MemoryList() {
           {displayed.map(m => <MemoryRow key={m.id} memory={m} keyword={keyword} />)}
         </div>
       }
+
+      {/* ── Pagination ──────────────────────────────────────────────── */}
+      {totalCount > 0 && (
+        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 12, marginTop: 16 }}>
+          <button
+            className="btn-sm btn-secondary"
+            disabled={filters.page <= 1}
+            onClick={() => setFilters(f => ({ ...f, page: f.page - 1 }))}
+          >
+            ← 上一页
+          </button>
+          <span style={{ fontSize: 13, color: 'var(--text-sec)' }}>
+            第 {filters.page} 页 / 共 {totalPages} 页（{totalCount} 条）
+          </span>
+          <button
+            className="btn-sm btn-secondary"
+            disabled={filters.page >= totalPages}
+            onClick={() => setFilters(f => ({ ...f, page: f.page + 1 }))}
+          >
+            下一页 →
+          </button>
+        </div>
+      )}
     </div>
   );
 }
@@ -401,7 +438,6 @@ function MemoryRow({ memory, keyword }) {
 
 function cleanFilters(f) {
   const out = {};
-  // Exclude client-side-only 'q' field from API call
-  Object.entries(f).forEach(([k, v]) => { if (v && k !== 'q') out[k] = v; });
+  Object.entries(f).forEach(([k, v]) => { if (v != null && v !== '') out[k] = v; });
   return out;
 }

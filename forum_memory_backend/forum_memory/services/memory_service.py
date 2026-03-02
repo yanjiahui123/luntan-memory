@@ -54,11 +54,18 @@ def list_memories(
     pending_confirm: bool | None = None,
     knowledge_type: str | None = None,
     tags: str | None = None,
+    q: str | None = None,
     page: int = 1,
     size: int = 20,
 ) -> list[Memory]:
-    stmt = select(Memory).order_by(Memory.updated_at.desc())
-    stmt = _apply_filters(stmt, namespace_id, authority, status, pending_confirm, knowledge_type, tags)
+    stmt = (
+        select(Memory)
+        .join(Namespace, Memory.namespace_id == Namespace.id)
+        .where(Namespace.is_active == True)
+        .where(Memory.status != MemoryStatus.DELETED)
+        .order_by(Memory.updated_at.desc())
+    )
+    stmt = _apply_filters(stmt, namespace_id, authority, status, pending_confirm, knowledge_type, tags, q)
     stmt = stmt.offset((page - 1) * size).limit(size)
     return list(session.exec(stmt).all())
 
@@ -311,7 +318,30 @@ def batch_get_memories(session: Session, ids: list[UUID]) -> list[Memory]:
     return list(session.exec(stmt).all())
 
 
-def _apply_filters(stmt, ns_id, authority, status, pending, knowledge_type=None, tags=None):
+def count_memories(
+    session: Session,
+    namespace_id: UUID | None = None,
+    authority: str | None = None,
+    status: str | None = None,
+    pending_confirm: bool | None = None,
+    knowledge_type: str | None = None,
+    tags: str | None = None,
+    q: str | None = None,
+) -> int:
+    """Count memories matching the given filters (for pagination)."""
+    from sqlmodel import func
+    stmt = (
+        select(func.count())
+        .select_from(Memory)
+        .join(Namespace, Memory.namespace_id == Namespace.id)
+        .where(Namespace.is_active == True)
+        .where(Memory.status != MemoryStatus.DELETED)
+    )
+    stmt = _apply_filters(stmt, namespace_id, authority, status, pending_confirm, knowledge_type, tags, q)
+    return session.exec(stmt).one()
+
+
+def _apply_filters(stmt, ns_id, authority, status, pending, knowledge_type=None, tags=None, q=None):
     if ns_id:
         stmt = stmt.where(Memory.namespace_id == ns_id)
     if authority:
@@ -329,6 +359,8 @@ def _apply_filters(stmt, ns_id, authority, status, pending, knowledge_type=None,
             tag = tag.strip()
             if tag:
                 stmt = stmt.where(Memory.tags.cast(String).contains(tag))
+    if q:
+        stmt = stmt.where(Memory.content.ilike(f"%{q}%"))
     return stmt
 
 

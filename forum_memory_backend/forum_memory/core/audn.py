@@ -39,8 +39,8 @@ def parse_audn_response(raw: str) -> AUDNResult:
     try:
         data = json.loads(text)
     except json.JSONDecodeError:
-        logger.warning("Failed to parse AUDN output: %s", text[:200])
-        return AUDNResult(action=AUDNAction.ADD, reason="parse_error_fallback_to_add")
+        logger.error("Failed to parse AUDN output: %s", text[:200])
+        return AUDNResult(action=AUDNAction.NONE, reason="parse_error_fallback_to_none")
     return _data_to_result(data)
 
 
@@ -70,7 +70,8 @@ def _data_to_result(data: dict) -> AUDNResult:
     try:
         action = AUDNAction(action_str)
     except ValueError:
-        action = AUDNAction.ADD
+        logger.error("Invalid AUDN action string: %s", action_str)
+        action = AUDNAction.NONE
     return AUDNResult(
         action=action,
         target_id=data.get("target_id"),

@@ -136,6 +136,12 @@ def _process_one_fact(session, llm, thread, fact, authority, pending) -> UUID | 
     raw = llm.complete(msgs)
     result = parse_audn_response(raw)
 
+    # Retry once if LLM returned unparseable output
+    if result.action.value == "NONE" and "parse_error" in result.reason:
+        logger.info("AUDN parse failed for thread %s, retrying once...", thread.id)
+        raw = llm.complete(msgs)
+        result = parse_audn_response(raw)
+
     data = MemoryCreate(
         namespace_id=thread.namespace_id,
         content=fact["content"],

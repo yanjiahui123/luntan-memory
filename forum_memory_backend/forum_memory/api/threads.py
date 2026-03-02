@@ -4,10 +4,12 @@ import logging
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlmodel import Session
+from sqlmodel import Session, select
 
-from forum_memory.api.deps import get_db, get_current_user, get_current_user_id, check_board_permission
+from forum_memory.api.deps import get_db, get_current_user, get_current_user_id, check_board_permission, check_namespace_read_access, check_namespace_write_access
 from forum_memory.models.user import User
+from forum_memory.models.enums import SystemRole
+from forum_memory.models.namespace_moderator import NamespaceModerator
 from forum_memory.schemas.thread import ThreadCreate, ThreadRead, ThreadResolve, CommentCreate, CommentRead, UpvoteResponse
 from forum_memory.services import thread_service
 
@@ -28,17 +30,20 @@ def list_threads(
 
 
 @router.get("/{thread_id}", response_model=ThreadRead)
-def get_thread(thread_id: UUID, session: Session = Depends(get_db)):
+def get_thread(thread_id: UUID, session: Session = Depends(get_db), user: User = Depends(get_current_user)):
     thread = thread_service.get_thread(session, thread_id)
     if not thread:
         raise HTTPException(404, "Thread not found")
+    check_namespace_read_access(thread.namespace_id, session, user)
     return thread
 
 
 @router.post("", response_model=ThreadRead, status_code=201)
-def create_thread(data: ThreadCreate, session: Session = Depends(get_db), user_id: UUID = Depends(get_current_user_id)):
+def create_thread(data: ThreadCreate, session: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    # Check write access based on namespace access_mode
+    check_namespace_write_access(data.namespace_id, session, user)
     # AI 回答由 Dagster sensor 异步触发，此处不再同步调用
-    return thread_service.create_thread(session, data, user_id)
+    return thread_service.create_thread(session, data, user.id)
 
 
 @router.post("/{thread_id}/resolve", response_model=ThreadRead)
@@ -63,8 +68,12 @@ def list_comments(thread_id: UUID, session: Session = Depends(get_db)):
 
 
 @router.post("/{thread_id}/comments", response_model=CommentRead, status_code=201)
-def add_comment(thread_id: UUID, data: CommentCreate, session: Session = Depends(get_db), user_id: UUID = Depends(get_current_user_id)):
-    return thread_service.add_comment(session, data, user_id)
+def add_comment(thread_id: UUID, data: CommentCreate, session: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    thread = thread_service.get_thread(session, thread_id)
+    if not thread:
+        raise HTTPException(404, "Thread not found")
+    check_namespace_write_access(thread.namespace_id, session, user)
+    return thread_service.add_comment(session, data, user.id)
 
 
 @router.post("/{thread_id}/ai-answer", response_model=CommentRead, status_code=201)
@@ -107,17 +116,35 @@ def delete_comment(
     thread_id: UUID,
     comment_id: UUID,
     session: Session = Depends(get_db),
-    user_id: UUID = Depends(get_current_user_id),
+    user: User = Depends(get_current_user),
 ):
+    # Determine if user has board admin rights for this thread's namespace
+    thread = thread_service.get_thread(session, thread_id)
+    if not thread:
+        raise HTTPException(404, "Thread not found")
+
+    is_board_admin = False
+    if user.role == SystemRole.SUPER_ADMIN:
+        is_board_admin = True
+    elif user.role == SystemRole.BOARD_ADMIN:
+        stmt = select(NamespaceModerator).where(
+            NamespaceModerator.user_id == user.id,
+            NamespaceModerator.namespace_id == thread.namespace_id,
+        )
+        if session.exec(stmt).first():
+            is_board_admin = True
+
     try:
-        thread = thread_service.delete_comment(session, comment_id, user_id)
-        # Re-extract memories if thread was resolved
-        if thread.resolved_type:
+        thread = thread_service.delete_comment(session, comment_id, user.id, is_board_admin=is_board_admin)
+        # Re-extract memories only if board admin and thread was resolved
+        if is_board_admin and thread.resolved_type:
             from forum_memory.services import extraction_service
             try:
                 extraction_service.re_extract(session, thread_id)
             except Exception:
                 pass  # Non-fatal: extraction failure shouldn't block comment deletion
         return {"ok": True}
+    except PermissionError as e:
+        raise HTTPException(403, str(e))
     except ValueError as e:
         raise HTTPException(400, str(e))

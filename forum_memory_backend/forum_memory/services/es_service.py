@@ -78,6 +78,21 @@ def ensure_index() -> None:
     ensure_index_by_name(_default_index_name())
 
 
+def delete_index(index_name: str) -> bool:
+    """Delete an ES index. Returns True on success."""
+    es = get_es_client()
+    if not es:
+        return False
+    try:
+        if es.indices.exists(index=index_name):
+            es.indices.delete(index=index_name)
+            logger.info("Deleted ES index: %s", index_name)
+        return True
+    except Exception:
+        logger.exception("Failed to delete ES index %s", index_name)
+        return False
+
+
 # ── Document CRUD ────────────────────────────────────────
 
 def index_memory(

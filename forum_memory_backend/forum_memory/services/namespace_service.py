@@ -90,13 +90,56 @@ def update_namespace(session: Session, ns_id: UUID, data: NamespaceUpdate) -> Na
 
 
 def delete_namespace(session: Session, ns_id: UUID) -> Namespace:
-    """Soft-delete a namespace (set is_active=False)."""
+    """Soft-delete a namespace and cascade to threads, memories, and ES index."""
+    from forum_memory.models.event import DomainEvent
+    from forum_memory.services import es_service
+
     ns = session.get(Namespace, ns_id)
     if not ns:
         raise ValueError("Namespace not found")
+
+    # 1. Soft-delete all non-deleted threads in this namespace
+    thread_stmt = select(Thread).where(
+        Thread.namespace_id == ns_id,
+        Thread.status != ThreadStatus.DELETED,
+    )
+    threads = list(session.exec(thread_stmt).all())
+    for t in threads:
+        t.status = ThreadStatus.DELETED
+    logger.info("Soft-deleted %d threads for namespace %s", len(threads), ns_id)
+
+    # 2. Soft-delete all non-deleted memories in this namespace
+    mem_stmt = select(Memory).where(
+        Memory.namespace_id == ns_id,
+        Memory.status != MemoryStatus.DELETED,
+    )
+    memories = list(session.exec(mem_stmt).all())
+    for m in memories:
+        m.status = MemoryStatus.DELETED
+    logger.info("Soft-deleted %d memories for namespace %s", len(memories), ns_id)
+
+    # 3. Mark all pending domain events for this namespace as processed
+    event_stmt = select(DomainEvent).where(
+        DomainEvent.namespace_id == ns_id,
+        DomainEvent.processed == False,
+    )
+    events = list(session.exec(event_stmt).all())
+    for e in events:
+        e.processed = True
+    logger.info("Marked %d pending events as processed for namespace %s", len(events), ns_id)
+
+    # 4. Mark namespace as inactive
     ns.is_active = False
     session.commit()
     session.refresh(ns)
+
+    # 5. Delete ES index (non-fatal, after DB commit)
+    if ns.es_index_name:
+        try:
+            es_service.delete_index(ns.es_index_name)
+        except Exception:
+            logger.warning("Failed to delete ES index %s (non-fatal)", ns.es_index_name)
+
     return ns
 
 

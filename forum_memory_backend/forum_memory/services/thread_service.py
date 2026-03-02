@@ -8,6 +8,7 @@ from sqlmodel import Session, select
 
 from forum_memory.models.thread import Thread, Comment
 from forum_memory.models.event import DomainEvent
+from forum_memory.models.namespace import Namespace
 from forum_memory.models.enums import ThreadStatus, ResolvedType
 from forum_memory.core.state_machine import can_transition
 from forum_memory.schemas.thread import ThreadCreate, CommentCreate
@@ -24,7 +25,13 @@ def list_threads(
     page: int = 1,
     size: int = 20,
 ) -> list[Thread]:
-    stmt = select(Thread).where(Thread.status != ThreadStatus.DELETED).order_by(Thread.created_at.desc())
+    stmt = (
+        select(Thread)
+        .join(Namespace, Thread.namespace_id == Namespace.id)
+        .where(Thread.status != ThreadStatus.DELETED)
+        .where(Namespace.is_active == True)
+        .order_by(Thread.created_at.desc())
+    )
     if namespace_id:
         stmt = stmt.where(Thread.namespace_id == namespace_id)
     if status:
@@ -167,11 +174,17 @@ def toggle_upvote(session: Session, comment_id: UUID, user_id: UUID) -> tuple[Co
     return comment, voted
 
 
-def delete_comment(session: Session, comment_id: UUID, user_id: UUID) -> Thread:
-    """Delete a comment. Returns the parent thread."""
+def delete_comment(session: Session, comment_id: UUID, user_id: UUID, is_board_admin: bool = False) -> Thread:
+    """Delete a comment. Only comment author or board admin can delete.
+    Returns the parent thread."""
     comment = session.get(Comment, comment_id)
     if not comment:
         raise ValueError("Comment not found")
+
+    # Authorization: only comment author or board admin can delete
+    if not is_board_admin and comment.author_id != user_id:
+        raise PermissionError("Only the comment author or board admin can delete this comment")
+
     thread = session.get(Thread, comment.thread_id)
     if not thread:
         raise ValueError("Thread not found")

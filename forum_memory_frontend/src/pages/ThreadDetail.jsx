@@ -43,6 +43,8 @@ export default function ThreadDetail() {
   const [resolveTarget, setResolveTarget] = useState(null);
   const [aiLoading, setAiLoading] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [pollStatus, setPollStatus] = useState('idle'); // 'idle' | 'polling' | 'done'
+  const [dots, setDots] = useState('');
   const isSuperAdmin = me?.role === 'super_admin';
   const isAdmin = me?.role === 'super_admin' || me?.role === 'board_admin';
 
@@ -60,14 +62,44 @@ export default function ThreadDetail() {
     refetchComments();
   }
 
-  // Auto-poll for AI answer on new threads (first 2 minutes, every 10s)
+  // Progressive backoff polling for AI answer (~5 minutes total)
   useEffect(() => {
     if (thread?.status === 'OPEN' && thread?.comment_count === 0) {
-      const interval = setInterval(() => refetchComments(), 10000);
-      const timeout = setTimeout(() => clearInterval(interval), 120000);
-      return () => { clearInterval(interval); clearTimeout(timeout); };
+      setPollStatus('polling');
+      const intervals = [3000, 3000, 5000, 5000, 10000, 10000, 15000, 15000, 30000, 30000, 30000, 30000, 30000, 30000, 30000, 30000];
+      let step = 0;
+      let timer = null;
+
+      function poll() {
+        refetchComments();
+        step++;
+        if (step < intervals.length) {
+          timer = setTimeout(poll, intervals[step]);
+        } else {
+          setPollStatus('done');
+        }
+      }
+
+      timer = setTimeout(poll, intervals[0]);
+      return () => { clearTimeout(timer); setPollStatus('idle'); };
     }
   }, [thread?.id, thread?.comment_count]);
+
+  // Stop polling once comments arrive
+  useEffect(() => {
+    if (comments?.length > 0 && pollStatus === 'polling') {
+      setPollStatus('done');
+    }
+  }, [comments?.length, pollStatus]);
+
+  // Animated dots for polling indicator
+  useEffect(() => {
+    if (pollStatus !== 'polling') return;
+    const timer = setInterval(() => {
+      setDots(d => d.length >= 3 ? '' : d + '.');
+    }, 500);
+    return () => clearInterval(timer);
+  }, [pollStatus]);
 
   if (loading) return <Loading />;
   if (error) return <ErrorMsg message={error} />;
@@ -133,7 +165,32 @@ export default function ThreadDetail() {
       {/* AI auto-answer waiting indicator */}
       {thread.status === 'OPEN' && (!comments || comments.length === 0) && (
         <div className="card" style={{ padding: 16, marginBottom: 12, textAlign: 'center', color: 'var(--text-sec)', fontSize: 13 }}>
-          AI 正在分析您的问题，回答将在稍后自动出现...
+          {pollStatus === 'polling' && (
+            <>
+              <div style={{ marginBottom: 6, fontWeight: 500 }}>
+                AI 正在分析您的问题{dots}
+              </div>
+              <div style={{ fontSize: 11, color: 'var(--text-ter)' }}>回答将在稍后自动出现，请稍候...</div>
+            </>
+          )}
+          {pollStatus === 'done' && (
+            <>
+              <div style={{ marginBottom: 8 }}>AI 分析可能仍在进行中</div>
+              <button
+                className="btn-primary btn-sm"
+                onClick={() => {
+                  refetchComments();
+                  setPollStatus('polling');
+                  setTimeout(() => setPollStatus('done'), 60000);
+                }}
+              >
+                🔄 刷新查看
+              </button>
+            </>
+          )}
+          {pollStatus === 'idle' && (
+            <div>AI 正在分析您的问题，回答将在稍后自动出现...</div>
+          )}
         </div>
       )}
       {comments?.map(c => (

@@ -64,6 +64,13 @@ class SystemRole(str, Enum):
     USER = "user"
 
 
+class AccessMode(str, Enum):
+    """Namespace access mode."""
+    PUBLIC = "public"          # Anyone can read and post
+    RESTRICTED = "restricted"  # Anyone can read, only members can post
+    PRIVATE = "private"        # Only members can read and post
+
+
 # ── Feedback enums ────────────────────────────────────────────
 
 class FeedbackType(str, Enum):

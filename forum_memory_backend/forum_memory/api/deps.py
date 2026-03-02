@@ -66,3 +66,52 @@ def check_board_permission(
         if session.exec(stmt).first():
             return
     raise HTTPException(403, "需要板块管理权限")
+
+
+def _is_namespace_member(ns_id: UUID, session: Session, user: User) -> bool:
+    """Check if user is a member of the namespace (owner, moderator, or super_admin)."""
+    from forum_memory.models.namespace import Namespace
+    if user.role == SystemRole.SUPER_ADMIN:
+        return True
+    ns = session.get(Namespace, ns_id)
+    if ns and ns.owner_id == user.id:
+        return True
+    stmt = select(NamespaceModerator).where(
+        NamespaceModerator.user_id == user.id,
+        NamespaceModerator.namespace_id == ns_id,
+    )
+    return session.exec(stmt).first() is not None
+
+
+def check_namespace_read_access(
+    ns_id: UUID,
+    session: Session,
+    user: User,
+) -> None:
+    """Check if user can read content in this namespace.
+    PRIVATE: only members can read. PUBLIC/RESTRICTED: anyone can read."""
+    from forum_memory.models.namespace import Namespace
+    ns = session.get(Namespace, ns_id)
+    if not ns:
+        raise HTTPException(404, "Namespace not found")
+    if ns.access_mode != "private":
+        return  # PUBLIC and RESTRICTED allow reading by anyone
+    if not _is_namespace_member(ns_id, session, user):
+        raise HTTPException(403, "此板块为私有板块，仅成员可访问")
+
+
+def check_namespace_write_access(
+    ns_id: UUID,
+    session: Session,
+    user: User,
+) -> None:
+    """Check if user can post/create content in this namespace.
+    RESTRICTED/PRIVATE: only members can write. PUBLIC: anyone can write."""
+    from forum_memory.models.namespace import Namespace
+    ns = session.get(Namespace, ns_id)
+    if not ns:
+        raise HTTPException(404, "Namespace not found")
+    if ns.access_mode == "public":
+        return  # PUBLIC allows writing by anyone
+    if not _is_namespace_member(ns_id, session, user):
+        raise HTTPException(403, "此板块仅成员可发帖")
