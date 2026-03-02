@@ -32,8 +32,15 @@ def _source_weight(source_role: str | None) -> float:
 
 
 def _freshness(created_at: datetime) -> float:
-    """Decay factor based on age — 1.0 for new, decays over 365 days."""
+    """Decay factor based on age — 1.0 for new, decays over 365 days.
+
+    PostgreSQL TIMESTAMP (without time zone) is returned by psycopg2 as a
+    timezone-naive datetime.  We treat any naive datetime as UTC to avoid
+    the 'can't subtract offset-naive and offset-aware datetimes' error.
+    """
     now = datetime.now(timezone.utc)
+    if created_at.tzinfo is None:
+        created_at = created_at.replace(tzinfo=timezone.utc)
     days = (now - created_at).days
     return max(0.1, 1.0 - days / 365.0)
 
