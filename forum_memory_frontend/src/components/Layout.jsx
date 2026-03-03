@@ -32,6 +32,10 @@ export default function Layout() {
   const boardAdminMatch = location.pathname.match(/^\/admin\/boards\/([^/]+)/);
   const activeBoardId = boardAdminMatch ? boardAdminMatch[1] : null;
 
+  // 检测是否在论坛板块页面 /boards/:boardId/*
+  const forumBoardMatch = location.pathname.match(/^\/boards\/([^/]+)/);
+  const forumBoardId = forumBoardMatch ? forumBoardMatch[1] : null;
+
   const [currentUser, setCurrentUser] = useState(null);
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [inputId, setInputId] = useState('');
@@ -92,11 +96,12 @@ export default function Layout() {
       <header className="topbar">
         <Link to="/boards" className="topbar__logo" style={{ textDecoration: 'none' }}>知识论坛</Link>
         <div style={{ flex: 1 }} />
-        <input className="topbar__search" placeholder="搜索问题或知识..." onKeyDown={e => { if (e.key === 'Enter' && e.target.value) navigate(`/search?q=${encodeURIComponent(e.target.value)}`); }} />
         <nav className="topbar__nav">
-          <button className={`topbar__link ${!isAdminPage ? 'topbar__link--active' : ''}`} onClick={() => navigate('/boards')}>论坛</button>
-          {isAdmin && (
+          {isSuperAdmin && (
             <button className={`topbar__link ${isAdminPage ? 'topbar__link--active' : ''}`} onClick={handleAdminNav}>管理后台</button>
+          )}
+          {!isSuperAdmin && currentUser?.role === 'board_admin' && forumBoardId && (
+            <button className="topbar__link" onClick={() => navigate(`/admin/boards/${forumBoardId}`)}>板块管理</button>
           )}
         </nav>
 
