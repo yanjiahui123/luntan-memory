@@ -1,0 +1,50 @@
+# ─── Python ───────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+.coverage
+htmlcov/
+*.log
+
+# ─── 虚拟环境 ─────────────────────────────────────────────────────────────────
+.venv/
+venv/
+env/
+
+# ─── 环境变量 / 密钥 ──────────────────────────────────────────────────────────
+.env
+.env.*
+!.env.example
+
+# ─── 前端 ─────────────────────────────────────────────────────────────────────
+forum_memory_frontend/node_modules/
+forum_memory_frontend/dist/
+forum_memory_frontend/.vite/
+
+# ─── 上传文件 ─────────────────────────────────────────────────────────────────
+forum_memory_backend/forum_memory/uploads/
+
+# ─── Dagster ──────────────────────────────────────────────────────────────────
+$DAGSTER_HOME/
+.dagster/
+
+# ─── 编辑器 / 系统 ────────────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# ─── Claude Code worktrees ────────────────────────────────────────────────────
+.claude/worktrees/
