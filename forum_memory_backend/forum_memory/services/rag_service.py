@@ -1,5 +1,6 @@
 """RAG knowledge base service — calls external RAG API."""
 
+import json
 import logging
 
 import requests
@@ -9,15 +10,18 @@ from forum_memory.config import get_settings
 logger = logging.getLogger(__name__)
 
 
-def query_rag(kb_sn_list: list[str], question: str, uid: str = "forum_memory") -> str:
+def query_rag(kb_sn_list: list[str], question: str, uid: str = "forum_memory") -> tuple[str, str | None]:
     """
     Query external RAG API with knowledge base serial numbers.
 
-    Returns concatenated RAG results as text, or empty string on failure.
+    Returns a tuple of:
+      - prompt_text: formatted text for LLM prompt (empty string on failure)
+      - chunks_json: JSON-serialized list of raw chunks for UI display, or None if
+                     the API did not return structured chunk data
     """
     settings = get_settings()
     if not settings.rag_base_url or not kb_sn_list:
-        return ""
+        return "", None
 
     try:
         resp = requests.post(
@@ -33,25 +37,33 @@ def query_rag(kb_sn_list: list[str], question: str, uid: str = "forum_memory") -
         resp.raise_for_status()
         data = resp.json()
 
-        # Extract text from response — adapt based on actual API response format
+        # If the API returned a plain string
         if isinstance(data, str):
-            return data
+            return data, None
+
         if isinstance(data, dict):
-            # Try common response field names
-            for key in ("answer", "result", "text", "content", "data"):
+            # Try scalar answer fields first
+            for key in ("answer", "result", "text", "content"):
                 if key in data and isinstance(data[key], str):
-                    return data[key]
-            # If data contains a list of results, concatenate them
+                    return data[key], None
+
+            # Try list-of-chunks fields — preserve raw chunks for UI display
             for key in ("results", "documents", "chunks", "data"):
                 if key in data and isinstance(data[key], list):
+                    chunks = data[key]
                     parts = []
-                    for item in data[key]:
+                    for item in chunks:
                         if isinstance(item, str):
                             parts.append(item)
                         elif isinstance(item, dict):
-                            parts.append(item.get("content", item.get("text", str(item))))
-                    return "\n\n".join(parts)
-        return str(data)
+                            parts.append(item.get("text", item.get("content", str(item))))
+                    prompt_text = "\n\n".join(parts)
+                    # Only store structured chunks that match expected schema
+                    structured = [c for c in chunks if isinstance(c, dict) and "text" in c]
+                    chunks_json = json.dumps(structured, ensure_ascii=False) if structured else None
+                    return prompt_text, chunks_json
+
+        return str(data), None
     except Exception:
         logger.exception("RAG query failed (non-fatal)")
-        return ""
+        return "", None

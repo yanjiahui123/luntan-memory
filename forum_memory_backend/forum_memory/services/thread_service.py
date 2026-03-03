@@ -234,10 +234,10 @@ def generate_ai_answer(session: Session, thread_id: UUID) -> Comment:
     if namespace:
         kb_sn_list = (namespace.config or {}).get("kb_sn_list", [])
         if kb_sn_list:
-            rag_result = query_rag(kb_sn_list, question)
-            if rag_result:
-                rag_context_prompt = rag_result
-                stored_rag_context = rag_result  # persist for display in citation cards
+            rag_prompt_text, rag_chunks_json = query_rag(kb_sn_list, question)
+            if rag_prompt_text:
+                rag_context_prompt = rag_prompt_text
+                stored_rag_context = rag_chunks_json  # JSON list for UI; None if unstructured
 
     # Generate answer via LLM
     provider = get_provider()
