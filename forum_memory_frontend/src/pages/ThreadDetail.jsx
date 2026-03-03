@@ -1,36 +1,19 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useParams, useNavigate } from 'react-router-dom';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { threadApi, feedbackApi, memoryApi, userApi } from '../api/client';
 import { useAsync } from '../hooks/useAsync';
 import { Loading, ErrorMsg, StatusBadge, Badge, TimeAgo, ConfirmModal, KnowledgeTypeBadge, QualityDot } from '../components/UI';
 import ImagePasteTextarea from '../components/ImagePasteTextarea';
 
-/** Render text with markdown images: ![alt](url) → <img> tags */
-function renderMarkdownContent(text) {
-  if (!text) return null;
-  const parts = [];
-  const regex = /!\[([^\]]*)\]\(([^)]+)\)/g;
-  let lastIndex = 0;
-  let match;
-  let key = 0;
-  while ((match = regex.exec(text)) !== null) {
-    if (match.index > lastIndex) {
-      parts.push(<span key={key++}>{text.slice(lastIndex, match.index)}</span>);
-    }
-    parts.push(
-      <img
-        key={key++}
-        src={match[2]}
-        alt={match[1]}
-        style={{ maxWidth: '100%', borderRadius: 'var(--radius)', margin: '8px 0', display: 'block' }}
-      />
-    );
-    lastIndex = regex.lastIndex;
-  }
-  if (lastIndex < text.length) {
-    parts.push(<span key={key++}>{text.slice(lastIndex)}</span>);
-  }
-  return parts.length > 0 ? parts : text;
+function MarkdownContent({ content, style }) {
+  if (!content) return null;
+  return (
+    <div className="md-body" style={style}>
+      <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
+    </div>
+  );
 }
 
 export default function ThreadDetail() {
@@ -121,7 +104,7 @@ export default function ThreadDetail() {
           {thread.environment && <Badge type="gray">🌍 {thread.environment}</Badge>}
         </div>
         <h1 style={{ fontSize: 18, fontWeight: 700, marginBottom: 10 }}>{thread.title}</h1>
-        <div style={{ fontSize: 14, lineHeight: 1.8, color: 'var(--text)', whiteSpace: 'pre-wrap' }}>{renderMarkdownContent(thread.content)}</div>
+        <MarkdownContent content={thread.content} style={{ fontSize: 14, color: 'var(--text)' }} />
         <div style={{ display: 'flex', gap: 16, marginTop: 14, fontSize: 12, color: 'var(--text-ter)', alignItems: 'center' }}>
           <span>👁 {thread.view_count} 浏览</span>
           <span>💬 {thread.comment_count} 回复</span>
@@ -317,7 +300,7 @@ function CommentCard({ comment, thread, onResolve, onDelete, isAdmin }) {
         <span style={{ marginLeft: 'auto', fontSize: 12, color: 'var(--text-ter)' }}><TimeAgo date={comment.created_at} /></span>
       </div>
 
-      <div style={{ fontSize: 14, lineHeight: 1.8, whiteSpace: 'pre-wrap' }}>{renderMarkdownContent(comment.content)}</div>
+      <MarkdownContent content={comment.content} style={{ fontSize: 14 }} />
 
       {/* Collapsible citation cards */}
       {isAi && (hasCitations || comment.rag_context) && (

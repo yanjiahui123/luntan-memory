@@ -308,3 +308,30 @@ textarea { resize: vertical; min-height: 120px; }
   border-radius: var(--radius); font-size: 13px;
 }
 .pagination button.active { background: var(--accent); color: #fff; }
+
+/* ── Markdown Body ─────────────────────────────── */
+.md-body { overflow-wrap: break-word; word-break: break-word; line-height: 1.8; }
+.md-body > *:first-child { margin-top: 0; }
+.md-body > *:last-child { margin-bottom: 0; }
+.md-body p { margin: 8px 0; }
+.md-body h1, .md-body h2, .md-body h3, .md-body h4 { font-weight: 700; line-height: 1.4; margin: 16px 0 8px; }
+.md-body h1 { font-size: 1.35em; }
+.md-body h2 { font-size: 1.15em; }
+.md-body h3 { font-size: 1.05em; }
+.md-body ul, .md-body ol { padding-left: 22px; margin: 8px 0; }
+.md-body li { margin: 4px 0; }
+.md-body blockquote {
+  border-left: 3px solid var(--border-strong);
+  padding: 4px 12px;
+  margin: 10px 0;
+  color: var(--text-sec);
+  background: var(--surface-alt);
+  border-radius: 0 var(--radius) var(--radius) 0;
+}
+.md-body table { border-collapse: collapse; width: 100%; margin: 12px 0; font-size: 13px; }
+.md-body th { background: var(--surface-alt); padding: 8px 12px; text-align: left; font-weight: 600; border: 1px solid var(--border); }
+.md-body td { padding: 7px 12px; border: 1px solid var(--border); }
+.md-body hr { border: none; border-top: 1px solid var(--border); margin: 16px 0; }
+.md-body img { max-width: 100%; border-radius: var(--radius); margin: 8px 0; display: block; }
+.md-body pre { margin: 10px 0; }
+.md-body a { color: var(--accent); }
