@@ -36,6 +36,8 @@ def query_rag(kb_sn_list: list[str], question: str, uid: str = "forum_memory") -
         )
         resp.raise_for_status()
         data = resp.json()
+        logger.info("RAG API response keys: %s", list(data.keys()) if isinstance(data, dict) else type(data).__name__)
+        logger.debug("RAG API response: %s", json.dumps(data, ensure_ascii=False)[:500])
 
         # If the API returned a plain string
         if isinstance(data, str):
@@ -47,21 +49,35 @@ def query_rag(kb_sn_list: list[str], question: str, uid: str = "forum_memory") -
                 if key in data and isinstance(data[key], str):
                     return data[key], None
 
-            # Try list-of-chunks fields — preserve raw chunks for UI display
-            for key in ("results", "documents", "chunks", "data"):
+            # Try named list-of-chunks fields
+            list_keys = ("results", "documents", "chunks", "data", "context", "items", "records")
+            chunks = None
+            for key in list_keys:
                 if key in data and isinstance(data[key], list):
                     chunks = data[key]
-                    parts = []
-                    for item in chunks:
-                        if isinstance(item, str):
-                            parts.append(item)
-                        elif isinstance(item, dict):
-                            parts.append(item.get("text", item.get("content", str(item))))
-                    prompt_text = "\n\n".join(parts)
-                    # Only store structured chunks that match expected schema
-                    structured = [c for c in chunks if isinstance(c, dict) and "text" in c]
-                    chunks_json = json.dumps(structured, ensure_ascii=False) if structured else None
-                    return prompt_text, chunks_json
+                    logger.info("RAG chunks found under key=%r, count=%d", key, len(chunks))
+                    break
+
+            # Fallback: pick first list-typed value in the response
+            if chunks is None:
+                for key, val in data.items():
+                    if isinstance(val, list):
+                        chunks = val
+                        logger.info("RAG chunks found under fallback key=%r, count=%d", key, len(chunks))
+                        break
+
+            if chunks is not None:
+                parts = []
+                for item in chunks:
+                    if isinstance(item, str):
+                        parts.append(item)
+                    elif isinstance(item, dict):
+                        parts.append(item.get("text", item.get("content", str(item))))
+                prompt_text = "\n\n".join(parts)
+                structured = [c for c in chunks if isinstance(c, dict) and "text" in c]
+                chunks_json = json.dumps(structured, ensure_ascii=False) if structured else None
+                logger.info("RAG structured chunks stored: %d", len(structured) if structured else 0)
+                return prompt_text, chunks_json
 
         return str(data), None
     except Exception:

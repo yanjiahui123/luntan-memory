@@ -359,13 +359,16 @@ function CommentCard({ comment, thread, onResolve, onDelete, isAdmin }) {
               {/* RAG knowledge base section */}
               {comment.rag_context && (() => {
                 let chunks = [];
+                let isLegacyText = false;
                 try {
                   const parsed = typeof comment.rag_context === 'string'
                     ? JSON.parse(comment.rag_context)
                     : comment.rag_context;
                   chunks = Array.isArray(parsed) ? parsed : [];
                 } catch {
-                  chunks = [];
+                  // 旧格式：纯文本，包装成单条展示
+                  isLegacyText = true;
+                  chunks = [{ text: comment.rag_context, metadata: {} }];
                 }
                 if (chunks.length === 0) return null;
                 const isUrl = (s) => /^https?:\/\//i.test(s);
@@ -376,7 +379,7 @@ function CommentCard({ comment, thread, onResolve, onDelete, isAdmin }) {
                     borderTop: citedMemories?.length > 0 ? '1px solid var(--border)' : 'none',
                   }}>
                     <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-sec)', marginBottom: 6 }}>
-                      📚 知识库参考（{chunks.length} 条）
+                      📚 知识库参考{isLegacyText ? '' : `（${chunks.length} 条）`}
                     </div>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                       {chunks.map((chunk, idx) => {
