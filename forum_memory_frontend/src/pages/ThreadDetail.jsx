@@ -89,7 +89,7 @@ export default function ThreadDetail() {
   if (!thread) return null;
 
   return (
-    <div style={{ maxWidth: 760 }}>
+    <div>
       <div className="breadcrumb">
         <Link to="/boards">板块</Link> <span>›</span>
         <Link to={`/boards/${thread.namespace_id}/threads`}>帖子列表</Link> <span>›</span>
