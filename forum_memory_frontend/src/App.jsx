@@ -30,12 +30,21 @@ export default function App() {
 
           {/* Admin routes — protected by AdminGuard */}
           <Route element={<AdminGuard />}>
+            {/* 全局仪表盘（超级管理员）或板块管理员重定向入口 */}
             <Route path="/admin" element={<AdminDashboard />} />
             <Route path="/admin/memories" element={<MemoryList />} />
             <Route path="/admin/memories/:memoryId" element={<MemoryDetail />} />
             <Route path="/admin/pending" element={<PendingCenter />} />
             <Route path="/admin/settings" element={<BoardConfig />} />
             <Route path="/admin/import" element={<ImportTopics />} />
+
+            {/* 板块级管理路由（板块管理员或超级管理员进入特定板块后台） */}
+            <Route path="/admin/boards/:boardId" element={<AdminDashboard />} />
+            <Route path="/admin/boards/:boardId/memories" element={<MemoryList />} />
+            <Route path="/admin/boards/:boardId/memories/:memoryId" element={<MemoryDetail />} />
+            <Route path="/admin/boards/:boardId/pending" element={<PendingCenter />} />
+            <Route path="/admin/boards/:boardId/settings" element={<BoardConfig />} />
+            <Route path="/admin/boards/:boardId/import" element={<ImportTopics />} />
           </Route>
         </Route>
       </Routes>

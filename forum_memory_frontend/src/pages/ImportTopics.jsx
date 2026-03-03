@@ -1,5 +1,5 @@
 import React, { useRef, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useParams } from 'react-router-dom';
 import { adminApi, namespaceApi, userApi } from '../api/client';
 import { useAsync } from '../hooks/useAsync';
 import { Loading, ErrorMsg } from '../components/UI';
@@ -163,12 +163,14 @@ function FileDropZone({ files, onChange }) {
 // ─── Main page ───────────────────────────────────────────────────────────────
 
 export default function ImportTopics() {
+  const { boardId: routeBoardId } = useParams();
   const { data: me, loading: meLoading } = useAsync(() => userApi.me(), []);
+  // board_admin 只看自己管理的板块
   const { data: boards, loading: boardsLoading, error: boardsError } = useAsync(
-    () => namespaceApi.list(), []
+    () => userApi.myNamespaces(), []
   );
 
-  const [namespaceId, setNamespaceId] = useState('');
+  const [namespaceId, setNamespaceId] = useState(routeBoardId || '');
   const [files, setFiles] = useState([]);
   const [workers, setWorkers] = useState(4);
   const [skipExtraction, setSkipExtraction] = useState(false);

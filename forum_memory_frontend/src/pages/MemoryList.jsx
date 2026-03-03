@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Link } from 'react-router-dom';
-import { memoryApi, namespaceApi } from '../api/client';
+import { Link, useParams } from 'react-router-dom';
+import { memoryApi, namespaceApi, userApi } from '../api/client';
 import { useAsync } from '../hooks/useAsync';
 import {
   AuthorityBadge, Badge, EmptyState, ErrorMsg,
@@ -248,13 +248,15 @@ const EMPTY_FILTERS = {
 const PAGE_SIZE = 40;
 
 export default function MemoryList() {
-  const [filters, setFilters] = useState(EMPTY_FILTERS);
+  const { boardId } = useParams();
+  const [filters, setFilters] = useState({ ...EMPTY_FILTERS, namespace_id: boardId || '' });
   const [namespaces, setNamespaces] = useState([]);
   const [allTags, setAllTags] = useState([]);
   const [debouncedQ, setDebouncedQ] = useState('');
 
   useEffect(() => {
-    namespaceApi.list().then(setNamespaces).catch(() => {});
+    // board_admin 只看自己管理的板块
+    userApi.myNamespaces().then(setNamespaces).catch(() => {});
   }, []);
 
   useEffect(() => {

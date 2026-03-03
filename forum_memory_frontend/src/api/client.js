@@ -38,6 +38,7 @@ const del = (url) => request(url, { method: 'DELETE' });
 // ── Users ────────────────────────────────────
 export const userApi = {
   me: () => get('/users/me'),
+  myNamespaces: () => get('/users/me/managed-namespaces'),
   list: () => get('/users'),
   create: (data) => post('/users', data),
   deactivate: (id) => del(`/users/${id}`),

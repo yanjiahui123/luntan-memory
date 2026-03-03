@@ -1,11 +1,13 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import { namespaceApi, userApi } from '../api/client';
 import { useAsync } from '../hooks/useAsync';
 import { Loading, ErrorMsg, EmptyState, ConfirmModal } from '../components/UI';
 
 export default function BoardConfig() {
-  const { data: boards, loading, error } = useAsync(() => namespaceApi.list());
+  // 支持从路由参数直接获取 boardId（板块级管理后台）
+  const { boardId: routeBoardId } = useParams();
+  const { data: boards, loading, error } = useAsync(() => userApi.myNamespaces());
   const [selectedId, setSelectedId] = useState(null);
   const [currentUser, setCurrentUser] = useState(null);
 
@@ -13,7 +15,8 @@ export default function BoardConfig() {
     userApi.me().then(setCurrentUser).catch(() => {});
   }, []);
 
-  const boardId = selectedId || boards?.[0]?.id;
+  // 优先使用路由参数中的 boardId，其次是用户选择，最后默认第一个
+  const boardId = routeBoardId || selectedId || boards?.[0]?.id;
   const isSuperAdmin = currentUser?.role === 'super_admin';
 
   if (loading) return <Loading />;
@@ -24,12 +27,15 @@ export default function BoardConfig() {
     <div>
       <h1 className="page-title" style={{ marginBottom: 20 }}>板块配置</h1>
 
-      <div style={{ marginBottom: 20 }}>
-        <label style={{ fontSize: 13, fontWeight: 600, marginRight: 8 }}>选择板块:</label>
-        <select value={boardId || ''} onChange={e => setSelectedId(e.target.value)} style={{ width: 'auto', minWidth: 200 }}>
-          {boards.map(b => <option key={b.id} value={b.id}>{b.display_name} ({b.name})</option>)}
-        </select>
-      </div>
+      {/* 没有路由锁定板块时，才显示板块选择器 */}
+      {!routeBoardId && (
+        <div style={{ marginBottom: 20 }}>
+          <label style={{ fontSize: 13, fontWeight: 600, marginRight: 8 }}>选择板块:</label>
+          <select value={boardId || ''} onChange={e => setSelectedId(e.target.value)} style={{ width: 'auto', minWidth: 200 }}>
+            {boards.map(b => <option key={b.id} value={b.id}>{b.display_name} ({b.name})</option>)}
+          </select>
+        </div>
+      )}
 
       {boardId && <BoardConfigPanel boardId={boardId} isSuperAdmin={isSuperAdmin} />}
     </div>

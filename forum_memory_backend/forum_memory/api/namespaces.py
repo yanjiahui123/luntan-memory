@@ -47,10 +47,13 @@ def get_namespace(ns_id: UUID, session: Session = Depends(get_db)):
 def create_namespace(
     data: NamespaceCreate,
     session: Session = Depends(get_db),
-    admin: User = Depends(require_admin),
+    user: User = Depends(get_current_user),
 ):
-    """仅超级管理员可创建板块。"""
-    return namespace_service.create_namespace(session, data, admin.id)
+    """超级管理员或板块管理员可创建板块。板块管理员创建后自动成为该板块的管理员。"""
+    if user.role not in (SystemRole.SUPER_ADMIN, SystemRole.BOARD_ADMIN):
+        raise HTTPException(403, "需要管理员权限才能创建板块")
+    add_as_mod = user.role == SystemRole.BOARD_ADMIN
+    return namespace_service.create_namespace(session, data, user.id, add_as_moderator=add_as_mod)
 
 
 @router.put("/{ns_id}", response_model=NamespaceRead)

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Link, useParams, useNavigate } from 'react-router-dom';
-import { threadApi, namespaceApi } from '../api/client';
+import { threadApi, namespaceApi, userApi } from '../api/client';
 import { useAsync } from '../hooks/useAsync';
 import { Loading, ErrorMsg, EmptyState, StatusBadge, Badge, TimeAgo } from '../components/UI';
 
@@ -22,6 +22,16 @@ export default function ThreadList() {
     () => threadApi.list({ namespace_id: boardId, status: status || undefined, page }),
     [boardId, status, page]
   );
+  const { data: currentUser } = useAsync(() => userApi.me().catch(() => null));
+  const { data: myNamespaces } = useAsync(
+    () => currentUser?.role === 'board_admin' ? userApi.myNamespaces() : Promise.resolve(null),
+    [currentUser?.role]
+  );
+
+  const isSuperAdmin = currentUser?.role === 'super_admin';
+  const isBoardAdmin = currentUser?.role === 'board_admin';
+  // board_admin 只有管理该板块时才显示入口
+  const canManageBoard = isSuperAdmin || (isBoardAdmin && myNamespaces?.some(ns => ns.id === boardId));
 
   return (
     <div>
@@ -31,7 +41,18 @@ export default function ThreadList() {
 
       <div className="page-header">
         <h1 className="page-title">{board?.display_name || '帖子列表'}</h1>
-        <button className="btn-primary" onClick={() => navigate(`/boards/${boardId}/new`)}>+ 发帖</button>
+        <div style={{ display: 'flex', gap: 8 }}>
+          {canManageBoard && (
+            <button
+              className="btn-secondary"
+              onClick={() => navigate(`/admin/boards/${boardId}`)}
+              title="进入板块管理后台"
+            >
+              ⚙️ 管理此板块
+            </button>
+          )}
+          <button className="btn-primary" onClick={() => navigate(`/boards/${boardId}/new`)}>+ 发帖</button>
+        </div>
       </div>
 
       {/* Filter bar */}

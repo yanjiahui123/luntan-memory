@@ -1,23 +1,36 @@
 import React, { useState, useEffect } from 'react';
-import { Link, useLocation, useNavigate, Outlet } from 'react-router-dom';
+import { Link, useLocation, useNavigate, Outlet, useParams } from 'react-router-dom';
 import { userApi, setEmployeeId } from '../api/client';
 
 const FORUM_NAV = [
   { path: '/boards', label: '全部板块', icon: '🏠' },
 ];
 
-const ADMIN_NAV = [
+const GLOBAL_ADMIN_NAV = [
   { path: '/admin', label: '仪表盘', icon: '📊' },
   { path: '/admin/memories', label: '记忆管理', icon: '🧠' },
   { path: '/admin/pending', label: '待处理中心', icon: '📋' },
   { path: '/admin/settings', label: '板块配置', icon: '⚙️' },
 ];
 
+function boardAdminNav(boardId) {
+  return [
+    { path: `/admin/boards/${boardId}`, label: '仪表盘', icon: '📊' },
+    { path: `/admin/boards/${boardId}/memories`, label: '记忆管理', icon: '🧠' },
+    { path: `/admin/boards/${boardId}/pending`, label: '待处理中心', icon: '📋' },
+    { path: `/admin/boards/${boardId}/settings`, label: '板块配置', icon: '⚙️' },
+    { path: `/admin/boards/${boardId}/import`, label: '导入帖子', icon: '📥' },
+  ];
+}
+
 export default function Layout() {
   const location = useLocation();
   const navigate = useNavigate();
   const isAdminPage = location.pathname.startsWith('/admin');
-  const nav = isAdminPage ? ADMIN_NAV : FORUM_NAV;
+
+  // 检测是否在板块级管理后台 /admin/boards/:boardId/*
+  const boardAdminMatch = location.pathname.match(/^\/admin\/boards\/([^/]+)/);
+  const activeBoardId = boardAdminMatch ? boardAdminMatch[1] : null;
 
   const [currentUser, setCurrentUser] = useState(null);
   const [showUserMenu, setShowUserMenu] = useState(false);
@@ -54,6 +67,25 @@ export default function Layout() {
   const roleLabel = isSuperAdmin ? '超级管理员' : currentUser?.role === 'board_admin' ? '板块管理员' : '普通用户';
   const roleColor = isAdmin ? 'var(--green)' : 'var(--text-ter)';
 
+  // 选择侧边栏导航
+  let nav;
+  let sidebarTitle;
+  if (!isAdminPage) {
+    nav = FORUM_NAV;
+    sidebarTitle = '导航';
+  } else if (activeBoardId) {
+    nav = boardAdminNav(activeBoardId);
+    sidebarTitle = '板块管理';
+  } else {
+    nav = GLOBAL_ADMIN_NAV;
+    sidebarTitle = '管理菜单';
+  }
+
+  // 管理后台按钮：板块管理员直接进入第一个管理板块后台（由 AdminGuard 处理重定向）
+  function handleAdminNav() {
+    navigate('/admin');
+  }
+
   return (
     <>
       {/* ── Topbar ─────────────────────────────── */}
@@ -64,7 +96,7 @@ export default function Layout() {
         <nav className="topbar__nav">
           <button className={`topbar__link ${!isAdminPage ? 'topbar__link--active' : ''}`} onClick={() => navigate('/boards')}>论坛</button>
           {isAdmin && (
-            <button className={`topbar__link ${isAdminPage ? 'topbar__link--active' : ''}`} onClick={() => navigate('/admin')}>管理后台</button>
+            <button className={`topbar__link ${isAdminPage ? 'topbar__link--active' : ''}`} onClick={handleAdminNav}>管理后台</button>
           )}
         </nav>
 
@@ -113,12 +145,22 @@ export default function Layout() {
 
       {/* ── Sidebar ────────────────────────────── */}
       <aside className="sidebar">
-        <div className="sidebar__section">{isAdminPage ? '管理菜单' : '导航'}</div>
+        <div className="sidebar__section">{sidebarTitle}</div>
         {nav.map(item => (
-          <Link key={item.path} to={item.path} className={`sidebar__item ${location.pathname === item.path ? 'sidebar__item--active' : ''}`}>
+          <Link
+            key={item.path}
+            to={item.path}
+            className={`sidebar__item ${location.pathname === item.path ? 'sidebar__item--active' : ''}`}
+          >
             {item.icon} {item.label}
           </Link>
         ))}
+        {/* 板块管理员在板块后台时显示"返回全部板块"（超级管理员不需要，他们在全局后台已有overview） */}
+        {isAdminPage && isSuperAdmin && activeBoardId && (
+          <Link to="/admin" className="sidebar__item" style={{ marginTop: 16, color: 'var(--text-ter)', fontSize: 12 }}>
+            ← 全局仪表盘
+          </Link>
+        )}
       </aside>
 
       {/* ── Main Content ───────────────────────── */}

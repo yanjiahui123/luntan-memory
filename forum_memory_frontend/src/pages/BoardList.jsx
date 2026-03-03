@@ -9,7 +9,8 @@ export default function BoardList() {
   const { data: me } = useAsync(() => userApi.me().catch(() => null));
   const [showCreate, setShowCreate] = useState(false);
 
-  const isAdmin = me?.role === 'super_admin';
+  // board_admin 也可以创建板块（创建后自动成为该板块管理员）
+  const isAdmin = me?.role === 'super_admin' || me?.role === 'board_admin';
 
   if (loading) return <Loading />;
   if (error) return <ErrorMsg message={error} onRetry={refetch} />;

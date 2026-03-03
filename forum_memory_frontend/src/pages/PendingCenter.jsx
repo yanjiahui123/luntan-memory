@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useParams } from 'react-router-dom';
 import { memoryApi } from '../api/client';
 import { useAsync } from '../hooks/useAsync';
 import { Loading, ErrorMsg, EmptyState, Badge, AuthorityBadge, QualityDot } from '../components/UI';
@@ -11,13 +11,15 @@ const TABS = [
 ];
 
 export default function PendingCenter() {
+  const { boardId } = useParams();
   const [tab, setTab] = useState('all');
 
-  const params = tab === 'pending' ? { pending_confirm: true, page: 1, size: 50 }
-    : tab === 'low_quality' ? { status: 'ACTIVE', page: 1, size: 50 }
-    : { pending_confirm: true, page: 1, size: 50 };
+  const nsFilter = boardId ? { namespace_id: boardId } : {};
+  const params = tab === 'pending' ? { ...nsFilter, pending_confirm: true, page: 1, size: 50 }
+    : tab === 'low_quality' ? { ...nsFilter, status: 'ACTIVE', page: 1, size: 50 }
+    : { ...nsFilter, pending_confirm: true, page: 1, size: 50 };
 
-  const { data: items, loading, error, refetch } = useAsync(() => memoryApi.list(params), [tab]);
+  const { data: items, loading, error, refetch } = useAsync(() => memoryApi.list(params), [tab, boardId]);
 
   async function handlePromote(id) {
     await memoryApi.changeAuthority(id, { authority: 'LOCKED', reason: '管理员从待处理中心确认' });

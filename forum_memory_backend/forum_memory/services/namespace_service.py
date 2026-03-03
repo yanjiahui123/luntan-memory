@@ -54,7 +54,12 @@ def _generate_es_index_name() -> str:
     return f"{settings.es_index_prefix}_{short_id}"
 
 
-def create_namespace(session: Session, data: NamespaceCreate, owner_id: UUID) -> Namespace:
+def create_namespace(
+    session: Session,
+    data: NamespaceCreate,
+    owner_id: UUID,
+    add_as_moderator: bool = False,
+) -> Namespace:
     name = generate_namespace_name(data.display_name)
     index_name = _generate_es_index_name()
     ns = Namespace(
@@ -68,6 +73,14 @@ def create_namespace(session: Session, data: NamespaceCreate, owner_id: UUID) ->
     session.add(ns)
     session.commit()
     session.refresh(ns)
+
+    # 板块管理员创建板块时，自动将其加入 namespace_moderators
+    if add_as_moderator:
+        from forum_memory.models.namespace_moderator import NamespaceModerator
+        mod = NamespaceModerator(user_id=owner_id, namespace_id=ns.id)
+        session.add(mod)
+        session.commit()
+
     # Create the ES index for this namespace
     try:
         from forum_memory.services.es_service import ensure_index_by_name
