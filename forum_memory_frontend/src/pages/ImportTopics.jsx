@@ -206,7 +206,7 @@ export default function ImportTopics() {
   }
 
   return (
-    <div style={{ maxWidth: 720 }}>
+    <div>
       <div className="breadcrumb">
         <Link to="/admin">管理仪表盘</Link> <span>›</span>
         <span>批量导入帖子</span>

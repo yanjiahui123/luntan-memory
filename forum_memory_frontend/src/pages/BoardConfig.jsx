@@ -92,7 +92,7 @@ function InfoTab({ board, onUpdate }) {
   }
 
   return (
-    <div className="card" style={{ padding: 20, maxWidth: 500 }}>
+    <div className="card" style={{ padding: 20 }}>
       <div style={{ marginBottom: 16 }}>
         <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6 }}>板块名称</label>
         <input value={form.display_name} onChange={e => setForm(f => ({ ...f, display_name: e.target.value }))} />
