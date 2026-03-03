@@ -357,22 +357,62 @@ function CommentCard({ comment, thread, onResolve, onDelete, isAdmin }) {
               )}
 
               {/* RAG knowledge base section */}
-              {comment.rag_context && (
-                <div style={{
-                  marginTop: citedMemories?.length > 0 ? 10 : 0,
-                  paddingTop: citedMemories?.length > 0 ? 10 : 0,
-                  borderTop: citedMemories?.length > 0 ? '1px solid var(--border)' : 'none',
-                }}>
-                  <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-sec)', marginBottom: 4 }}>
-                    📚 知识库参考
+              {comment.rag_context && (() => {
+                let chunks = [];
+                try {
+                  const parsed = typeof comment.rag_context === 'string'
+                    ? JSON.parse(comment.rag_context)
+                    : comment.rag_context;
+                  chunks = Array.isArray(parsed) ? parsed : [];
+                } catch {
+                  chunks = [];
+                }
+                if (chunks.length === 0) return null;
+                const isUrl = (s) => /^https?:\/\//i.test(s);
+                return (
+                  <div style={{
+                    marginTop: citedMemories?.length > 0 ? 10 : 0,
+                    paddingTop: citedMemories?.length > 0 ? 10 : 0,
+                    borderTop: citedMemories?.length > 0 ? '1px solid var(--border)' : 'none',
+                  }}>
+                    <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-sec)', marginBottom: 6 }}>
+                      📚 知识库参考（{chunks.length} 条）
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                      {chunks.map((chunk, idx) => {
+                        const title = chunk?.metadata?.extended_metadata?.title || chunk?.metadata?.source || `片段 ${idx + 1}`;
+                        const source = chunk?.metadata?.source || '';
+                        const text = chunk?.text || '';
+                        return (
+                          <div key={idx} style={{
+                            padding: '8px 10px',
+                            background: 'var(--bg)',
+                            borderRadius: 'var(--radius)',
+                            border: '1px solid var(--border)',
+                          }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                              <span style={{ fontSize: 11, color: 'var(--text-ter)' }}>#{idx + 1}</span>
+                              {isUrl(source) ? (
+                                <a href={source} target="_blank" rel="noopener noreferrer"
+                                  style={{ fontSize: 12, fontWeight: 600, color: 'var(--accent)', textDecoration: 'none' }}
+                                  title={source}
+                                >
+                                  {title}↗
+                                </a>
+                              ) : (
+                                <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text)' }}>{title}</span>
+                              )}
+                            </div>
+                            <div style={{ fontSize: 12, lineHeight: 1.7, color: 'var(--text-sec)', whiteSpace: 'pre-wrap' }}>
+                              {text.length > 200 ? text.slice(0, 200) + '…' : text}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
                   </div>
-                  <div style={{ fontSize: 12, lineHeight: 1.7, color: 'var(--text)', whiteSpace: 'pre-wrap' }}>
-                    {comment.rag_context.length > 300
-                      ? comment.rag_context.slice(0, 300) + '...'
-                      : comment.rag_context}
-                  </div>
-                </div>
-              )}
+                );
+              })()}
             </div>
           )}
         </div>
