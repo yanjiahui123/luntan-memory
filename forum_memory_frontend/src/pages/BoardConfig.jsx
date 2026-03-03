@@ -67,7 +67,7 @@ function BoardConfigPanel({ boardId, isSuperAdmin }) {
         ))}
       </div>
 
-      {tab === 'info' && <InfoTab board={board} onUpdate={refetch} />}
+      {tab === 'info' && <InfoTab board={board} onUpdate={refetch} isSuperAdmin={isSuperAdmin} />}
       {tab === 'dict' && <DictTab board={board} onUpdate={refetch} />}
       {tab === 'kb' && <KBConfigTab board={board} onUpdate={refetch} />}
       {tab === 'moderators' && isSuperAdmin && <ModeratorsTab boardId={boardId} />}
@@ -75,11 +75,13 @@ function BoardConfigPanel({ boardId, isSuperAdmin }) {
   );
 }
 
-function InfoTab({ board, onUpdate }) {
+function InfoTab({ board, onUpdate, isSuperAdmin }) {
   const navigate = useNavigate();
   const [form, setForm] = useState({ display_name: board.display_name, description: board.description || '', access_mode: board.access_mode });
   const [saving, setSaving] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteErr, setDeleteErr] = useState('');
 
   async function handleSave() {
     setSaving(true);
@@ -88,6 +90,20 @@ function InfoTab({ board, onUpdate }) {
       onUpdate();
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function handleDelete() {
+    setDeleting(true);
+    setDeleteErr('');
+    try {
+      await namespaceApi.delete(board.id);
+      setShowDeleteConfirm(false);
+      navigate('/boards');
+    } catch (err) {
+      setDeleteErr(err.message || '删除失败，请重试');
+    } finally {
+      setDeleting(false);
     }
   }
 
@@ -111,19 +127,19 @@ function InfoTab({ board, onUpdate }) {
       </div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <button className="btn-primary" onClick={handleSave} disabled={saving}>{saving ? '保存中...' : '保存'}</button>
-        <button className="btn-danger" onClick={() => setShowDeleteConfirm(true)}>删除板块</button>
+        {isSuperAdmin && (
+          <button className="btn-danger" onClick={() => { setDeleteErr(''); setShowDeleteConfirm(true); }}>删除板块</button>
+        )}
       </div>
 
       <ConfirmModal
         open={showDeleteConfirm}
         title="删除板块"
         message={`确认删除板块「${board.display_name}」？删除后板块将不再显示，其下帖子也将不可访问。`}
-        onConfirm={async () => {
-          await namespaceApi.delete(board.id);
-          setShowDeleteConfirm(false);
-          navigate('/boards');
-        }}
-        onCancel={() => setShowDeleteConfirm(false)}
+        onConfirm={handleDelete}
+        onCancel={() => { setShowDeleteConfirm(false); setDeleteErr(''); }}
+        loading={deleting}
+        error={deleteErr}
       />
     </div>
   );

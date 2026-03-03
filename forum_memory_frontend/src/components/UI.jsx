@@ -57,16 +57,17 @@ export function Pagination({ page, total, size = 20, onChange }) {
   );
 }
 
-export function ConfirmModal({ open, title, message, onConfirm, onCancel }) {
+export function ConfirmModal({ open, title, message, onConfirm, onCancel, loading, error }) {
   if (!open) return null;
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
       <div className="card fade-in" style={{ padding: 24, maxWidth: 400, width: '90%' }}>
         <h3 style={{ marginBottom: 8 }}>{title}</h3>
-        <p style={{ color: 'var(--text-sec)', fontSize: 14, marginBottom: 20 }}>{message}</p>
+        <p style={{ color: 'var(--text-sec)', fontSize: 14, marginBottom: error ? 8 : 20 }}>{message}</p>
+        {error && <p style={{ color: 'var(--danger)', fontSize: 13, marginBottom: 16 }}>{error}</p>}
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-          <button className="btn-secondary" onClick={onCancel}>取消</button>
-          <button className="btn-primary" onClick={onConfirm}>确认</button>
+          <button className="btn-secondary" onClick={onCancel} disabled={loading}>取消</button>
+          <button className="btn-primary" onClick={onConfirm} disabled={loading}>{loading ? '处理中...' : '确认'}</button>
         </div>
       </div>
     </div>
