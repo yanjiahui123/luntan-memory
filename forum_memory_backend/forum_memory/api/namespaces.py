@@ -75,9 +75,10 @@ def update_namespace(
 def delete_namespace(
     ns_id: UUID,
     session: Session = Depends(get_db),
-    admin: User = Depends(require_admin),
+    user: User = Depends(get_current_user),
 ):
-    """仅超级管理员可删除板块（软删除）。"""
+    """超级管理员或该板块管理员可删除板块（软删除）。"""
+    check_board_permission(ns_id, session, user)
     try:
         return namespace_service.delete_namespace(session, ns_id)
     except ValueError as e:
