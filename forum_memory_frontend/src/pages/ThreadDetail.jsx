@@ -4,7 +4,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { threadApi, feedbackApi, memoryApi, userApi } from '../api/client';
 import { useAsync } from '../hooks/useAsync';
-import { Loading, ErrorMsg, StatusBadge, Badge, TimeAgo, ConfirmModal, KnowledgeTypeBadge, QualityDot } from '../components/UI';
+import { Loading, ErrorMsg, StatusBadge, Badge, TimeAgo, ConfirmModal, KnowledgeTypeBadge, QualityDot, AuthorityBadge } from '../components/UI';
 import ImagePasteTextarea from '../components/ImagePasteTextarea';
 
 function MarkdownContent({ content, style }) {
@@ -190,6 +190,11 @@ export default function ThreadDetail() {
         </div>
       )}
 
+      {/* Extracted memories for resolved threads */}
+      {(thread.status === 'RESOLVED' || thread.status === 'TIMEOUT_CLOSED') && (
+        <ThreadMemories threadId={threadId} isAdmin={isAdmin} />
+      )}
+
       <ConfirmModal
         open={!!resolveTarget}
         title="采纳此回答"
@@ -208,6 +213,101 @@ export default function ThreadDetail() {
           navigate(`/boards/${thread.namespace_id}/threads`);
         }}
         onCancel={() => setShowDeleteConfirm(false)}
+      />
+    </div>
+  );
+}
+
+function ThreadMemories({ threadId, isAdmin }) {
+  const { data, loading, refetch } = useAsync(
+    () => memoryApi.list({ source_id: threadId, size: 50 }),
+    [threadId]
+  );
+  const memories = data?.items || [];
+  const [editingId, setEditingId] = useState(null);
+  const [editContent, setEditContent] = useState('');
+  const [deleteTarget, setDeleteTarget] = useState(null);
+
+  if (loading || memories.length === 0) return null;
+
+  async function handleSave(memoryId) {
+    try {
+      await memoryApi.update(memoryId, { content: editContent });
+      setEditingId(null);
+      refetch();
+    } catch (err) {
+      alert('保存失败: ' + err.message);
+    }
+  }
+
+  async function handleDelete() {
+    try {
+      await memoryApi.delete(deleteTarget);
+      setDeleteTarget(null);
+      refetch();
+    } catch (err) {
+      alert('删除失败: ' + err.message);
+    }
+  }
+
+  return (
+    <div style={{ marginTop: 24 }}>
+      <h3 style={{ fontSize: 15, fontWeight: 600, marginBottom: 12 }}>
+        提取的知识记忆 ({memories.length})
+      </h3>
+      {memories.map(mem => (
+        <div key={mem.id} className="card" style={{ padding: 14, marginBottom: 8 }}>
+          {editingId === mem.id ? (
+            <div>
+              <textarea
+                value={editContent}
+                onChange={e => setEditContent(e.target.value)}
+                style={{ marginBottom: 12, minHeight: 100 }}
+              />
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button className="btn-primary btn-sm" onClick={() => handleSave(mem.id)}>保存</button>
+                <button className="btn-secondary btn-sm" onClick={() => setEditingId(null)}>取消</button>
+              </div>
+            </div>
+          ) : (
+            <>
+              <div style={{ fontSize: 14, lineHeight: 1.8, whiteSpace: 'pre-wrap', color: 'var(--text)' }}>
+                {mem.content}
+              </div>
+              <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginTop: 8, flexWrap: 'wrap' }}>
+                {mem.knowledge_type && <KnowledgeTypeBadge type={mem.knowledge_type} />}
+                {mem.authority === 'LOCKED' && <AuthorityBadge authority={mem.authority} />}
+                {mem.tags?.map(t => <Badge key={t} type="gray">{t}</Badge>)}
+                <QualityDot score={mem.quality_score} />
+                {isAdmin && (
+                  <div style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
+                    <button
+                      className="btn-secondary btn-sm"
+                      style={{ fontSize: 11 }}
+                      onClick={() => { setEditingId(mem.id); setEditContent(mem.content); }}
+                    >
+                      编辑
+                    </button>
+                    <button
+                      className="btn-danger btn-sm"
+                      style={{ fontSize: 11 }}
+                      onClick={() => setDeleteTarget(mem.id)}
+                    >
+                      删除
+                    </button>
+                  </div>
+                )}
+              </div>
+            </>
+          )}
+        </div>
+      ))}
+      <ConfirmModal
+        open={!!deleteTarget}
+        title="删除记忆"
+        message="确认删除此条知识记忆？删除后可在管理后台恢复。"
+        onConfirm={handleDelete}
+        onCancel={() => setDeleteTarget(null)}
       />
     </div>
   );

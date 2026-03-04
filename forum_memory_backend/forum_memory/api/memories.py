@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import Response
 from sqlmodel import Session
 
-from forum_memory.api.deps import get_db, get_current_user, check_namespace_read_access
+from forum_memory.api.deps import get_db, get_current_user, check_namespace_read_access, check_board_permission
 from forum_memory.models.user import User
 from forum_memory.schemas.memory import (
     MemoryCreate, MemoryUpdate, MemoryRead,
@@ -28,17 +28,18 @@ def list_memories(
     knowledge_type: str | None = None,
     tags: str | None = None,
     q: str | None = None,
+    source_id: UUID | None = None,
     page: int = Query(1, ge=1),
     size: int = Query(20, ge=1, le=100),
     session: Session = Depends(get_db),
 ):
     items = memory_service.list_memories(
         session, namespace_id, authority, status, pending_confirm,
-        knowledge_type, tags, q, page, size,
+        knowledge_type, tags, q, page, size, source_id=source_id,
     )
     total = memory_service.count_memories(
         session, namespace_id, authority, status, pending_confirm,
-        knowledge_type, tags, q,
+        knowledge_type, tags, q, source_id=source_id,
     )
     response.headers["X-Total-Count"] = str(total)
     return items
@@ -72,26 +73,38 @@ def create_memory(data: MemoryCreate, session: Session = Depends(get_db)):
 
 
 @router.put("/{memory_id}", response_model=MemoryRead)
-def update_memory(memory_id: UUID, data: MemoryUpdate, session: Session = Depends(get_db)):
-    memory = memory_service.update_memory(session, memory_id, data)
+def update_memory(memory_id: UUID, data: MemoryUpdate, session: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    memory = memory_service.get_memory(session, memory_id)
     if not memory:
         raise HTTPException(404, "Memory not found")
-    return memory
+    check_board_permission(memory.namespace_id, session, user)
+    updated = memory_service.update_memory(session, memory_id, data)
+    if not updated:
+        raise HTTPException(404, "Memory not found")
+    return updated
 
 
 @router.delete("/{memory_id}", status_code=204)
-def delete_memory(memory_id: UUID, session: Session = Depends(get_db)):
+def delete_memory(memory_id: UUID, session: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    memory = memory_service.get_memory(session, memory_id)
+    if not memory:
+        raise HTTPException(404, "Memory not found")
+    check_board_permission(memory.namespace_id, session, user)
     ok = memory_service.delete_memory(session, memory_id)
     if not ok:
         raise HTTPException(404, "Memory not found")
 
 
 @router.put("/{memory_id}/authority", response_model=MemoryRead)
-def change_authority(memory_id: UUID, data: AuthorityChange, session: Session = Depends(get_db)):
-    memory = memory_service.change_authority(session, memory_id, data.authority, data.reason)
+def change_authority(memory_id: UUID, data: AuthorityChange, session: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    memory = memory_service.get_memory(session, memory_id)
     if not memory:
         raise HTTPException(404, "Memory not found")
-    return memory
+    check_board_permission(memory.namespace_id, session, user)
+    updated = memory_service.change_authority(session, memory_id, data.authority, data.reason)
+    if not updated:
+        raise HTTPException(404, "Memory not found")
+    return updated
 
 
 @router.post("/search", response_model=MemorySearchResponse)

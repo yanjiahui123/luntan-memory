@@ -57,6 +57,7 @@ def list_memories(
     q: str | None = None,
     page: int = 1,
     size: int = 20,
+    source_id: UUID | None = None,
 ) -> list[Memory]:
     stmt = (
         select(Memory)
@@ -65,7 +66,7 @@ def list_memories(
         .where(Memory.status != MemoryStatus.DELETED)
         .order_by(Memory.updated_at.desc())
     )
-    stmt = _apply_filters(stmt, namespace_id, authority, status, pending_confirm, knowledge_type, tags, q)
+    stmt = _apply_filters(stmt, namespace_id, authority, status, pending_confirm, knowledge_type, tags, q, source_id=source_id)
     stmt = stmt.offset((page - 1) * size).limit(size)
     return list(session.exec(stmt).all())
 
@@ -327,6 +328,7 @@ def count_memories(
     knowledge_type: str | None = None,
     tags: str | None = None,
     q: str | None = None,
+    source_id: UUID | None = None,
 ) -> int:
     """Count memories matching the given filters (for pagination)."""
     from sqlmodel import func
@@ -337,11 +339,11 @@ def count_memories(
         .where(Namespace.is_active == True)
         .where(Memory.status != MemoryStatus.DELETED)
     )
-    stmt = _apply_filters(stmt, namespace_id, authority, status, pending_confirm, knowledge_type, tags, q)
+    stmt = _apply_filters(stmt, namespace_id, authority, status, pending_confirm, knowledge_type, tags, q, source_id=source_id)
     return session.exec(stmt).one()
 
 
-def _apply_filters(stmt, ns_id, authority, status, pending, knowledge_type=None, tags=None, q=None):
+def _apply_filters(stmt, ns_id, authority, status, pending, knowledge_type=None, tags=None, q=None, source_id=None):
     if ns_id:
         stmt = stmt.where(Memory.namespace_id == ns_id)
     if authority:
@@ -361,6 +363,8 @@ def _apply_filters(stmt, ns_id, authority, status, pending, knowledge_type=None,
                 stmt = stmt.where(Memory.tags.cast(String).contains(tag))
     if q:
         stmt = stmt.where(Memory.content.ilike(f"%{q}%"))
+    if source_id:
+        stmt = stmt.where(Memory.source_id == source_id)
     return stmt
 
 
