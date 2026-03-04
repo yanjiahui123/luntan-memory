@@ -233,8 +233,15 @@ function DictTab({ board, onUpdate }) {
 
 function KBConfigTab({ board, onUpdate }) {
   const kbList = board.config?.kb_sn_list || [];
+  const enableMemory = board.config?.enable_memory_search !== false;
+  const enableRag = board.config?.enable_rag_search !== false;
   const [newSn, setNewSn] = useState('');
   const [saving, setSaving] = useState(false);
+
+  async function handleToggle(key, value) {
+    await namespaceApi.update(board.id, { config: { ...board.config, [key]: value } });
+    onUpdate();
+  }
 
   async function handleAdd() {
     if (!newSn.trim()) return;
@@ -257,6 +264,24 @@ function KBConfigTab({ board, onUpdate }) {
 
   return (
     <div className="card" style={{ padding: 20 }}>
+      <p style={{ fontSize: 13, color: 'var(--text-sec)', marginBottom: 16 }}>
+        控制 AI 回答时使用的知识来源，可独立开关以对比不同搜索策略的效果。
+      </p>
+
+      <div style={{ display: 'flex', gap: 24, marginBottom: 20, padding: 16, background: 'var(--bg-sec, #f5f5f5)', borderRadius: 8 }}>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 14 }}>
+          <input type="checkbox" checked={enableMemory} onChange={e => handleToggle('enable_memory_search', e.target.checked)} />
+          <span style={{ fontWeight: 600 }}>记忆搜索</span>
+          <span style={{ fontSize: 12, color: 'var(--text-sec)' }}>（从已提取的知识点中检索）</span>
+        </label>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 14 }}>
+          <input type="checkbox" checked={enableRag} onChange={e => handleToggle('enable_rag_search', e.target.checked)} />
+          <span style={{ fontWeight: 600 }}>RAG 搜索</span>
+          <span style={{ fontSize: 12, color: 'var(--text-sec)' }}>（从外部知识库检索）</span>
+        </label>
+      </div>
+
+      <h4 style={{ fontSize: 14, fontWeight: 600, marginBottom: 12 }}>外部知识库配置</h4>
       <p style={{ fontSize: 13, color: 'var(--text-sec)', marginBottom: 16 }}>
         配置外部知识库序列号，AI 回答时会结合知识库检索结果生成更准确的回答。
       </p>

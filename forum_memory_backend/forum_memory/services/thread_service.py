@@ -208,36 +208,46 @@ def generate_ai_answer(session: Session, thread_id: UUID) -> Comment:
 
     question = f"{thread.title}\n{thread.content}"
 
-    # Search related memories
-    search_req = MemorySearchRequest(
-        query=question,
-        namespace_id=thread.namespace_id,
-        top_k=5,
-    )
-    search_result = search_memories(session, search_req)
+    # Read namespace config for search toggles
+    namespace = session.get(Namespace, thread.namespace_id)
+    ns_config = (namespace.config or {}) if namespace else {}
+    enable_memory = ns_config.get("enable_memory_search", True)
+    enable_rag = ns_config.get("enable_rag_search", True)
 
-    # Build memory context for prompt
-    if search_result.hits:
-        memories_text = "\n\n".join(
-            f"[M-{str(h.memory.id)[:8]}] {h.memory.content}"
-            for h in search_result.hits
+    # Search related memories (if enabled)
+    if enable_memory:
+        search_req = MemorySearchRequest(
+            query=question,
+            namespace_id=thread.namespace_id,
+            top_k=5,
         )
-        cited_ids = [h.memory.id for h in search_result.hits]
+        search_result = search_memories(session, search_req)
+
+        if search_result.hits:
+            memories_text = "\n\n".join(
+                f"[M-{str(h.memory.id)[:8]}] {h.memory.content}"
+                for h in search_result.hits
+            )
+            cited_ids = [h.memory.id for h in search_result.hits]
+        else:
+            memories_text = "(no relevant memories found)"
+            cited_ids = []
     else:
-        memories_text = "(no relevant memories found)"
+        memories_text = "(memory search disabled)"
         cited_ids = []
 
-    # Query RAG knowledge base if configured
+    # Query RAG knowledge base (if enabled and configured)
     rag_context_prompt = "(no knowledge base configured)"
     stored_rag_context = None  # only stored when KB actually returns content
-    namespace = session.get(Namespace, thread.namespace_id)
-    if namespace:
-        kb_sn_list = (namespace.config or {}).get("kb_sn_list", [])
+    if enable_rag:
+        kb_sn_list = ns_config.get("kb_sn_list", [])
         if kb_sn_list:
             rag_prompt_text, rag_chunks_json = query_rag(kb_sn_list, question)
             if rag_prompt_text:
                 rag_context_prompt = rag_prompt_text
                 stored_rag_context = rag_chunks_json  # JSON list for UI; None if unstructured
+    else:
+        rag_context_prompt = "(knowledge base search disabled)"
 
     # Generate answer via LLM
     provider = get_provider()
