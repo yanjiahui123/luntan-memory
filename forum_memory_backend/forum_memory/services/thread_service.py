@@ -40,6 +40,27 @@ def list_threads(
     return list(session.exec(stmt).all())
 
 
+def count_threads(
+    session: Session,
+    namespace_id: UUID | None = None,
+    status: str | None = None,
+) -> int:
+    """Count threads matching the given filters (for pagination)."""
+    from sqlmodel import func
+    stmt = (
+        select(func.count())
+        .select_from(Thread)
+        .join(Namespace, Thread.namespace_id == Namespace.id)
+        .where(Thread.status != ThreadStatus.DELETED)
+        .where(Namespace.is_active == True)
+    )
+    if namespace_id:
+        stmt = stmt.where(Thread.namespace_id == namespace_id)
+    if status:
+        stmt = stmt.where(Thread.status == status)
+    return session.exec(stmt).one()
+
+
 def get_thread(session: Session, thread_id: UUID) -> Thread | None:
     return session.get(Thread, thread_id)
 

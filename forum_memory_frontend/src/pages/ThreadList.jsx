@@ -2,7 +2,9 @@ import React, { useState } from 'react';
 import { Link, useParams, useNavigate } from 'react-router-dom';
 import { threadApi, namespaceApi, userApi } from '../api/client';
 import { useAsync } from '../hooks/useAsync';
-import { Loading, ErrorMsg, EmptyState, StatusBadge, Badge, TimeAgo } from '../components/UI';
+import { Loading, ErrorMsg, EmptyState, StatusBadge, Badge, TimeAgo, Pagination } from '../components/UI';
+
+const PAGE_SIZE = 20;
 
 const STATUSES = [
   { value: '', label: '全部' },
@@ -18,10 +20,12 @@ export default function ThreadList() {
   const [page, setPage] = useState(1);
 
   const { data: board } = useAsync(() => namespaceApi.get(boardId), [boardId]);
-  const { data: threads, loading, error, refetch } = useAsync(
-    () => threadApi.list({ namespace_id: boardId, status: status || undefined, page }),
+  const { data, loading, error, refetch } = useAsync(
+    () => threadApi.list({ namespace_id: boardId, status: status || undefined, page, size: PAGE_SIZE }),
     [boardId, status, page]
   );
+  const threads = data?.items;
+  const totalCount = data?.total || 0;
   const { data: currentUser } = useAsync(() => userApi.me().catch(() => null));
   const { data: myNamespaces } = useAsync(
     () => currentUser?.role === 'board_admin' ? userApi.myNamespaces() : Promise.resolve(null),
@@ -71,6 +75,9 @@ export default function ThreadList() {
           {threads.map(t => <ThreadItem key={t.id} thread={t} />)}
         </div>
       }
+
+      {/* Pagination */}
+      <Pagination page={page} total={totalCount} size={PAGE_SIZE} onChange={setPage} />
     </div>
   );
 }

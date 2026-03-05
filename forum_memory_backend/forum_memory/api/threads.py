@@ -3,7 +3,7 @@
 import logging
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlmodel import Session, select
 
 from forum_memory.api.deps import get_db, get_current_user, get_current_user_id, check_board_permission, check_namespace_read_access, check_namespace_write_access
@@ -20,13 +20,17 @@ router = APIRouter(prefix="/threads", tags=["threads"])
 
 @router.get("", response_model=list[ThreadRead])
 def list_threads(
+    response: Response,
     namespace_id: UUID | None = None,
     status: str | None = None,
     page: int = Query(1, ge=1),
     size: int = Query(20, ge=1, le=100),
     session: Session = Depends(get_db),
 ):
-    return thread_service.list_threads(session, namespace_id, status, page, size)
+    items = thread_service.list_threads(session, namespace_id, status, page, size)
+    total = thread_service.count_threads(session, namespace_id, status)
+    response.headers["X-Total-Count"] = str(total)
+    return items
 
 
 @router.get("/{thread_id}", response_model=ThreadRead)

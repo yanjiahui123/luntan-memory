@@ -61,13 +61,25 @@ export const namespaceApi = {
 
 // ── Threads ──────────────────────────────────
 export const threadApi = {
-  list: (params = {}) => {
+  list: async (params = {}) => {
     const q = new URLSearchParams();
     if (params.namespace_id) q.set('namespace_id', params.namespace_id);
     if (params.status) q.set('status', params.status);
     q.set('page', params.page || 1);
     q.set('size', params.size || 20);
-    return get(`/threads?${q}`);
+    const res = await fetch(`${BASE}/threads?${q}`, {
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Employee-Id': getEmployeeId(),
+      },
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: res.statusText }));
+      throw new Error(err.detail || 'Request failed');
+    }
+    const items = await res.json();
+    const total = parseInt(res.headers.get('X-Total-Count') || '0', 10);
+    return { items, total };
   },
   get: (id) => get(`/threads/${id}`),
   create: (data) => post('/threads', data),
