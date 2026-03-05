@@ -1,7 +1,8 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { memoryApi, namespaceApi, userApi } from '../api/client';
+import { memoryApi, namespaceApi } from '../api/client';
 import { useAsync } from '../hooks/useAsync';
+import { useUser } from '../contexts/UserContext';
 import {
   AuthorityBadge, Badge, EmptyState, ErrorMsg,
   KnowledgeTypeBadge, LifecycleBadge, Loading,
@@ -249,15 +250,11 @@ const PAGE_SIZE = 40;
 
 export default function MemoryList() {
   const { boardId } = useParams();
+  const { myNamespaces } = useUser();
   const [filters, setFilters] = useState({ ...EMPTY_FILTERS, namespace_id: boardId || '' });
-  const [namespaces, setNamespaces] = useState([]);
+  const namespaces = myNamespaces || [];
   const [allTags, setAllTags] = useState([]);
   const [debouncedQ, setDebouncedQ] = useState('');
-
-  useEffect(() => {
-    // board_admin 只看自己管理的板块
-    userApi.myNamespaces().then(setNamespaces).catch(() => {});
-  }, []);
 
   useEffect(() => {
     memoryApi.tags(filters.namespace_id || undefined).then(setAllTags).catch(() => {});

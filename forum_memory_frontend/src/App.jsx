@@ -1,5 +1,6 @@
 import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { UserProvider } from './contexts/UserContext';
 import Layout from './components/Layout';
 import AdminGuard from './components/AdminGuard';
 
@@ -18,6 +19,7 @@ import ImportTopics from './pages/ImportTopics';
 export default function App() {
   return (
     <BrowserRouter>
+      <UserProvider>
       <Routes>
         <Route element={<Layout />}>
           {/* Forum routes */}
@@ -48,6 +50,7 @@ export default function App() {
           </Route>
         </Route>
       </Routes>
+      </UserProvider>
     </BrowserRouter>
   );
 }

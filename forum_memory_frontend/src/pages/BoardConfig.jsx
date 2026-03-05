@@ -1,26 +1,20 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { namespaceApi, userApi } from '../api/client';
+import { namespaceApi } from '../api/client';
 import { useAsync } from '../hooks/useAsync';
+import { useUser } from '../contexts/UserContext';
 import { Loading, ErrorMsg, EmptyState, ConfirmModal } from '../components/UI';
 
 export default function BoardConfig() {
   // 支持从路由参数直接获取 boardId（板块级管理后台）
   const { boardId: routeBoardId } = useParams();
-  const { data: boards, loading, error } = useAsync(() => userApi.myNamespaces());
+  const { myNamespaces: boards, loading: userLoading, isSuperAdmin } = useUser();
   const [selectedId, setSelectedId] = useState(null);
-  const [currentUser, setCurrentUser] = useState(null);
-
-  useEffect(() => {
-    userApi.me().then(setCurrentUser).catch(() => {});
-  }, []);
 
   // 优先使用路由参数中的 boardId，其次是用户选择，最后默认第一个
   const boardId = routeBoardId || selectedId || boards?.[0]?.id;
-  const isSuperAdmin = currentUser?.role === 'super_admin';
 
-  if (loading) return <Loading />;
-  if (error) return <ErrorMsg message={error} />;
+  if (userLoading) return <Loading />;
   if (!boards?.length) return <EmptyState icon="" message="还没有板块" />;
 
   return (

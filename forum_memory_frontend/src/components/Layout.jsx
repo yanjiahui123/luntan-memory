@@ -1,6 +1,7 @@
-import React, { useState, useEffect } from 'react';
-import { Link, useLocation, useNavigate, Outlet, useParams } from 'react-router-dom';
+import React, { useState } from 'react';
+import { Link, useLocation, useNavigate, Outlet } from 'react-router-dom';
 import { userApi, setEmployeeId } from '../api/client';
+import { useUser } from '../contexts/UserContext';
 
 const FORUM_NAV = [
   { path: '/boards', label: '全部板块', icon: '🏠' },
@@ -26,21 +27,15 @@ function boardAdminNav(boardId) {
 export default function Layout() {
   const location = useLocation();
   const navigate = useNavigate();
+  const { currentUser, isSuperAdmin, isAdmin } = useUser();
   const isAdminPage = location.pathname.startsWith('/admin');
 
   // 检测是否在板块级管理后台 /admin/boards/:boardId/*
   const boardAdminMatch = location.pathname.match(/^\/admin\/boards\/([^/]+)/);
   const activeBoardId = boardAdminMatch ? boardAdminMatch[1] : null;
 
-  const [currentUser, setCurrentUser] = useState(null);
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [inputId, setInputId] = useState('');
-
-  useEffect(() => {
-    userApi.me()
-      .then(setCurrentUser)
-      .catch(() => setCurrentUser(null));
-  }, []);
 
   function handleSwitchUser() {
     if (!inputId.trim()) return;
@@ -48,7 +43,6 @@ export default function Layout() {
     setShowUserMenu(false);
     userApi.me()
       .then(u => {
-        setCurrentUser(u);
         const hasAdminRole = u.role === 'super_admin' || u.role === 'board_admin';
         if (!hasAdminRole && location.pathname.startsWith('/admin')) {
           window.location.href = '/boards';
@@ -56,13 +50,11 @@ export default function Layout() {
           window.location.reload();
         }
       })
-      .catch(() => { setCurrentUser(null); alert('工号不存在或未注册'); });
+      .catch(() => { alert('工号不存在或未注册'); });
   }
 
   const displayName = currentUser?.display_name || '未登录';
   const initial = displayName[0] || '?';
-  const isSuperAdmin = currentUser?.role === 'super_admin';
-  const isAdmin = isSuperAdmin || currentUser?.role === 'board_admin';
 
   const roleLabel = isSuperAdmin ? '超级管理员' : currentUser?.role === 'board_admin' ? '板块管理员' : '普通用户';
   const roleColor = isAdmin ? 'var(--green)' : 'var(--text-ter)';

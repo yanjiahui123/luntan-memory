@@ -2,8 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { Link, useParams, useNavigate } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { threadApi, feedbackApi, memoryApi, userApi } from '../api/client';
+import { threadApi, feedbackApi, memoryApi } from '../api/client';
 import { useAsync } from '../hooks/useAsync';
+import { useUser } from '../contexts/UserContext';
 import { Loading, ErrorMsg, StatusBadge, Badge, TimeAgo, ConfirmModal, KnowledgeTypeBadge, QualityDot, AuthorityBadge } from '../components/UI';
 import ImagePasteTextarea from '../components/ImagePasteTextarea';
 
@@ -21,15 +22,13 @@ export default function ThreadDetail() {
   const navigate = useNavigate();
   const { data: thread, loading, error, refetch } = useAsync(() => threadApi.get(threadId), [threadId]);
   const { data: comments, refetch: refetchComments } = useAsync(() => threadApi.comments(threadId), [threadId]);
-  const { data: me } = useAsync(() => userApi.me(), []);
+  const { isSuperAdmin, isAdmin } = useUser();
   const [replyText, setReplyText] = useState('');
   const [resolveTarget, setResolveTarget] = useState(null);
   const [aiLoading, setAiLoading] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [pollStatus, setPollStatus] = useState('idle'); // 'idle' | 'polling' | 'done'
   const [dots, setDots] = useState('');
-  const isSuperAdmin = me?.role === 'super_admin';
-  const isAdmin = me?.role === 'super_admin' || me?.role === 'board_admin';
 
   async function handleReply() {
     if (!replyText.trim()) return;

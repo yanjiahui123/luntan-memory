@@ -1,18 +1,17 @@
 import React, { useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { namespaceApi, userApi } from '../api/client';
+import { namespaceApi } from '../api/client';
 import { useAsync } from '../hooks/useAsync';
+import { useUser } from '../contexts/UserContext';
 import { Loading, ErrorMsg } from '../components/UI';
 
 export default function AdminDashboard() {
   // 板块级后台：/admin/boards/:boardId
   const { boardId } = useParams();
-
-  const { data: currentUser } = useAsync(() => userApi.me().catch(() => null));
-  const isSuperAdmin = currentUser?.role === 'super_admin';
+  const { isSuperAdmin, isAdmin } = useUser();
 
   if (boardId) {
-    return <BoardDashboard boardId={boardId} isSuperAdmin={isSuperAdmin} />;
+    return <BoardDashboard boardId={boardId} isSuperAdmin={isSuperAdmin} isAdmin={isAdmin} />;
   }
   // 全局仪表盘（超级管理员）
   return <GlobalDashboard isSuperAdmin={isSuperAdmin} />;
@@ -78,17 +77,16 @@ function GlobalDashboard({ isSuperAdmin }) {
 }
 
 // ── 板块级仪表盘（board_admin 或 super_admin 进入特定板块） ──
-function BoardDashboard({ boardId, isSuperAdmin }) {
+function BoardDashboard({ boardId, isSuperAdmin, isAdmin }) {
   const { data: board, loading: boardLoading } = useAsync(() => namespaceApi.get(boardId), [boardId]);
   const { data: stats } = useAsync(() => namespaceApi.stats(boardId), [boardId]);
-  const { data: currentUser } = useAsync(() => userApi.me().catch(() => null));
   const [showCreate, setShowCreate] = useState(false);
 
   if (boardLoading) return <Loading />;
 
   const aiRate = stats ? `${(stats.ai_resolve_rate * 100).toFixed(1)}%` : '--%';
   const base = `/admin/boards/${boardId}`;
-  const canCreateBoard = currentUser?.role === 'super_admin' || currentUser?.role === 'board_admin';
+  const canCreateBoard = isAdmin;
 
   return (
     <div>

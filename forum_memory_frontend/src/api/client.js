@@ -30,6 +30,25 @@ async function request(url, options = {}) {
   return res.json();
 }
 
+/** Like request(), but also reads X-Total-Count header for paginated lists. */
+async function requestPaginated(url, options = {}) {
+  const res = await fetch(`${BASE}${url}`, {
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Employee-Id': getEmployeeId(),
+      ...options.headers,
+    },
+    ...options,
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }));
+    throw new Error(err.detail || 'Request failed');
+  }
+  const items = await res.json();
+  const total = parseInt(res.headers.get('X-Total-Count') || '0', 10);
+  return { items, total };
+}
+
 const get = (url) => request(url);
 const post = (url, body) => request(url, { method: 'POST', body: JSON.stringify(body) });
 const put = (url, body) => request(url, { method: 'PUT', body: JSON.stringify(body) });
@@ -61,26 +80,14 @@ export const namespaceApi = {
 
 // ── Threads ──────────────────────────────────
 export const threadApi = {
-  list: async (params = {}) => {
+  list: (params = {}) => {
     const q = new URLSearchParams();
     if (params.namespace_id) q.set('namespace_id', params.namespace_id);
     if (params.status) q.set('status', params.status);
     if (params.q) q.set('q', params.q);
     q.set('page', params.page || 1);
     q.set('size', params.size || 20);
-    const res = await fetch(`${BASE}/threads?${q}`, {
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Employee-Id': getEmployeeId(),
-      },
-    });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({ detail: res.statusText }));
-      throw new Error(err.detail || 'Request failed');
-    }
-    const items = await res.json();
-    const total = parseInt(res.headers.get('X-Total-Count') || '0', 10);
-    return { items, total };
+    return requestPaginated(`/threads?${q}`);
   },
   get: (id) => get(`/threads/${id}`),
   create: (data) => post('/threads', data),
@@ -96,22 +103,10 @@ export const threadApi = {
 
 // ── Memories ─────────────────────────────────
 export const memoryApi = {
-  list: async (params = {}) => {
+  list: (params = {}) => {
     const q = new URLSearchParams();
     Object.entries(params).forEach(([k, v]) => { if (v != null && v !== '') q.set(k, v); });
-    const res = await fetch(`${BASE}/memories?${q}`, {
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Employee-Id': getEmployeeId(),
-      },
-    });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({ detail: res.statusText }));
-      throw new Error(err.detail || 'Request failed');
-    }
-    const items = await res.json();
-    const total = parseInt(res.headers.get('X-Total-Count') || '0', 10);
-    return { items, total };
+    return requestPaginated(`/memories?${q}`);
   },
   get: (id) => get(`/memories/${id}`),
   create: (data) => post('/memories', data),

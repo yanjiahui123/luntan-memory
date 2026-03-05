@@ -153,7 +153,6 @@ def add_moderator(
             employee_id=employee_id,
             username=employee_id,
             display_name=display,
-            email=f"{employee_id}@placeholder.local",
             role=SystemRole.BOARD_ADMIN,
         )
         session.add(target_user)

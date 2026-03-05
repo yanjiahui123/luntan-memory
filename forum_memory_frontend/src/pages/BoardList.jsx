@@ -1,16 +1,14 @@
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { namespaceApi, userApi } from '../api/client';
+import { namespaceApi } from '../api/client';
 import { useAsync } from '../hooks/useAsync';
+import { useUser } from '../contexts/UserContext';
 import { Loading, ErrorMsg, EmptyState } from '../components/UI';
 
 export default function BoardList() {
   const { data: boards, loading, error, refetch } = useAsync(() => namespaceApi.list());
-  const { data: me } = useAsync(() => userApi.me().catch(() => null));
+  const { isAdmin } = useUser();
   const [showCreate, setShowCreate] = useState(false);
-
-  // board_admin 也可以创建板块（创建后自动成为该板块管理员）
-  const isAdmin = me?.role === 'super_admin' || me?.role === 'board_admin';
 
   if (loading) return <Loading />;
   if (error) return <ErrorMsg message={error} onRetry={refetch} />;

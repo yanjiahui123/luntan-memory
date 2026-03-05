@@ -1,7 +1,7 @@
 import React, { useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { adminApi, namespaceApi, userApi } from '../api/client';
-import { useAsync } from '../hooks/useAsync';
+import { adminApi } from '../api/client';
+import { useUser } from '../contexts/UserContext';
 import { Loading, ErrorMsg } from '../components/UI';
 
 // ─── Result display ──────────────────────────────────────────────────────────
@@ -164,11 +164,7 @@ function FileDropZone({ files, onChange }) {
 
 export default function ImportTopics() {
   const { boardId: routeBoardId } = useParams();
-  const { data: me, loading: meLoading } = useAsync(() => userApi.me(), []);
-  // board_admin 只看自己管理的板块
-  const { data: boards, loading: boardsLoading, error: boardsError } = useAsync(
-    () => userApi.myNamespaces(), []
-  );
+  const { isSuperAdmin, myNamespaces: boards, loading: userLoading } = useUser();
 
   const [namespaceId, setNamespaceId] = useState(routeBoardId || '');
   const [files, setFiles] = useState([]);
@@ -180,10 +176,7 @@ export default function ImportTopics() {
   const [result, setResult] = useState(null);
   const [error, setError] = useState(null);
 
-  if (meLoading || boardsLoading) return <Loading />;
-  if (boardsError) return <ErrorMsg message={boardsError} />;
-
-  const isSuperAdmin = me?.role === 'super_admin';
+  if (userLoading) return <Loading />;
 
   async function handleImport() {
     if (!namespaceId) { setError('请选择目标板块'); return; }

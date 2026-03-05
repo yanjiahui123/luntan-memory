@@ -9,7 +9,7 @@ class UserCreate(BaseModel):
     employee_id: str
     username: str
     display_name: str
-    email: str
+    email: str | None = None
     role: str = "user"
 
 
@@ -18,7 +18,7 @@ class UserRead(BaseModel):
     employee_id: str
     username: str
     display_name: str
-    email: str
+    email: str | None = None
     role: str
     is_active: bool
     created_at: datetime

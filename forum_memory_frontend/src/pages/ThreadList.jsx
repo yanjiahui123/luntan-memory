@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useParams, useNavigate } from 'react-router-dom';
-import { threadApi, namespaceApi, userApi } from '../api/client';
+import { threadApi, namespaceApi } from '../api/client';
 import { useAsync } from '../hooks/useAsync';
+import { useUser } from '../contexts/UserContext';
 import { Loading, ErrorMsg, EmptyState, StatusBadge, Badge, TimeAgo, Pagination } from '../components/UI';
 
 const PAGE_SIZE = 20;
@@ -34,14 +35,7 @@ export default function ThreadList() {
   );
   const threads = data?.items;
   const totalCount = data?.total || 0;
-  const { data: currentUser } = useAsync(() => userApi.me().catch(() => null));
-  const { data: myNamespaces } = useAsync(
-    () => currentUser?.role === 'board_admin' ? userApi.myNamespaces() : Promise.resolve(null),
-    [currentUser?.role]
-  );
-
-  const isSuperAdmin = currentUser?.role === 'super_admin';
-  const isBoardAdmin = currentUser?.role === 'board_admin';
+  const { isSuperAdmin, isBoardAdmin, myNamespaces } = useUser();
   // board_admin 只有管理该板块时才显示入口
   const canManageBoard = isSuperAdmin || (isBoardAdmin && myNamespaces?.some(ns => ns.id === boardId));
 
