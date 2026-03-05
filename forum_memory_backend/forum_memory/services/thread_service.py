@@ -24,6 +24,7 @@ def list_threads(
     status: str | None = None,
     page: int = 1,
     size: int = 20,
+    q: str | None = None,
 ) -> list[Thread]:
     stmt = (
         select(Thread)
@@ -36,6 +37,8 @@ def list_threads(
         stmt = stmt.where(Thread.namespace_id == namespace_id)
     if status:
         stmt = stmt.where(Thread.status == status)
+    if q:
+        stmt = stmt.where(Thread.title.ilike(f"%{q}%"))
     stmt = stmt.offset((page - 1) * size).limit(size)
     return list(session.exec(stmt).all())
 
@@ -44,6 +47,7 @@ def count_threads(
     session: Session,
     namespace_id: UUID | None = None,
     status: str | None = None,
+    q: str | None = None,
 ) -> int:
     """Count threads matching the given filters (for pagination)."""
     from sqlmodel import func
@@ -58,6 +62,8 @@ def count_threads(
         stmt = stmt.where(Thread.namespace_id == namespace_id)
     if status:
         stmt = stmt.where(Thread.status == status)
+    if q:
+        stmt = stmt.where(Thread.title.ilike(f"%{q}%"))
     return session.exec(stmt).one()
 
 

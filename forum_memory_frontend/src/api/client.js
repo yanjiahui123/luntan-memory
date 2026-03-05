@@ -65,6 +65,7 @@ export const threadApi = {
     const q = new URLSearchParams();
     if (params.namespace_id) q.set('namespace_id', params.namespace_id);
     if (params.status) q.set('status', params.status);
+    if (params.q) q.set('q', params.q);
     q.set('page', params.page || 1);
     q.set('size', params.size || 20);
     const res = await fetch(`${BASE}/threads?${q}`, {

@@ -23,12 +23,13 @@ def list_threads(
     response: Response,
     namespace_id: UUID | None = None,
     status: str | None = None,
+    q: str | None = None,
     page: int = Query(1, ge=1),
     size: int = Query(20, ge=1, le=100),
     session: Session = Depends(get_db),
 ):
-    items = thread_service.list_threads(session, namespace_id, status, page, size)
-    total = thread_service.count_threads(session, namespace_id, status)
+    items = thread_service.list_threads(session, namespace_id, status, page, size, q)
+    total = thread_service.count_threads(session, namespace_id, status, q)
     response.headers["X-Total-Count"] = str(total)
     return items
 
