@@ -1,6 +1,7 @@
 """Memory CRUD and lifecycle service — sync."""
 
 import logging
+import time
 from uuid import UUID
 from datetime import datetime, timezone
 
@@ -24,26 +25,47 @@ def _resolve_es_index(session: Session, namespace_id: UUID) -> str | None:
     return ns.es_index_name if ns else None
 
 
-def _index_to_es(memory: Memory, index_name: str | None = None) -> None:
-    """Generate embedding and index to ES. Fire-and-forget on failure."""
-    try:
-        from forum_memory.providers import get_provider
-        provider = get_provider()
-        embedding = provider.embed(memory.content)
-        es_service.index_memory(
-            memory_id=memory.id,
-            namespace_id=memory.namespace_id,
-            content=memory.content,
-            embedding=embedding,
-            status=memory.status,
-            environment=memory.environment,
-            tags=memory.tags,
-            knowledge_type=memory.knowledge_type,
-            quality_score=memory.quality_score,
-            index_name=index_name,
-        )
-    except Exception:
-        logger.exception("Failed to index memory %s to ES (non-fatal)", memory.id)
+def _index_to_es(memory: Memory, index_name: str | None = None, max_retries: int = 3) -> bool:
+    """Generate embedding and index to ES. Retries on transient failure.
+
+    Returns True on success, False after all retries exhausted.
+    """
+    for attempt in range(1, max_retries + 1):
+        try:
+            from forum_memory.providers import get_provider
+            provider = get_provider()
+            embedding = provider.embed(memory.content)
+            success = es_service.index_memory(
+                memory_id=memory.id,
+                namespace_id=memory.namespace_id,
+                content=memory.content,
+                embedding=embedding,
+                status=memory.status,
+                environment=memory.environment,
+                tags=memory.tags,
+                knowledge_type=memory.knowledge_type,
+                quality_score=memory.quality_score,
+                index_name=index_name,
+            )
+            if success:
+                return True
+            raise RuntimeError("es_service.index_memory returned False")
+        except Exception:
+            if attempt < max_retries:
+                delay = 2 ** (attempt - 1)  # 1s, 2s
+                logger.warning(
+                    "ES index attempt %d/%d failed for memory %s, retrying in %ds",
+                    attempt, max_retries, memory.id, delay,
+                )
+                time.sleep(delay)
+            else:
+                logger.error(
+                    "ES index FAILED after %d attempts for memory %s — "
+                    "DB record exists but NOT searchable. "
+                    "Run reindex script to fix.",
+                    max_retries, memory.id,
+                )
+    return False
 
 
 def list_memories(

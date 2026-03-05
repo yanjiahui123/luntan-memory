@@ -3,6 +3,7 @@
 from uuid import UUID
 
 from sqlmodel import Session, select, func
+from sqlalchemy import update as sa_update
 
 from forum_memory.models.feedback import Feedback
 from forum_memory.models.memory import Memory
@@ -12,6 +13,18 @@ from forum_memory.services.memory_service import refresh_quality
 
 
 def submit_feedback(session: Session, memory_id: UUID, data: FeedbackCreate, user_id: UUID | None = None) -> Feedback:
+    # Prevent duplicate: same user + same memory + same feedback type
+    if user_id:
+        existing = session.exec(
+            select(Feedback).where(
+                Feedback.memory_id == memory_id,
+                Feedback.user_id == user_id,
+                Feedback.feedback_type == FeedbackType(data.feedback_type),
+            )
+        ).first()
+        if existing:
+            return existing  # Idempotent — don't double-count
+
     fb = Feedback(
         memory_id=memory_id,
         user_id=user_id,
@@ -53,14 +66,13 @@ def get_summary(session: Session, memory_id: UUID) -> FeedbackSummary:
     )
 
 
-def withdraw_feedback(session: Session, memory_id: UUID, feedback_type: str, user_id: UUID | None = None) -> bool:
-    """Remove a user's feedback on a memory. Returns True if feedback was found and removed."""
+def withdraw_feedback(session: Session, memory_id: UUID, feedback_type: str, user_id: UUID) -> bool:
+    """Remove a user's own feedback on a memory. Returns True if feedback was found and removed."""
     stmt = select(Feedback).where(
         Feedback.memory_id == memory_id,
         Feedback.feedback_type == FeedbackType(feedback_type),
+        Feedback.user_id == user_id,
     )
-    if user_id:
-        stmt = stmt.where(Feedback.user_id == user_id)
     fb = session.exec(stmt.order_by(Feedback.created_at.desc())).first()
     if not fb:
         return False
@@ -71,31 +83,35 @@ def withdraw_feedback(session: Session, memory_id: UUID, feedback_type: str, use
     return True
 
 
+_COUNTER_MAP = {
+    "useful": "useful_count",
+    "not_useful": "not_useful_count",
+    "wrong": "wrong_count",
+    "outdated": "outdated_count",
+}
+
+
 def _decrement_counter(session: Session, memory_id: UUID, feedback_type: str) -> None:
-    memory = session.get(Memory, memory_id)
-    if not memory:
+    attr = _COUNTER_MAP.get(feedback_type)
+    if not attr:
         return
-    counter_map = {
-        "useful": "useful_count",
-        "not_useful": "not_useful_count",
-        "wrong": "wrong_count",
-        "outdated": "outdated_count",
-    }
-    attr = counter_map.get(feedback_type)
-    if attr:
-        setattr(memory, attr, max(0, getattr(memory, attr) - 1))
+    column = getattr(Memory, attr)
+    stmt = (
+        sa_update(Memory)
+        .where(Memory.id == memory_id)
+        .values(**{attr: func.greatest(column - 1, 0)})
+    )
+    session.execute(stmt)
 
 
 def _update_counter(session: Session, memory_id: UUID, feedback_type: str) -> None:
-    memory = session.get(Memory, memory_id)
-    if not memory:
+    attr = _COUNTER_MAP.get(feedback_type)
+    if not attr:
         return
-    counter_map = {
-        "useful": "useful_count",
-        "not_useful": "not_useful_count",
-        "wrong": "wrong_count",
-        "outdated": "outdated_count",
-    }
-    attr = counter_map.get(feedback_type)
-    if attr:
-        setattr(memory, attr, getattr(memory, attr) + 1)
+    column = getattr(Memory, attr)
+    stmt = (
+        sa_update(Memory)
+        .where(Memory.id == memory_id)
+        .values(**{attr: column + 1})
+    )
+    session.execute(stmt)
