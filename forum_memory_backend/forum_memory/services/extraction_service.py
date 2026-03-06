@@ -57,6 +57,9 @@ def run_extraction(session: Session, thread_id: UUID) -> list[UUID]:
     if not thread or not thread.resolved_type:
         raise ValueError("Thread not found or not resolved")
 
+    # Clean up any previous FAILED record so we can retry
+    _cleanup_failed_record(session, thread_id)
+
     record = _create_record(session, thread)
     try:
         memory_ids = _execute_pipeline(session, thread, record)
@@ -72,8 +75,23 @@ def run_extraction(session: Session, thread_id: UUID) -> list[UUID]:
 
 
 def _already_extracted(session: Session, thread_id: UUID) -> bool:
-    stmt = select(ExtractionRecord).where(ExtractionRecord.thread_id == thread_id)
+    """Check if extraction has already completed successfully."""
+    stmt = select(ExtractionRecord).where(
+        ExtractionRecord.thread_id == thread_id,
+        ExtractionRecord.status == ExtractionStatus.COMPLETED,
+    )
     return session.exec(stmt).first() is not None
+
+
+def _cleanup_failed_record(session: Session, thread_id: UUID) -> None:
+    """Remove FAILED extraction records to allow retry."""
+    stmt = select(ExtractionRecord).where(
+        ExtractionRecord.thread_id == thread_id,
+        ExtractionRecord.status == ExtractionStatus.FAILED,
+    )
+    for rec in session.exec(stmt).all():
+        session.delete(rec)
+    session.flush()
 
 
 def _create_record(session: Session, thread: Thread) -> ExtractionRecord:

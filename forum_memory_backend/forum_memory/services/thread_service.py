@@ -83,16 +83,10 @@ def create_thread(session: Session, data: ThreadCreate, author_id: UUID) -> Thre
         priority=data.priority,
     )
     session.add(thread)
+    # Emit event for async AI answer generation via Dagster
+    _add_event(session, "thread.created", "Thread", thread)
     session.commit()
     session.refresh(thread)
-
-    # AI 回答同步生成，失败不影响帖子创建
-    try:
-        generate_ai_answer(session, thread.id)
-        logger.info("AI answer generated for thread %s", thread.id)
-    except Exception:
-        logger.exception("AI answer generation failed for thread %s, user can retry manually", thread.id)
-
     return thread
 
 
@@ -112,8 +106,7 @@ def resolve_thread(session: Session, thread_id: UUID, best_answer_id: UUID | Non
     if best_answer_id:
         _mark_best_answer(session, best_answer_id)
 
-    # Emit event in the same transaction as state change
-    _emit_event(session, "thread.resolved", "Thread", thread.id, thread.namespace_id, {"resolved_type": resolved_type.value})
+    _add_event(session, "thread.resolved", "Thread", thread, {"resolved_type": resolved_type.value})
     session.commit()
     session.refresh(thread)
     return thread
@@ -129,8 +122,7 @@ def timeout_close_thread(session: Session, thread_id: UUID) -> Thread:
     thread.status = ThreadStatus.TIMEOUT_CLOSED
     thread.resolved_type = ResolvedType.TIMEOUT
     thread.timeout_at = datetime.now(timezone.utc)
-    # Emit event in the same transaction as state change
-    _emit_event(session, "thread.timeout_closed", "Thread", thread.id, thread.namespace_id)
+    _add_event(session, "thread.timeout_closed", "Thread", thread)
     session.commit()
     session.refresh(thread)
     return thread
@@ -144,8 +136,7 @@ def delete_thread(session: Session, thread_id: UUID) -> Thread:
     if not can_transition(thread.status, ThreadStatus.DELETED):
         raise ValueError(f"Cannot delete thread in {thread.status} state")
     thread.status = ThreadStatus.DELETED
-    # Emit event in the same transaction as state change
-    _emit_event(session, "thread.deleted", "Thread", thread.id, thread.namespace_id)
+    _add_event(session, "thread.deleted", "Thread", thread)
     session.commit()
     session.refresh(thread)
     return thread
@@ -340,13 +331,13 @@ def _increment_comment_count(session: Session, thread_id: UUID) -> None:
         thread.comment_count += 1
 
 
-def _emit_event(session: Session, event_type: str, agg_type: str, agg_id: UUID, ns_id: UUID, payload: dict | None = None) -> None:
-    """Add a domain event to the session (does NOT commit — caller controls transaction)."""
+def _add_event(session: Session, event_type: str, agg_type: str, thread: Thread, payload: dict | None = None) -> None:
+    """Add a domain event to the current session (caller is responsible for commit)."""
     event = DomainEvent(
         event_type=event_type,
         aggregate_type=agg_type,
-        aggregate_id=agg_id,
-        namespace_id=ns_id,
+        aggregate_id=thread.id,
+        namespace_id=thread.namespace_id,
         payload=payload or {},
     )
     session.add(event)

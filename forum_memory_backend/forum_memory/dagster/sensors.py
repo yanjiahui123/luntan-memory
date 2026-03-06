@@ -39,7 +39,46 @@ def thread_resolved_sensor(context: SensorEvaluationContext):
                 run_key=f"extract-{event.id}",
                 run_config={
                     "ops": {
-                        "load_thread_discussion": {
+                        "run_extraction_op": {
+                            "config": {
+                                "thread_id": thread_id,
+                                "event_id": str(event.id),
+                            }
+                        }
+                    }
+                },
+            )
+
+
+# ── Event-driven: thread.created → AI answer ─────────────
+
+@sensor(job_name="ai_answer_job", minimum_interval_seconds=10)
+def thread_created_sensor(context: SensorEvaluationContext):
+    """Poll for unprocessed thread.created events and trigger AI answer generation."""
+    with Session(engine) as session:
+        stmt = (
+            select(DomainEvent)
+            .where(
+                DomainEvent.event_type == "thread.created",
+                DomainEvent.processed == False,  # noqa: E712
+            )
+            .order_by(DomainEvent.created_at)
+            .limit(20)
+        )
+        events = list(session.exec(stmt).all())
+
+        if not events:
+            yield SkipReason("No unprocessed thread.created events")
+            return
+
+        for event in events:
+            thread_id = str(event.aggregate_id)
+            logger.info("Triggering AI answer for thread %s (event %s)", thread_id, event.id)
+            yield RunRequest(
+                run_key=f"ai-answer-{event.id}",
+                run_config={
+                    "ops": {
+                        "generate_ai_answer_op": {
                             "config": {
                                 "thread_id": thread_id,
                                 "event_id": str(event.id),

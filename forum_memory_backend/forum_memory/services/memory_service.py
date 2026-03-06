@@ -105,16 +105,15 @@ def create_memory(session: Session, data: MemoryCreate) -> Memory:
         memory.authority = Authority(data.authority)
     if data.pending_human_confirm:
         memory.pending_human_confirm = data.pending_human_confirm
-    session.add(memory)
-    session.flush()  # Get ID without committing
-    # Compute initial quality score based on source_role and freshness
+    # Compute initial quality score before commit
     memory.quality_score = compute_quality_score(
         useful=0, not_useful=0, wrong=0, outdated=0,
         source_role=memory.source_role,
         retrieve_count=0,
-        created_at=memory.created_at,
+        created_at=datetime.now(timezone.utc),
     )
-    _log_operation(session, memory.id, OperationType.ADD, reason="created")
+    session.add(memory)
+    _add_log(session, memory, OperationType.ADD, reason="created")
     session.commit()
     session.refresh(memory)
     # ES indexing: outside transaction — failure tracked via indexed_at
@@ -134,7 +133,7 @@ def update_memory(session: Session, memory_id: UUID, data: MemoryUpdate) -> Memo
         setattr(memory, key, val)
     memory.updated_at = datetime.now(timezone.utc)
     memory.indexed_at = None  # Mark ES as stale
-    _log_operation(session, memory.id, OperationType.UPDATE, reason="manual_update", before=before)
+    _add_log(session, memory, OperationType.UPDATE, reason="manual_update", before=before)
     session.commit()
     session.refresh(memory)
     # Re-index to ES
@@ -153,7 +152,7 @@ def delete_memory(session: Session, memory_id: UUID) -> bool:
     memory.status = MemoryStatus.DELETED
     memory.updated_at = datetime.now(timezone.utc)
     memory.indexed_at = None
-    _log_operation(session, memory.id, OperationType.DELETE, reason="deleted")
+    _add_log(session, memory, OperationType.DELETE, reason="deleted")
     session.commit()
     es_service.delete_memory_doc(memory_id, index_name=index_name)
     return True
@@ -169,7 +168,7 @@ def change_authority(session: Session, memory_id: UUID, authority: str, reason: 
     memory.pending_human_confirm = False
     memory.updated_at = datetime.now(timezone.utc)
     op = OperationType.PROMOTE if authority == "LOCKED" else OperationType.DEMOTE
-    _log_operation(session, memory.id, op, reason=reason or f"{old} -> {authority}", before=before)
+    _add_log(session, memory, op, reason=reason or f"{old} -> {authority}", before=before)
     session.commit()
     session.refresh(memory)
     return memory
@@ -217,7 +216,7 @@ def _apply_update(session: Session, result: AUDNResult) -> Memory | None:
     memory.content = result.merged_content
     memory.updated_at = datetime.now(timezone.utc)
     memory.indexed_at = None  # Mark ES as stale
-    _log_operation(session, memory.id, OperationType.UPDATE, reason=result.reason, before=before)
+    _add_log(session, memory, OperationType.UPDATE, reason=result.reason, before=before)
     session.commit()
     session.refresh(memory)
     # Re-index to ES
@@ -238,7 +237,7 @@ def _apply_delete(session: Session, result: AUDNResult) -> Memory | None:
     memory.status = MemoryStatus.DELETED
     memory.updated_at = datetime.now(timezone.utc)
     memory.indexed_at = None
-    _log_operation(session, memory.id, OperationType.DELETE, reason=result.reason)
+    _add_log(session, memory, OperationType.DELETE, reason=result.reason)
     session.commit()
     es_service.delete_memory_doc(UUID(result.target_id), index_name=index_name)
     return memory
@@ -259,19 +258,23 @@ def transition_cold_memories(session: Session, cold_days: int = 180) -> int:
         )
     )
     memories = list(session.exec(stmt).all())
-    count = 0
+    # Collect ES cleanup info before modifying state
+    es_cleanup = []
+    now = datetime.now(timezone.utc)
     for m in memories:
         before = _snapshot(m)
-        index_name = _resolve_es_index(session, m.namespace_id)
+        es_cleanup.append((m.id, _resolve_es_index(session, m.namespace_id)))
         m.status = MemoryStatus.COLD
-        m.updated_at = datetime.now(timezone.utc)
+        m.updated_at = now
         m.indexed_at = None
-        _log_operation(session, m.id, OperationType.ARCHIVE, reason=f"inactive {cold_days}+ days → COLD", before=before)
+        _add_log(session, m, OperationType.ARCHIVE, reason=f"inactive {cold_days}+ days → COLD", before=before)
+    if memories:
         session.commit()
-        es_service.delete_memory_doc(m.id, index_name=index_name)  # COLD memories don't participate in search
-        count += 1
-    logger.info("Transitioned %d memories to COLD", count)
-    return count
+    # Remove from ES after successful DB commit
+    for memory_id, index_name in es_cleanup:
+        es_service.delete_memory_doc(memory_id, index_name=index_name)
+    logger.info("Transitioned %d memories to COLD", len(memories))
+    return len(memories)
 
 
 def transition_archived_memories(session: Session, archive_days: int = 365) -> int:
@@ -284,45 +287,65 @@ def transition_archived_memories(session: Session, archive_days: int = 365) -> i
         .where(Memory.updated_at < cutoff)
     )
     memories = list(session.exec(stmt).all())
-    count = 0
+    now = datetime.now(timezone.utc)
     for m in memories:
         before = _snapshot(m)
         m.status = MemoryStatus.ARCHIVED
-        m.updated_at = datetime.now(timezone.utc)
-        _log_operation(session, m.id, OperationType.ARCHIVE, reason=f"inactive {archive_days}+ days → ARCHIVED", before=before)
+        m.updated_at = now
+        _add_log(session, m, OperationType.ARCHIVE, reason=f"inactive {archive_days}+ days → ARCHIVED", before=before)
+    if memories:
         session.commit()
-        count += 1
-    logger.info("Transitioned %d memories to ARCHIVED", count)
-    return count
+    logger.info("Transitioned %d memories to ARCHIVED", len(memories))
+    return len(memories)
 
 
-def bulk_refresh_quality(session: Session) -> int:
-    """Refresh quality score for all ACTIVE memories. Returns count updated."""
-    stmt = select(Memory).where(Memory.status == MemoryStatus.ACTIVE)
-    memories = list(session.exec(stmt).all())
-    count = 0
-    for m in memories:
-        old_score = m.quality_score
-        new_score = compute_quality_score(
-            useful=m.useful_count,
-            not_useful=m.not_useful_count,
-            wrong=m.wrong_count,
-            outdated=m.outdated_count,
-            source_role=m.source_role,
-            retrieve_count=m.retrieve_count,
-            created_at=m.created_at,
+def bulk_refresh_quality(session: Session, batch_size: int = 200) -> int:
+    """Refresh quality score for all ACTIVE memories in batches. Returns count updated."""
+    offset = 0
+    total_updated = 0
+    while True:
+        stmt = (
+            select(Memory)
+            .where(Memory.status == MemoryStatus.ACTIVE)
+            .order_by(Memory.id)
+            .offset(offset)
+            .limit(batch_size)
         )
-        if abs(new_score - old_score) > 0.001:
-            m.quality_score = new_score
-            m.indexed_at = None  # Mark ES as stale
+        memories = list(session.exec(stmt).all())
+        if not memories:
+            break
+
+        changed = []
+        for m in memories:
+            old_score = m.quality_score
+            new_score = compute_quality_score(
+                useful=m.useful_count,
+                not_useful=m.not_useful_count,
+                wrong=m.wrong_count,
+                outdated=m.outdated_count,
+                source_role=m.source_role,
+                retrieve_count=m.retrieve_count,
+                created_at=m.created_at,
+            )
+            if abs(new_score - old_score) > 0.001:
+                m.quality_score = new_score
+                m.indexed_at = None  # Mark ES as stale
+                changed.append(m)
+
+        if changed:
             session.commit()
-            index_name = _resolve_es_index(session, m.namespace_id)
-            if _index_to_es(m, index_name=index_name):
-                m.indexed_at = datetime.now(timezone.utc)
+            # Sync updated scores to ES after batch commit
+            for m in changed:
+                index_name = _resolve_es_index(session, m.namespace_id)
+                if _index_to_es(m, index_name=index_name):
+                    m.indexed_at = datetime.now(timezone.utc)
+            if any(m.indexed_at for m in changed):
                 session.commit()
-            count += 1
-    logger.info("Refreshed quality for %d memories", count)
-    return count
+            total_updated += len(changed)
+
+        offset += batch_size
+    logger.info("Refreshed quality for %d memories", total_updated)
+    return total_updated
 
 
 def list_all_tags(
@@ -332,27 +355,31 @@ def list_all_tags(
 ) -> list[str]:
     """Return tags sorted by frequency (descending), filtered by min_count.
 
-    Tags that appear only once are excluded by default (min_count=2) to avoid
-    polluting the filter UI with one-off AI-generated tags.
-    Pass min_count=1 to get all tags.
+    Uses PostgreSQL jsonb_array_elements_text for efficient SQL-level aggregation
+    instead of loading all rows into Python memory.
     """
-    stmt = select(Memory.tags).where(Memory.status != MemoryStatus.DELETED)
-    if namespace_id:
-        stmt = stmt.where(Memory.namespace_id == namespace_id)
-    rows = session.exec(stmt).all()
+    from sqlalchemy import text as sa_text
 
-    counts: dict[str, int] = {}
-    for tags in rows:
-        if tags:
-            for t in tags:
-                if t:
-                    counts[t] = counts.get(t, 0) + 1
+    # Use jsonb_array_elements_text to unnest tags array in SQL
+    tag_unnest = sa_text(
+        "SELECT jsonb_array_elements_text(tags) AS tag "
+        "FROM memories "
+        "WHERE status != 'DELETED' AND tags IS NOT NULL"
+        + (" AND namespace_id = :ns_id" if namespace_id else "")
+    )
+    params = {"ns_id": str(namespace_id)} if namespace_id else {}
 
-    # Filter by min_count, then sort by frequency desc, then alpha for ties
-    return [
-        tag for tag, _ in sorted(counts.items(), key=lambda x: (-x[1], x[0]))
-        if counts[tag] >= min_count
-    ]
+    # Wrap in a subquery to aggregate
+    count_query = sa_text(
+        f"SELECT t.tag, COUNT(*) AS cnt FROM ({tag_unnest.text}) t "
+        f"WHERE t.tag != '' "
+        f"GROUP BY t.tag HAVING COUNT(*) >= :min_count "
+        f"ORDER BY cnt DESC, t.tag"
+    )
+    params["min_count"] = min_count
+
+    rows = session.execute(count_query, params).all()
+    return [row[0] for row in rows]
 
 
 def batch_get_memories(session: Session, ids: list[UUID]) -> list[Memory]:
@@ -446,10 +473,10 @@ def reindex_unsynced_memories(session: Session, batch_size: int = 50) -> int:
     return count
 
 
-def _log_operation(session: Session, memory_id: UUID, op: OperationType, reason: str | None = None, before: dict | None = None) -> None:
-    """Add an operation log entry to the session (does NOT commit — caller controls transaction)."""
+def _add_log(session: Session, memory: Memory, op: OperationType, reason: str | None = None, before: dict | None = None) -> None:
+    """Add an operation log to the current session (caller is responsible for commit)."""
     log = OperationLog(
-        memory_id=memory_id,
+        memory_id=memory.id,
         operation=op,
         operator_type="system",
         reason=reason,
