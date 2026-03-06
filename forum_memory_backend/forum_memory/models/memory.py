@@ -48,6 +48,9 @@ class Memory(UUIDMixin, TimestampMixin, table=True):
     cite_count: int = Field(default=0)
     last_retrieved_at: datetime | None = Field(default=None)
 
+    # ES sync tracking — NULL means ES index pending/failed
+    indexed_at: datetime | None = Field(default=None)
+
     # Human confirmation flag
     pending_human_confirm: bool = Field(default=False)
 

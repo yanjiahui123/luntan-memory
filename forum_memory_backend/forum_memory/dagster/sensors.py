@@ -75,3 +75,29 @@ def quality_refresh_sensor(context: SensorEvaluationContext):
     """Daily trigger for quality score refresh."""
     yield RunRequest(run_key=f"quality-{context.cursor or '0'}")
     context.update_cursor(str(int(context.cursor or '0') + 1))
+
+
+# ── Scheduled: ES sync repair (every 10 minutes) ────────
+
+@sensor(job_name="repair_es_sync_job", minimum_interval_seconds=600)
+def es_sync_repair_sensor(context: SensorEvaluationContext):
+    """Periodically repair DB-ES consistency gaps (re-index memories with indexed_at IS NULL)."""
+    from forum_memory.models.memory import Memory
+    from forum_memory.models.enums import MemoryStatus
+
+    with Session(engine) as session:
+        from sqlmodel import select, func
+        count = session.exec(
+            select(func.count())
+            .select_from(Memory)
+            .where(Memory.status == MemoryStatus.ACTIVE)
+            .where(Memory.indexed_at == None)  # noqa: E711
+        ).one()
+
+    if count == 0:
+        yield SkipReason("No unsynced memories found")
+        return
+
+    logger.info("Found %d unsynced memories, triggering ES repair", count)
+    yield RunRequest(run_key=f"es-repair-{context.cursor or '0'}")
+    context.update_cursor(str(int(context.cursor or '0') + 1))

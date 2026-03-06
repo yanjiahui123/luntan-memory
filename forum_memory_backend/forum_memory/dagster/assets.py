@@ -37,6 +37,9 @@ def load_thread_discussion(config: ExtractConfig) -> dict:
         thread = session.get(Thread, thread_id)
         if not thread:
             raise ValueError(f"Thread {thread_id} not found")
+        if thread.status == ThreadStatus.DELETED:
+            logger.warning("Thread %s was deleted after event emitted, skipping extraction", thread_id)
+            return {"skip": True, "thread_id": config.thread_id, "event_id": config.event_id}
         if thread.status not in (ThreadStatus.RESOLVED, ThreadStatus.TIMEOUT_CLOSED):
             raise ValueError(
                 f"Thread {thread_id} is in {thread.status} state, "
@@ -114,6 +117,7 @@ def process_facts_audn(context_data: dict) -> dict:
     from forum_memory.providers import get_provider
 
     thread_id = UUID(context_data["thread_id"])
+    event_id = UUID(context_data["event_id"])
 
     with Session(engine) as session:
         thread = session.get(Thread, thread_id)
@@ -131,8 +135,12 @@ def process_facts_audn(context_data: dict) -> dict:
                         i + 1, len(context_data["facts"]),
                         "created" if mid else "skipped")
 
+        # Mark extraction complete AND event processed in the SAME transaction
         record.status = ExtractionStatus.COMPLETED
         record.memory_ids_created = ",".join(memory_ids)
+        event = session.get(DomainEvent, event_id)
+        if event:
+            event.processed = True
         session.commit()
 
     context_data["memory_ids"] = memory_ids
@@ -143,12 +151,12 @@ def process_facts_audn(context_data: dict) -> dict:
 
 @op
 def finalize_extraction(context_data: dict):
-    """Step 5: Mark the domain event as processed."""
+    """Step 5: Mark the domain event as processed (idempotent — may already be marked by Step 4)."""
     event_id = UUID(context_data["event_id"])
 
     with Session(engine) as session:
         event = session.get(DomainEvent, event_id)
-        if event:
+        if event and not event.processed:
             event.processed = True
             session.commit()
 
@@ -221,3 +229,19 @@ def refresh_quality_op():
 @job
 def refresh_quality_job():
     refresh_quality_op()
+
+
+# ── ES Sync Repair ──────────────────────────────────────
+
+@op
+def repair_es_sync_op():
+    """Repair DB-ES consistency: re-index ACTIVE memories with indexed_at IS NULL."""
+    from forum_memory.services.memory_service import reindex_unsynced_memories
+    with Session(engine) as session:
+        count = reindex_unsynced_memories(session, batch_size=100)
+        logger.info("ES sync repair: re-indexed %d memories", count)
+
+
+@job
+def repair_es_sync_job():
+    repair_es_sync_op()

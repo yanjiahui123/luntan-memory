@@ -15,6 +15,8 @@ class MemoryCreate(BaseModel):
     source_id: UUID | None = None
     source_role: str | None = None
     resolved_type: str | None = None
+    authority: str | None = None
+    pending_human_confirm: bool = False
 
 
 class MemoryUpdate(BaseModel):

@@ -98,10 +98,15 @@ def get_memory(session: Session, memory_id: UUID) -> Memory | None:
 
 
 def create_memory(session: Session, data: MemoryCreate) -> Memory:
-    memory = Memory(**data.model_dump())
+    create_data = data.model_dump(exclude={"authority", "pending_human_confirm"})
+    memory = Memory(**create_data)
+    # Apply optional authority/pending from schema
+    if data.authority:
+        memory.authority = Authority(data.authority)
+    if data.pending_human_confirm:
+        memory.pending_human_confirm = data.pending_human_confirm
     session.add(memory)
-    session.commit()
-    session.refresh(memory)
+    session.flush()  # Get ID without committing
     # Compute initial quality score based on source_role and freshness
     memory.quality_score = compute_quality_score(
         useful=0, not_useful=0, wrong=0, outdated=0,
@@ -109,11 +114,14 @@ def create_memory(session: Session, data: MemoryCreate) -> Memory:
         retrieve_count=0,
         created_at=memory.created_at,
     )
+    _log_operation(session, memory.id, OperationType.ADD, reason="created")
     session.commit()
     session.refresh(memory)
-    _log_operation(session, memory.id, OperationType.ADD, reason="created")
+    # ES indexing: outside transaction — failure tracked via indexed_at
     index_name = _resolve_es_index(session, memory.namespace_id)
-    _index_to_es(memory, index_name=index_name)
+    if _index_to_es(memory, index_name=index_name):
+        memory.indexed_at = datetime.now(timezone.utc)
+        session.commit()
     return memory
 
 
@@ -125,11 +133,15 @@ def update_memory(session: Session, memory_id: UUID, data: MemoryUpdate) -> Memo
     for key, val in data.model_dump(exclude_unset=True).items():
         setattr(memory, key, val)
     memory.updated_at = datetime.now(timezone.utc)
+    memory.indexed_at = None  # Mark ES as stale
+    _log_operation(session, memory.id, OperationType.UPDATE, reason="manual_update", before=before)
     session.commit()
     session.refresh(memory)
-    _log_operation(session, memory.id, OperationType.UPDATE, reason="manual_update", before=before)
+    # Re-index to ES
     index_name = _resolve_es_index(session, memory.namespace_id)
-    _index_to_es(memory, index_name=index_name)
+    if _index_to_es(memory, index_name=index_name):
+        memory.indexed_at = datetime.now(timezone.utc)
+        session.commit()
     return memory
 
 
@@ -140,8 +152,9 @@ def delete_memory(session: Session, memory_id: UUID) -> bool:
     index_name = _resolve_es_index(session, memory.namespace_id)
     memory.status = MemoryStatus.DELETED
     memory.updated_at = datetime.now(timezone.utc)
-    session.commit()
+    memory.indexed_at = None
     _log_operation(session, memory.id, OperationType.DELETE, reason="deleted")
+    session.commit()
     es_service.delete_memory_doc(memory_id, index_name=index_name)
     return True
 
@@ -155,10 +168,10 @@ def change_authority(session: Session, memory_id: UUID, authority: str, reason: 
     memory.authority = Authority(authority)
     memory.pending_human_confirm = False
     memory.updated_at = datetime.now(timezone.utc)
-    session.commit()
-    session.refresh(memory)
     op = OperationType.PROMOTE if authority == "LOCKED" else OperationType.DEMOTE
     _log_operation(session, memory.id, op, reason=reason or f"{old} -> {authority}", before=before)
+    session.commit()
+    session.refresh(memory)
     return memory
 
 
@@ -203,11 +216,15 @@ def _apply_update(session: Session, result: AUDNResult) -> Memory | None:
     before = _snapshot(memory)
     memory.content = result.merged_content
     memory.updated_at = datetime.now(timezone.utc)
+    memory.indexed_at = None  # Mark ES as stale
+    _log_operation(session, memory.id, OperationType.UPDATE, reason=result.reason, before=before)
     session.commit()
     session.refresh(memory)
-    _log_operation(session, memory.id, OperationType.UPDATE, reason=result.reason, before=before)
+    # Re-index to ES
     index_name = _resolve_es_index(session, memory.namespace_id)
-    _index_to_es(memory, index_name=index_name)
+    if _index_to_es(memory, index_name=index_name):
+        memory.indexed_at = datetime.now(timezone.utc)
+        session.commit()
     return memory
 
 
@@ -220,8 +237,9 @@ def _apply_delete(session: Session, result: AUDNResult) -> Memory | None:
     index_name = _resolve_es_index(session, memory.namespace_id)
     memory.status = MemoryStatus.DELETED
     memory.updated_at = datetime.now(timezone.utc)
-    session.commit()
+    memory.indexed_at = None
     _log_operation(session, memory.id, OperationType.DELETE, reason=result.reason)
+    session.commit()
     es_service.delete_memory_doc(UUID(result.target_id), index_name=index_name)
     return memory
 
@@ -247,8 +265,9 @@ def transition_cold_memories(session: Session, cold_days: int = 180) -> int:
         index_name = _resolve_es_index(session, m.namespace_id)
         m.status = MemoryStatus.COLD
         m.updated_at = datetime.now(timezone.utc)
-        session.commit()
+        m.indexed_at = None
         _log_operation(session, m.id, OperationType.ARCHIVE, reason=f"inactive {cold_days}+ days → COLD", before=before)
+        session.commit()
         es_service.delete_memory_doc(m.id, index_name=index_name)  # COLD memories don't participate in search
         count += 1
     logger.info("Transitioned %d memories to COLD", count)
@@ -270,8 +289,8 @@ def transition_archived_memories(session: Session, archive_days: int = 365) -> i
         before = _snapshot(m)
         m.status = MemoryStatus.ARCHIVED
         m.updated_at = datetime.now(timezone.utc)
-        session.commit()
         _log_operation(session, m.id, OperationType.ARCHIVE, reason=f"inactive {archive_days}+ days → ARCHIVED", before=before)
+        session.commit()
         count += 1
     logger.info("Transitioned %d memories to ARCHIVED", count)
     return count
@@ -295,9 +314,12 @@ def bulk_refresh_quality(session: Session) -> int:
         )
         if abs(new_score - old_score) > 0.001:
             m.quality_score = new_score
+            m.indexed_at = None  # Mark ES as stale
             session.commit()
             index_name = _resolve_es_index(session, m.namespace_id)
-            _index_to_es(m, index_name=index_name)  # sync updated score to ES
+            if _index_to_es(m, index_name=index_name):
+                m.indexed_at = datetime.now(timezone.utc)
+                session.commit()
             count += 1
     logger.info("Refreshed quality for %d memories", count)
     return count
@@ -394,7 +416,38 @@ def _snapshot(memory: Memory) -> dict:
     return {"content": memory.content, "authority": memory.authority, "status": memory.status}
 
 
+def reindex_unsynced_memories(session: Session, batch_size: int = 50) -> int:
+    """Find ACTIVE memories with indexed_at IS NULL and re-index to ES.
+
+    This is a repair function for DB-ES consistency gaps — called by a periodic
+    Dagster job to fix memories that failed ES indexing on creation/update.
+    Returns the number of successfully re-indexed memories.
+    """
+    stmt = (
+        select(Memory)
+        .where(Memory.status == MemoryStatus.ACTIVE)
+        .where(Memory.indexed_at == None)  # noqa: E711
+        .limit(batch_size)
+    )
+    memories = list(session.exec(stmt).all())
+    if not memories:
+        return 0
+
+    count = 0
+    for m in memories:
+        index_name = _resolve_es_index(session, m.namespace_id)
+        if _index_to_es(m, index_name=index_name):
+            m.indexed_at = datetime.now(timezone.utc)
+            session.commit()
+            count += 1
+        else:
+            logger.warning("Repair reindex still failed for memory %s", m.id)
+    logger.info("Repair reindex: %d/%d memories synced to ES", count, len(memories))
+    return count
+
+
 def _log_operation(session: Session, memory_id: UUID, op: OperationType, reason: str | None = None, before: dict | None = None) -> None:
+    """Add an operation log entry to the session (does NOT commit — caller controls transaction)."""
     log = OperationLog(
         memory_id=memory_id,
         operation=op,
@@ -403,4 +456,3 @@ def _log_operation(session: Session, memory_id: UUID, op: OperationType, reason:
         before_snapshot=before,
     )
     session.add(log)
-    session.commit()

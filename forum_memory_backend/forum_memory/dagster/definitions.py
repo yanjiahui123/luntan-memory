@@ -11,12 +11,14 @@ from forum_memory.dagster.assets import (
     timeout_threads_job,
     lifecycle_memories_job,
     refresh_quality_job,
+    repair_es_sync_job,
 )
 from forum_memory.dagster.sensors import (
     thread_resolved_sensor,
     thread_timeout_sensor,
     memory_lifecycle_sensor,
     quality_refresh_sensor,
+    es_sync_repair_sensor,
 )
 
 defs = Definitions(
@@ -25,11 +27,13 @@ defs = Definitions(
         timeout_threads_job,
         lifecycle_memories_job,
         refresh_quality_job,
+        repair_es_sync_job,
     ],
     sensors=[
         thread_resolved_sensor,
         thread_timeout_sensor,
         memory_lifecycle_sensor,
         quality_refresh_sensor,
+        es_sync_repair_sensor,
     ],
 )

@@ -152,15 +152,12 @@ def _process_one_fact(session, llm, thread, fact, authority, pending) -> UUID | 
         source_id=thread.id,
         source_role=_best_answer_role(session, thread),
         resolved_type=thread.resolved_type,
+        authority=authority.value if authority else None,
+        pending_human_confirm=pending,
     )
 
     memory = apply_audn(session, data, result)
-    if memory:
-        memory.authority = authority
-        memory.pending_human_confirm = pending
-        session.commit()
-        return memory.id
-    return None
+    return memory.id if memory else None
 
 
 def _best_answer_role(session: Session, thread: Thread) -> str:

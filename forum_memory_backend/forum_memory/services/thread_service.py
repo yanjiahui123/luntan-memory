@@ -112,9 +112,10 @@ def resolve_thread(session: Session, thread_id: UUID, best_answer_id: UUID | Non
     if best_answer_id:
         _mark_best_answer(session, best_answer_id)
 
+    # Emit event in the same transaction as state change
+    _emit_event(session, "thread.resolved", "Thread", thread.id, thread.namespace_id, {"resolved_type": resolved_type.value})
     session.commit()
     session.refresh(thread)
-    _emit_event(session, "thread.resolved", "Thread", thread.id, thread.namespace_id, {"resolved_type": resolved_type.value})
     return thread
 
 
@@ -128,9 +129,10 @@ def timeout_close_thread(session: Session, thread_id: UUID) -> Thread:
     thread.status = ThreadStatus.TIMEOUT_CLOSED
     thread.resolved_type = ResolvedType.TIMEOUT
     thread.timeout_at = datetime.now(timezone.utc)
+    # Emit event in the same transaction as state change
+    _emit_event(session, "thread.timeout_closed", "Thread", thread.id, thread.namespace_id)
     session.commit()
     session.refresh(thread)
-    _emit_event(session, "thread.timeout_closed", "Thread", thread.id, thread.namespace_id)
     return thread
 
 
@@ -142,9 +144,10 @@ def delete_thread(session: Session, thread_id: UUID) -> Thread:
     if not can_transition(thread.status, ThreadStatus.DELETED):
         raise ValueError(f"Cannot delete thread in {thread.status} state")
     thread.status = ThreadStatus.DELETED
+    # Emit event in the same transaction as state change
+    _emit_event(session, "thread.deleted", "Thread", thread.id, thread.namespace_id)
     session.commit()
     session.refresh(thread)
-    _emit_event(session, "thread.deleted", "Thread", thread.id, thread.namespace_id)
     return thread
 
 
@@ -338,6 +341,7 @@ def _increment_comment_count(session: Session, thread_id: UUID) -> None:
 
 
 def _emit_event(session: Session, event_type: str, agg_type: str, agg_id: UUID, ns_id: UUID, payload: dict | None = None) -> None:
+    """Add a domain event to the session (does NOT commit — caller controls transaction)."""
     event = DomainEvent(
         event_type=event_type,
         aggregate_type=agg_type,
@@ -346,4 +350,3 @@ def _emit_event(session: Session, event_type: str, agg_type: str, agg_id: UUID, 
         payload=payload or {},
     )
     session.add(event)
-    session.commit()
