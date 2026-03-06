@@ -11,16 +11,16 @@ from forum_memory.models.event import DomainEvent
 logger = logging.getLogger(__name__)
 
 
-# ── Event-driven: thread.resolved → extract memories ─────
+# ── Event-driven: thread.resolved / thread.timeout_closed → extract memories ─────
 
 @sensor(job_name="extract_memories_job", minimum_interval_seconds=30)
 def thread_resolved_sensor(context: SensorEvaluationContext):
-    """Poll for unprocessed thread.resolved events and trigger extraction."""
+    """Poll for unprocessed thread.resolved and thread.timeout_closed events and trigger extraction."""
     with Session(engine) as session:
         stmt = (
             select(DomainEvent)
             .where(
-                DomainEvent.event_type == "thread.resolved",
+                DomainEvent.event_type.in_(["thread.resolved", "thread.timeout_closed"]),
                 DomainEvent.processed == False,  # noqa: E712
             )
             .order_by(DomainEvent.created_at)
@@ -29,7 +29,7 @@ def thread_resolved_sensor(context: SensorEvaluationContext):
         events = list(session.exec(stmt).all())
 
         if not events:
-            yield SkipReason("No unprocessed thread.resolved events")
+            yield SkipReason("No unprocessed thread.resolved / thread.timeout_closed events")
             return
 
         for event in events:

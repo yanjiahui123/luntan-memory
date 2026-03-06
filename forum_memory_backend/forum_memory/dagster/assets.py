@@ -3,11 +3,12 @@
 import logging
 from uuid import UUID
 
-from dagster import op, job, graph, Config
+from dagster import op, job, graph, Config, RetryPolicy, Backoff
 from sqlmodel import Session
 
 from forum_memory.database import engine
 from forum_memory.models.event import DomainEvent
+from forum_memory.models.enums import ThreadStatus
 from forum_memory.config import get_settings
 
 logger = logging.getLogger(__name__)
@@ -34,8 +35,13 @@ def load_thread_discussion(config: ExtractConfig) -> dict:
             return {"skip": True, "thread_id": config.thread_id, "event_id": config.event_id}
 
         thread = session.get(Thread, thread_id)
-        if not thread or not thread.resolved_type:
-            raise ValueError(f"Thread {thread_id} not found or not resolved")
+        if not thread:
+            raise ValueError(f"Thread {thread_id} not found")
+        if thread.status not in (ThreadStatus.RESOLVED, ThreadStatus.TIMEOUT_CLOSED):
+            raise ValueError(
+                f"Thread {thread_id} is in {thread.status} state, "
+                f"expected RESOLVED or TIMEOUT_CLOSED"
+            )
 
         discussion = _build_discussion(session, thread_id)
         return {
@@ -173,28 +179,48 @@ class AIAnswerConfig(Config):
     event_id: str
 
 
-@op
+@op(retry_policy=RetryPolicy(max_retries=3, delay=30, backoff=Backoff.EXPONENTIAL))
 def auto_ai_answer(config: AIAnswerConfig):
-    """Generate an AI answer for a newly created thread."""
+    """Generate an AI answer for a newly created thread.
+
+    Retry policy: up to 3 retries with exponential backoff (30s, 60s, 120s)
+    to handle transient LLM API failures. The event is only marked as
+    processed on success, so persistent failures remain visible and
+    recoverable.
+    """
+    from forum_memory.models.thread import Comment
+    from forum_memory.services.thread_service import generate_ai_answer
+    from sqlmodel import select
+
     thread_id = UUID(config.thread_id)
     event_id = UUID(config.event_id)
 
     with Session(engine) as session:
-        try:
-            from forum_memory.services.thread_service import generate_ai_answer
+        # ── Idempotency: skip if an AI comment already exists ──
+        existing_ai = session.exec(
+            select(Comment).where(
+                Comment.thread_id == thread_id,
+                Comment.is_ai == True,  # noqa: E712
+            )
+        ).first()
+
+        if existing_ai:
+            logger.info(
+                "AI answer already exists for thread %s (comment %s), skipping generation",
+                thread_id, existing_ai.id,
+            )
+        else:
             comment = generate_ai_answer(session, thread_id)
             logger.info(
                 "Auto AI answer created for thread %s (comment %s)",
                 thread_id, comment.id,
             )
-        except Exception:
-            logger.exception("Auto AI answer failed for thread %s", thread_id)
-            raise
-        finally:
-            event = session.get(DomainEvent, event_id)
-            if event:
-                event.processed = True
-                session.commit()
+
+        # ── Mark event processed only on success ──
+        event = session.get(DomainEvent, event_id)
+        if event:
+            event.processed = True
+            session.commit()
 
 
 @job
