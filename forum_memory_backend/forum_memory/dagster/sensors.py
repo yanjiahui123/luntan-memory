@@ -50,45 +50,6 @@ def thread_resolved_sensor(context: SensorEvaluationContext):
             )
 
 
-# ── Event-driven: thread.created → AI auto-answer ────────
-
-@sensor(job_name="auto_ai_answer_job", minimum_interval_seconds=30)
-def thread_created_ai_sensor(context: SensorEvaluationContext):
-    """Poll for unprocessed thread.created events and trigger AI auto-answer."""
-    with Session(engine) as session:
-        stmt = (
-            select(DomainEvent)
-            .where(
-                DomainEvent.event_type == "thread.created",
-                DomainEvent.processed == False,  # noqa: E712
-            )
-            .order_by(DomainEvent.created_at)
-            .limit(20)
-        )
-        events = list(session.exec(stmt).all())
-
-        if not events:
-            yield SkipReason("No unprocessed thread.created events")
-            return
-
-        for event in events:
-            thread_id = str(event.aggregate_id)
-            logger.info("Triggering AI auto-answer for thread %s (event %s)", thread_id, event.id)
-            yield RunRequest(
-                run_key=f"ai-answer-{event.id}",
-                run_config={
-                    "ops": {
-                        "auto_ai_answer": {
-                            "config": {
-                                "thread_id": thread_id,
-                                "event_id": str(event.id),
-                            }
-                        }
-                    }
-                },
-            )
-
-
 # ── Scheduled: thread timeout (every hour) ───────────────
 
 @sensor(job_name="timeout_threads_job", minimum_interval_seconds=3600)

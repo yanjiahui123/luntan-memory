@@ -47,7 +47,6 @@ def get_thread(thread_id: UUID, session: Session = Depends(get_db), user: User =
 def create_thread(data: ThreadCreate, session: Session = Depends(get_db), user: User = Depends(get_current_user)):
     # Check write access based on namespace access_mode
     check_namespace_write_access(data.namespace_id, session, user)
-    # AI 回答由 Dagster sensor 异步触发，此处不再同步调用
     return thread_service.create_thread(session, data, user.id)
 
 

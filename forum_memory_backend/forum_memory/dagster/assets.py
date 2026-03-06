@@ -3,7 +3,7 @@
 import logging
 from uuid import UUID
 
-from dagster import op, job, graph, Config, RetryPolicy, Backoff
+from dagster import op, job, graph, Config
 from sqlmodel import Session
 
 from forum_memory.database import engine
@@ -170,62 +170,6 @@ def extract_memories_graph():
 
 
 extract_memories_job = extract_memories_graph.to_job(name="extract_memories_job")
-
-
-# ── AI Auto-Answer ──────────────────────────────────────
-
-class AIAnswerConfig(Config):
-    thread_id: str
-    event_id: str
-
-
-@op(retry_policy=RetryPolicy(max_retries=3, delay=30, backoff=Backoff.EXPONENTIAL))
-def auto_ai_answer(config: AIAnswerConfig):
-    """Generate an AI answer for a newly created thread.
-
-    Retry policy: up to 3 retries with exponential backoff (30s, 60s, 120s)
-    to handle transient LLM API failures. The event is only marked as
-    processed on success, so persistent failures remain visible and
-    recoverable.
-    """
-    from forum_memory.models.thread import Comment
-    from forum_memory.services.thread_service import generate_ai_answer
-    from sqlmodel import select
-
-    thread_id = UUID(config.thread_id)
-    event_id = UUID(config.event_id)
-
-    with Session(engine) as session:
-        # ── Idempotency: skip if an AI comment already exists ──
-        existing_ai = session.exec(
-            select(Comment).where(
-                Comment.thread_id == thread_id,
-                Comment.is_ai == True,  # noqa: E712
-            )
-        ).first()
-
-        if existing_ai:
-            logger.info(
-                "AI answer already exists for thread %s (comment %s), skipping generation",
-                thread_id, existing_ai.id,
-            )
-        else:
-            comment = generate_ai_answer(session, thread_id)
-            logger.info(
-                "Auto AI answer created for thread %s (comment %s)",
-                thread_id, comment.id,
-            )
-
-        # ── Mark event processed only on success ──
-        event = session.get(DomainEvent, event_id)
-        if event:
-            event.processed = True
-            session.commit()
-
-
-@job
-def auto_ai_answer_job():
-    auto_ai_answer()
 
 
 # ── Thread Timeout ───────────────────────────────────────

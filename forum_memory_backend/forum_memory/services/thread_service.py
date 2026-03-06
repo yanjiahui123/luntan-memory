@@ -85,7 +85,14 @@ def create_thread(session: Session, data: ThreadCreate, author_id: UUID) -> Thre
     session.add(thread)
     session.commit()
     session.refresh(thread)
-    _emit_event(session, "thread.created", "Thread", thread.id, thread.namespace_id)
+
+    # AI 回答同步生成，失败不影响帖子创建
+    try:
+        generate_ai_answer(session, thread.id)
+        logger.info("AI answer generated for thread %s", thread.id)
+    except Exception:
+        logger.exception("AI answer generation failed for thread %s, user can retry manually", thread.id)
+
     return thread
 
 
