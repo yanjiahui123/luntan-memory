@@ -83,11 +83,36 @@ def create_thread(session: Session, data: ThreadCreate, author_id: UUID) -> Thre
         priority=data.priority,
     )
     session.add(thread)
-    # Emit event for async AI answer generation via Dagster
-    _add_event(session, "thread.created", "Thread", thread)
     session.commit()
     session.refresh(thread)
+
+    # AI 回答提交到后台线程，不阻塞 HTTP 请求返回
+    _submit_ai_answer(thread.id)
+
     return thread
+
+
+def _submit_ai_answer(thread_id: UUID) -> None:
+    """Submit AI answer generation to background thread pool.
+
+    Uses its own DB session since the request session will be closed
+    by the time the background task executes.
+    """
+    from forum_memory.core.background import submit
+
+    def _task():
+        from forum_memory.database import engine
+        with Session(engine) as bg_session:
+            try:
+                generate_ai_answer(bg_session, thread_id)
+                logger.info("AI answer generated (background) for thread %s", thread_id)
+            except Exception:
+                logger.exception(
+                    "AI answer generation failed (background) for thread %s, user can retry manually",
+                    thread_id,
+                )
+
+    submit(_task)
 
 
 def resolve_thread(session: Session, thread_id: UUID, best_answer_id: UUID | None = None) -> Thread:

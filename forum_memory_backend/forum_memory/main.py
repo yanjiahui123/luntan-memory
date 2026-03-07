@@ -18,7 +18,9 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Startup: create tables and ES index."""
+    """Startup: create tables, ES index, and background executor."""
+    from forum_memory.core.background import init_executor, shutdown_executor
+
     try:
         init_db()
         logger.info("Database tables initialized successfully")
@@ -46,7 +48,10 @@ async def lifespan(app: FastAPI):
         logger.info("Elasticsearch indices ensured")
     except Exception as e:
         logger.warning("Elasticsearch index creation failed (non-fatal): %s", e)
+
+    init_executor(max_workers=4)
     yield
+    shutdown_executor()
 
 
 def create_app() -> FastAPI:
