@@ -71,7 +71,17 @@ def timeout_close(thread_id: UUID, session: Session = Depends(get_db)):
 
 @router.get("/{thread_id}/comments", response_model=list[CommentRead])
 def list_comments(thread_id: UUID, session: Session = Depends(get_db)):
-    return thread_service.list_comments(session, thread_id)
+    comments = thread_service.list_comments(session, thread_id)
+    author_ids = [c.author_id for c in comments if c.author_id]
+    users = {}
+    if author_ids:
+        users = {u.id: u.display_name for u in session.exec(select(User).where(User.id.in_(author_ids))).all()}
+    result = []
+    for c in comments:
+        d = c.model_dump()
+        d["author_display_name"] = users.get(c.author_id) if c.author_id else None
+        result.append(d)
+    return result
 
 
 @router.post("/{thread_id}/comments", response_model=CommentRead, status_code=201)

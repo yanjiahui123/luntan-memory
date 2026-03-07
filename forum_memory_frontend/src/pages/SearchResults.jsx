@@ -2,12 +2,14 @@ import React, { useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { memoryApi, threadApi } from '../api/client';
 import { useAsync } from '../hooks/useAsync';
+import { useUser } from '../contexts/UserContext';
 import { Loading, EmptyState, AuthorityBadge, Badge, KnowledgeTypeBadge } from '../components/UI';
 
 export default function SearchResults() {
   const [params] = useSearchParams();
   const query = params.get('q') || '';
   const [nsId] = useState(params.get('ns') || '');
+  const { isAdmin } = useUser();
 
   // If we have a namespace, search memories; otherwise show message
   const { data: searchResult, loading } = useAsync(
@@ -44,7 +46,7 @@ export default function SearchResults() {
             {!searchResult.hits?.length ? (
               <EmptyState icon="🔍" message="没有找到相关知识" />
             ) : (
-              searchResult.hits.map((hit, i) => <SearchHit key={i} hit={hit} />)
+              searchResult.hits.map((hit, i) => <SearchHit key={i} hit={hit} isAdmin={isAdmin} />)
             )}
           </div>
           <div>
@@ -62,7 +64,7 @@ export default function SearchResults() {
   );
 }
 
-function SearchHit({ hit }) {
+function SearchHit({ hit, isAdmin }) {
   const m = hit.memory;
   return (
     <div className="card" style={{ padding: 14, marginBottom: 10, borderLeft: `3px solid ${m.authority === 'LOCKED' ? 'var(--green)' : 'var(--accent)'}` }}>
@@ -78,9 +80,11 @@ function SearchHit({ hit }) {
       {!hit.env_match && hit.env_warning && (
         <div style={{ fontSize: 12, color: 'var(--amber)', marginTop: 6 }}>{hit.env_warning}</div>
       )}
-      <div style={{ marginTop: 8 }}>
-        <Link to={`/admin/memories/${m.id}`} style={{ fontSize: 12 }}>查看完整记忆 →</Link>
-      </div>
+      {isAdmin && (
+        <div style={{ marginTop: 8 }}>
+          <Link to={`/admin/memories/${m.id}`} style={{ fontSize: 12 }}>查看完整记忆 →</Link>
+        </div>
+      )}
     </div>
   );
 }

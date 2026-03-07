@@ -121,9 +121,9 @@ export default function ThreadDetail() {
       {/* AI Answer + Comments */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
         <h3 style={{ fontSize: 15, fontWeight: 600, margin: 0 }}>回答 ({comments?.length || 0})</h3>
-        {thread.status === 'OPEN' && (
+        {thread.status === 'OPEN' && isAdmin && comments?.some(c => c.is_ai) && (
           <button
-            className="btn-primary"
+            className="btn-secondary"
             disabled={aiLoading}
             onClick={async () => {
               setAiLoading(true);
@@ -165,7 +165,7 @@ export default function ThreadDetail() {
             </>
           )}
           {pollStatus === 'idle' && (
-            <div>AI 正在分析您的问题，回答将在稍后自动出现...</div>
+            <div style={{ color: 'var(--text-ter)' }}>正在连接 AI 服务...</div>
           )}
         </div>
       )}
@@ -252,9 +252,9 @@ function ThreadMemories({ threadId, isAdmin }) {
         <div key={mem.id} className="card" style={{ padding: 14, marginBottom: 8 }}>
           {editingId === mem.id ? (
             <div>
-              <textarea
+              <ImagePasteTextarea
                 value={editContent}
-                onChange={e => setEditContent(e.target.value)}
+                onChange={setEditContent}
                 style={{ marginBottom: 12, minHeight: 100 }}
               />
               <div style={{ display: 'flex', gap: 8 }}>
@@ -310,8 +310,6 @@ function CommentCard({ comment, thread, onResolve, onDelete, isAdmin }) {
   const [feedbackGiven, setFeedbackGiven] = useState(null);
   const [upvotes, setUpvotes] = useState(comment.upvote_count || 0);
   const [upvoted, setUpvoted] = useState(false);
-  const [relatedMemories, setRelatedMemories] = useState(null);
-  const [showMemories, setShowMemories] = useState(false);
   const [citedMemories, setCitedMemories] = useState(null);
   const [showCitations, setShowCitations] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -362,19 +360,6 @@ function CommentCard({ comment, thread, onResolve, onDelete, isAdmin }) {
       const result = await threadApi.upvoteComment(comment.thread_id, comment.id);
       setUpvotes(result.upvote_count);
       setUpvoted(result.voted);
-
-      // Trigger memory search on first upvote
-      if (result.voted && !relatedMemories) {
-        const searchResult = await memoryApi.search({
-          query: comment.content,
-          namespace_id: thread.namespace_id,
-          top_k: 3,
-        });
-        if (searchResult.hits?.length > 0) {
-          setRelatedMemories(searchResult.hits);
-          setShowMemories(true);
-        }
-      }
     } catch (err) {
       console.error('Upvote failed:', err);
     }
@@ -384,9 +369,11 @@ function CommentCard({ comment, thread, onResolve, onDelete, isAdmin }) {
     <div className={`card comment-box ${isAi ? 'comment-box--ai' : ''} ${isBest ? 'comment-box--best' : ''}`}>
       <div className="comment-author">
         <div className="comment-avatar" style={{ background: isAi ? 'var(--purple-light)' : 'var(--accent-light)', color: isAi ? 'var(--purple)' : 'var(--accent)' }}>
-          {isAi ? '🤖' : comment.author_role?.[0]?.toUpperCase() || 'U'}
+          {isAi ? '🤖' : (comment.author_display_name || comment.author_role)?.[0]?.toUpperCase() || 'U'}
         </div>
-        <span style={{ fontWeight: 600, fontSize: 13 }}>{isAi ? 'AI 助手' : `用户 ${comment.author_role}`}</span>
+        <span style={{ fontWeight: 600, fontSize: 13 }}>
+          {isAi ? 'AI 助手' : (comment.author_display_name || comment.author_role || '用户')}
+        </span>
         {isAi && <Badge type="purple">自动回复</Badge>}
         {isBest && <Badge type="green">✓ 最佳回答</Badge>}
         {comment.author_role === 'admin' && <Badge type="amber">管理员</Badge>}
@@ -512,7 +499,7 @@ function CommentCard({ comment, thread, onResolve, onDelete, isAdmin }) {
           </>
         )}
         <div style={{ flex: 1 }} />
-        {!isBest && (
+        {isAdmin && !isBest && (
           <button className="btn-sm btn-danger" onClick={() => setShowDeleteConfirm(true)} style={{ fontSize: 11 }}>删除</button>
         )}
         {thread.status === 'OPEN' && !isBest && (
@@ -527,30 +514,6 @@ function CommentCard({ comment, thread, onResolve, onDelete, isAdmin }) {
         onConfirm={handleDelete}
         onCancel={() => setShowDeleteConfirm(false)}
       />
-
-      {/* Related memories from upvote */}
-      {showMemories && relatedMemories?.length > 0 && (
-        <div style={{ marginTop: 10, padding: 12, background: 'var(--surface-alt)', borderRadius: 'var(--radius)', fontSize: 13 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-            <span style={{ fontWeight: 600, color: 'var(--text-sec)' }}>🧠 相关知识</span>
-            <button className="btn-sm btn-secondary" onClick={() => setShowMemories(false)} style={{ fontSize: 11 }}>收起</button>
-          </div>
-          {relatedMemories.map((hit, i) => (
-            <div key={i} style={{ padding: '6px 0', borderTop: i > 0 ? '1px solid var(--border)' : 'none' }}>
-              <div style={{ lineHeight: 1.6, color: 'var(--text)' }}>
-                {hit.memory.content.length > 100 ? hit.memory.content.slice(0, 100) + '...' : hit.memory.content}
-              </div>
-              <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginTop: 4 }}>
-                {hit.memory.knowledge_type && <KnowledgeTypeBadge type={hit.memory.knowledge_type} />}
-                <span style={{ fontSize: 11, color: 'var(--text-ter)' }}>相关度 {hit.score.toFixed(2)}</span>
-                {isAdmin && (
-                  <Link to={`/admin/memories/${hit.memory.id}`} style={{ fontSize: 11, marginLeft: 'auto' }}>查看详情 →</Link>
-                )}
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
     </div>
   );
 }

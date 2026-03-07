@@ -45,9 +45,8 @@ function BoardCard({ board }) {
     <Link to={`/boards/${board.id}/threads`} style={{ textDecoration: 'none', color: 'inherit' }}>
       <div className="card" style={{ padding: 20, cursor: 'pointer' }}>
         <h3 style={{ fontSize: 16, marginBottom: 4 }}>{board.display_name}</h3>
-        <p style={{ fontSize: 13, color: 'var(--text-sec)', marginBottom: 12 }}>{board.description || board.name}</p>
+        <p style={{ fontSize: 13, color: 'var(--text-sec)', marginBottom: 12 }}>{board.description || '暂无描述'}</p>
         <div style={{ display: 'flex', gap: 16, fontSize: 12, color: 'var(--text-ter)' }}>
-          <span>📋 {board.name}</span>
           <span style={{ color: board.is_active ? 'var(--green)' : 'var(--red)' }}>
             {board.is_active ? '● 活跃' : '○ 已关闭'}
           </span>
