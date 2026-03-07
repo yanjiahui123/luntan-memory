@@ -44,37 +44,35 @@ export default function ThreadDetail() {
     refetchComments();
   }
 
-  // Progressive backoff polling for AI answer (~5 minutes total)
+  // SSE: connect to backend stream to get notified when AI answer is ready
   useEffect(() => {
-    if (thread?.status === 'OPEN' && thread?.comment_count === 0) {
-      setPollStatus('polling');
-      const intervals = [3000, 3000, 5000, 5000, 10000, 10000, 15000, 15000, 30000, 30000, 30000, 30000, 30000, 30000, 30000, 30000];
-      let step = 0;
-      let timer = null;
+    if (thread?.status !== 'OPEN' || (thread?.comment_count ?? 0) > 0) return;
+    setPollStatus('polling');
+    const es = new EventSource(`/api/v1/threads/${threadId}/ai-answer/stream`);
 
-      function poll() {
-        refetchComments();
-        step++;
-        if (step < intervals.length) {
-          timer = setTimeout(poll, intervals[step]);
-        } else {
+    es.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        if (data.ready) {
+          refetchComments();
           setPollStatus('done');
+          es.close();
+        } else if (data.timeout) {
+          setPollStatus('done');
+          es.close();
         }
-      }
+      } catch (_) { /* ignore heartbeat comments or parse errors */ }
+    };
 
-      timer = setTimeout(poll, intervals[0]);
-      return () => { clearTimeout(timer); setPollStatus('idle'); };
-    }
+    es.onerror = () => {
+      setPollStatus('done');
+      es.close();
+    };
+
+    return () => { es.close(); setPollStatus('idle'); };
   }, [thread?.id, thread?.comment_count]);
 
-  // Stop polling once comments arrive
-  useEffect(() => {
-    if (comments?.length > 0 && pollStatus === 'polling') {
-      setPollStatus('done');
-    }
-  }, [comments?.length, pollStatus]);
-
-  // Animated dots for polling indicator
+  // Animated dots for loading indicator
   useEffect(() => {
     if (pollStatus !== 'polling') return;
     const timer = setInterval(() => {
@@ -160,11 +158,7 @@ export default function ThreadDetail() {
               <div style={{ marginBottom: 8 }}>AI 分析可能仍在进行中</div>
               <button
                 className="btn-primary btn-sm"
-                onClick={() => {
-                  refetchComments();
-                  setPollStatus('polling');
-                  setTimeout(() => setPollStatus('done'), 60000);
-                }}
+                onClick={refetchComments}
               >
                 🔄 刷新查看
               </button>

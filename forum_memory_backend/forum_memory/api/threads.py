@@ -1,9 +1,12 @@
 """Thread API routes — sync."""
 
+import json
 import logging
+import time
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from fastapi.responses import StreamingResponse
 from sqlmodel import Session, select
 
 from forum_memory.api.deps import get_db, get_current_user, get_current_user_id, check_board_permission, check_namespace_read_access, check_namespace_write_access
@@ -88,6 +91,40 @@ def ai_answer(thread_id: UUID, session: Session = Depends(get_db)):
         raise HTTPException(400, str(e))
     except Exception as e:
         raise HTTPException(500, f"AI answer generation failed: {e}")
+
+
+@router.get("/{thread_id}/ai-answer/stream")
+def stream_ai_answer(thread_id: UUID):
+    """SSE endpoint: push a ready signal when the AI answer appears.
+
+    Polls DB every 2 seconds for up to 120 seconds.
+    Emits:
+      data: {"ready": true}    — AI comment exists, frontend should refetch
+      data: {"timeout": true}  — gave up, frontend may retry manually
+      : heartbeat              — keep-alive comment while waiting
+    """
+    from forum_memory.database import engine
+    from forum_memory.models.thread import Comment
+
+    def _generate():
+        with Session(engine) as session:
+            for _ in range(60):  # 60 × 2s = 120s max
+                stmt = select(Comment).where(
+                    Comment.thread_id == thread_id,
+                    Comment.is_ai == True,  # noqa: E712
+                )
+                if session.exec(stmt).first():
+                    yield f"data: {json.dumps({'ready': True})}\n\n"
+                    return
+                time.sleep(2)
+                yield ": heartbeat\n\n"
+        yield f"data: {json.dumps({'timeout': True})}\n\n"
+
+    return StreamingResponse(
+        _generate(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 @router.delete("/{thread_id}", status_code=204)

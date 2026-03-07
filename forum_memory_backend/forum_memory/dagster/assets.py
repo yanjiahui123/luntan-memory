@@ -1,4 +1,10 @@
-"""Dagster ops/jobs for memory extraction, AI answer, and lifecycle automation."""
+"""Dagster ops/jobs for memory extraction and lifecycle automation.
+
+Note: AI answer generation is driven by the background ThreadPoolExecutor in
+thread_service._submit_ai_answer(), not by a Dagster job. The SSE endpoint
+/threads/{id}/ai-answer/stream allows the frontend to receive a push notification
+when the answer is ready without polling.
+"""
 
 import logging
 from uuid import UUID
@@ -50,39 +56,6 @@ def run_extraction_op(config: ExtractConfig):
 @job
 def extract_memories_job():
     run_extraction_op()
-
-
-# ── AI Answer job ─────────────────────────────────────────
-
-class AiAnswerConfig(Config):
-    thread_id: str
-    event_id: str
-
-
-@op
-def generate_ai_answer_op(config: AiAnswerConfig):
-    """Generate AI answer for a newly created thread."""
-    from forum_memory.services.thread_service import generate_ai_answer
-
-    thread_id = UUID(config.thread_id)
-    event_id = UUID(config.event_id)
-
-    with Session(engine) as session:
-        try:
-            generate_ai_answer(session, thread_id)
-            logger.info("AI answer generated for thread %s", thread_id)
-        except Exception:
-            logger.exception("AI answer generation failed for thread %s", thread_id)
-        finally:
-            event = session.get(DomainEvent, event_id)
-            if event:
-                event.processed = True
-                session.commit()
-
-
-@job
-def ai_answer_job():
-    generate_ai_answer_op()
 
 
 # ── Thread Timeout ───────────────────────────────────────

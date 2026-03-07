@@ -81,7 +81,11 @@ def _preprocess_query(session: Session, req: MemorySearchRequest) -> str:
         query = _apply_dictionary(req.query, ns.dictionary)
         dictionary = ns.dictionary
 
-    # LLM query rewrite for better recall
+    # Skip LLM rewrite for short queries (≤ 4 words): no benefit, saves latency
+    if len(query.split()) <= 4:
+        return query
+
+    # LLM query rewrite for better recall (longer, complex queries only)
     try:
         provider = get_provider()
         rewritten = provider.complete(
@@ -150,14 +154,20 @@ def _fetch_memories_by_ids(session: Session, memory_ids: list[UUID]) -> list[Mem
 
 
 def _simple_rank(candidates: list[Memory], query: str, top_k: int) -> list[Memory]:
-    """Rank candidates using provider rerank, fallback to text overlap."""
+    """Rank candidates: 70% semantic rerank + 30% quality_score fusion, fallback to text overlap."""
     if not candidates:
         return []
     try:
         provider = get_provider()
         docs = [m.content for m in candidates]
         scores = provider.rerank(query, docs)
-        scored = list(zip(candidates, scores))
+        # Normalize semantic scores to [0, 1] to make them comparable with quality_score
+        min_s, max_s = min(scores), max(scores)
+        span = max_s - min_s or 1.0
+        norm_scores = [(s - min_s) / span for s in scores]
+        # Fuse: 70% semantic relevance + 30% memory quality
+        fused = [0.7 * sem + 0.3 * m.quality_score for m, sem in zip(candidates, norm_scores)]
+        scored = list(zip(candidates, fused))
         scored.sort(key=lambda x: x[1], reverse=True)
         return [m for m, _ in scored[:top_k]]
     except Exception:

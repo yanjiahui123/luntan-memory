@@ -333,14 +333,62 @@ def bulk_refresh_quality(session: Session, batch_size: int = 200) -> int:
                 changed.append(m)
 
         if changed:
-            session.commit()
-            # Sync updated scores to ES after batch commit
-            for m in changed:
-                index_name = _resolve_es_index(session, m.namespace_id)
-                if _index_to_es(m, index_name=index_name):
-                    m.indexed_at = datetime.now(timezone.utc)
-            if any(m.indexed_at for m in changed):
+            session.commit()  # Commit quality score updates
+
+            # Batch embed: one API call for all changed content
+            try:
+                from forum_memory.providers import get_provider
+                provider = get_provider()
+                embeddings = provider.embed_batch([m.content for m in changed])
+            except Exception:
+                logger.exception(
+                    "embed_batch failed during quality refresh at offset %d; "
+                    "ES sync deferred to repair sensor",
+                    offset,
+                )
+                total_updated += len(changed)
+                offset += batch_size
+                continue
+
+            # Group by namespace ES index for bulk reindex
+            now = datetime.now(timezone.utc)
+            ns_cache: dict = {}
+            by_index: dict = {}  # index_name → [(Memory, embedding)]
+            for m, emb in zip(changed, embeddings):
+                if m.namespace_id not in ns_cache:
+                    ns = session.get(Namespace, m.namespace_id)
+                    ns_cache[m.namespace_id] = ns.es_index_name if ns else None
+                by_index.setdefault(ns_cache[m.namespace_id], []).append((m, emb))
+
+            for index_name, pairs in by_index.items():
+                docs = [
+                    {
+                        "memory_id": str(m.id),
+                        "namespace_id": str(m.namespace_id),
+                        "content": m.content,
+                        "embedding": emb,
+                        "status": m.status,
+                        "environment": m.environment or "",
+                        "tags": m.tags or [],
+                        "knowledge_type": m.knowledge_type or "",
+                        "quality_score": m.quality_score,
+                    }
+                    for m, emb in pairs
+                ]
+                ok = es_service.bulk_reindex(docs, index_name=index_name)
+                if ok == len(docs):
+                    for m, _ in pairs:
+                        m.indexed_at = now
+                else:
+                    logger.warning(
+                        "Partial bulk reindex (%d/%d) for index %s; "
+                        "remaining will be repaired by es_sync_repair_sensor",
+                        ok, len(docs), index_name,
+                    )
+
+            if any(m.indexed_at is not None for m in changed):
                 session.commit()
+
             total_updated += len(changed)
 
         offset += batch_size
