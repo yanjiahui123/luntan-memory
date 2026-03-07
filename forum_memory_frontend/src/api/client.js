@@ -14,13 +14,16 @@ export function setEmployeeId(id) {
 }
 
 async function request(url, options = {}) {
+  const { headers: extraHeaders, signal: callerSignal, ...restOptions } = options;
+  const signal = callerSignal ?? AbortSignal.timeout(30_000);
   const res = await fetch(`${BASE}${url}`, {
+    signal,
     headers: {
       'Content-Type': 'application/json',
       'X-Employee-Id': getEmployeeId(),
-      ...options.headers,
+      ...extraHeaders,
     },
-    ...options,
+    ...restOptions,
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: res.statusText }));
@@ -32,13 +35,16 @@ async function request(url, options = {}) {
 
 /** Like request(), but also reads X-Total-Count header for paginated lists. */
 async function requestPaginated(url, options = {}) {
+  const { headers: extraHeaders, signal: callerSignal, ...restOptions } = options;
+  const signal = callerSignal ?? AbortSignal.timeout(30_000);
   const res = await fetch(`${BASE}${url}`, {
+    signal,
     headers: {
       'Content-Type': 'application/json',
       'X-Employee-Id': getEmployeeId(),
-      ...options.headers,
+      ...extraHeaders,
     },
-    ...options,
+    ...restOptions,
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: res.statusText }));
@@ -158,6 +164,7 @@ export const adminApi = {
       method: 'POST',
       headers: { 'X-Employee-Id': getEmployeeId() },
       body: form,
+      signal: AbortSignal.timeout(300_000),  // 5 分钟，批量导入文件可能较大
     }).then(async res => {
       if (!res.ok) {
         const err = await res.json().catch(() => ({ detail: res.statusText }));
@@ -177,6 +184,7 @@ export const uploadApi = {
       method: 'POST',
       headers: { 'X-Employee-Id': getEmployeeId() },
       body: form,
+      signal: AbortSignal.timeout(60_000),  // 60 秒，单文件上传
     }).then(res => {
       if (!res.ok) throw new Error('Upload failed');
       return res.json();
