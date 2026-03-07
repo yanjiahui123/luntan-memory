@@ -107,8 +107,8 @@ def stream_ai_answer(thread_id: UUID):
     from forum_memory.models.thread import Comment
 
     def _generate():
-        with Session(engine) as session:
-            for _ in range(60):  # 60 × 2s = 120s max
+        for _ in range(60):  # 60 × 2s = 120s max
+            with Session(engine) as session:
                 stmt = select(Comment).where(
                     Comment.thread_id == thread_id,
                     Comment.is_ai == True,  # noqa: E712
@@ -116,8 +116,8 @@ def stream_ai_answer(thread_id: UUID):
                 if session.exec(stmt).first():
                     yield f"data: {json.dumps({'ready': True})}\n\n"
                     return
-                time.sleep(2)
-                yield ": heartbeat\n\n"
+            time.sleep(2)
+            yield ": heartbeat\n\n"
         yield f"data: {json.dumps({'timeout': True})}\n\n"
 
     return StreamingResponse(

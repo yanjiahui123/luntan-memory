@@ -11,7 +11,7 @@ class OpenAIProvider(LLMProvider):
 
     def __init__(self):
         settings = get_settings()
-        self.client = OpenAI(api_key=settings.llm_api_key)
+        self.client = OpenAI(api_key=settings.llm_api_key, timeout=settings.llm_timeout)
         self.main_model = settings.llm_main_model
         self.embed_model = settings.llm_embedding_model
 

@@ -1,5 +1,6 @@
 """Application configuration using Pydantic Settings."""
 
+from pydantic import model_validator
 from pydantic_settings import BaseSettings
 from functools import lru_cache
 
@@ -29,6 +30,7 @@ class Settings(BaseSettings):
     llm_main_model: str = "gpt-4o"
     llm_embedding_model: str = "text-embedding-3-small"
     embedding_dimension: int = 1536
+    llm_timeout: int = 60  # seconds, applies to all LLM/embedding/rerank calls
 
     # Custom provider (when llm_provider == "custom")
     custom_llm_url: str = ""
@@ -62,6 +64,35 @@ class Settings(BaseSettings):
     archive_inactive_days: int = 365
 
     model_config = {"env_file": ".env", "env_prefix": "FM_"}
+
+    @model_validator(mode="after")
+    def _validate_settings(self):
+        # LLM provider-specific validation
+        if self.llm_provider == "openai" and not self.llm_api_key:
+            raise ValueError("FM_LLM_API_KEY is required when llm_provider is 'openai'")
+        if self.llm_provider == "custom":
+            missing = []
+            if not self.custom_llm_url:
+                missing.append("FM_CUSTOM_LLM_URL")
+            if not self.custom_embed_url:
+                missing.append("FM_CUSTOM_EMBED_URL")
+            if not self.custom_rerank_url:
+                missing.append("FM_CUSTOM_RERANK_URL")
+            if missing:
+                raise ValueError(f"Required for custom provider: {', '.join(missing)}")
+
+        # Lifecycle day ordering
+        if self.cold_inactive_days >= self.archive_inactive_days:
+            raise ValueError(
+                f"cold_inactive_days ({self.cold_inactive_days}) must be < "
+                f"archive_inactive_days ({self.archive_inactive_days})"
+            )
+
+        # Embedding dimension
+        if self.embedding_dimension <= 0:
+            raise ValueError(f"embedding_dimension must be > 0, got {self.embedding_dimension}")
+
+        return self
 
 
 @lru_cache

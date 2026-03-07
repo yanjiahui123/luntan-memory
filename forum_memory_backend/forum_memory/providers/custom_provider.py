@@ -25,6 +25,7 @@ class CustomProvider(LLMProvider):
         self.embed_model = settings.custom_embed_model
         self.rerank_model = settings.custom_rerank_model
         self.embed_dimension = settings.embedding_dimension
+        self.timeout = settings.llm_timeout
 
     def complete(self, messages: list[dict]) -> str:
         resp = requests.post(
@@ -32,6 +33,7 @@ class CustomProvider(LLMProvider):
             headers=self.headers,
             json={"model": self.llm_model, "messages": messages},
             verify=False,
+            timeout=self.timeout,
         )
         resp.raise_for_status()
         return resp.json()["choices"][0]["message"]["content"]
@@ -49,6 +51,7 @@ class CustomProvider(LLMProvider):
                 "dimensions": self.embed_dimension,
             },
             verify=False,
+            timeout=self.timeout,
         )
         resp.raise_for_status()
         return resp.json()
@@ -65,6 +68,7 @@ class CustomProvider(LLMProvider):
                 "enable_instruct": True,
             },
             verify=False,
+            timeout=self.timeout,
         )
         resp.raise_for_status()
         return resp.json()

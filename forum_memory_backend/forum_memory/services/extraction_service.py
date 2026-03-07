@@ -4,6 +4,7 @@ Pipeline: idempotent guard → compress → extract facts → AUDN per fact → 
 """
 
 import logging
+from datetime import datetime
 from uuid import UUID
 
 from sqlmodel import Session, select
@@ -75,6 +76,8 @@ def run_extraction(session: Session, thread_id: UUID) -> list[UUID]:
     except Exception as e:
         record.status = ExtractionStatus.FAILED
         record.error_message = str(e)[:500]
+        # Rollback any memories created during this failed pipeline run
+        _rollback_partial_memories(session, thread_id, record.created_at)
         session.commit()
         raise
 
@@ -97,6 +100,27 @@ def _cleanup_failed_record(session: Session, thread_id: UUID) -> None:
     for rec in session.exec(stmt).all():
         session.delete(rec)
     session.flush()
+
+
+def _rollback_partial_memories(session: Session, thread_id: UUID, since: datetime) -> None:
+    """Soft-delete memories created during a failed extraction run and remove from ES."""
+    from forum_memory.models.memory import Memory
+    from forum_memory.services import es_service
+
+    stmt = select(Memory).where(
+        Memory.source_id == thread_id,
+        Memory.status != MemoryStatus.DELETED,
+        Memory.created_at >= since,
+    )
+    memories = list(session.exec(stmt).all())
+    for m in memories:
+        m.status = MemoryStatus.DELETED
+        try:
+            es_service.delete_memory_doc(m.id)
+        except Exception:
+            pass  # ES cleanup is best-effort; repair sensor will handle leftovers
+    if memories:
+        logger.info("Rolled back %d partial memories for thread %s", len(memories), thread_id)
 
 
 def _create_record(session: Session, thread: Thread) -> ExtractionRecord:

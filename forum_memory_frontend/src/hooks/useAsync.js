@@ -1,20 +1,28 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 
 export function useAsync(asyncFn, deps = []) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const callIdRef = useRef(0);
 
   const execute = useCallback(async () => {
+    const callId = ++callIdRef.current;
     setLoading(true);
     setError(null);
     try {
       const result = await asyncFn();
-      setData(result);
+      if (callId === callIdRef.current) {
+        setData(result);
+      }
     } catch (e) {
-      setError(e.message);
+      if (callId === callIdRef.current) {
+        setError(e.message);
+      }
     } finally {
-      setLoading(false);
+      if (callId === callIdRef.current) {
+        setLoading(false);
+      }
     }
   }, deps);
 

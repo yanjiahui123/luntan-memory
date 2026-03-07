@@ -498,9 +498,9 @@ function clearAll() {
 | 3.2.1（旧）| 排序未融合质量分 | ✅ 已实现（0.7×语义 + 0.3×质量） |
 | 3.2.2（旧）| 查询改写无条件触发 | ✅ 已优化（≤ 4 词跳过 LLM） |
 | 3.5.1（旧）| AI 回答前端轮询 | ✅ 已替换为 SSE EventSource |
-| **3.1.1** | LLM 调用无 timeout | 🔴 待修复（高优） |
-| **3.1.2** | SSE 长连接 session | 🔴 待修复（高优） |
-| **3.1.3** | 提取部分失败无回滚 | 🔴 待修复（高优） |
+| **3.1.1** | LLM 调用无 timeout | ✅ 已修复（llm_timeout=60，OpenAI+Custom 均生效） |
+| **3.1.2** | SSE 长连接 session | ✅ 已修复（session 移入循环内，每次查询独立获取/释放） |
+| **3.1.3** | 提取部分失败无回滚 | ✅ 已修复（_rollback_partial_memories 软删除+ES清理） |
 | **3.1.4** | re_extract 竞态条件 | 🟡 待处理 |
 | **3.1.5** | dictionary 替换不一致 | 🟡 待处理 |
 | **3.1.6** | bulk_refresh commit 后 N+1 | ⚪ 长期 |
@@ -512,10 +512,10 @@ function clearAll() {
 | **3.3.3** | namespace=None 导致 index_name=None | 🟡 待处理 |
 | **3.4.1** | 无 API 限流 | 🟡 待处理 |
 | **3.4.2** | X-Employee-Id 认证简单 | ⚪ 长期 |
-| **3.4.3** | Settings 缺少配置校验 | 🔴 待修复（高优） |
-| **3.5.1** | useAsync 竞态条件 | 🔴 待修复（高优） |
+| **3.4.3** | Settings 缺少配置校验 | ✅ 已修复（model_validator 校验 provider/天数/维度） |
+| **3.5.1** | useAsync 竞态条件 | ✅ 已修复（callIdRef 序列号丢弃过期响应） |
 | **3.5.2** | SSE 依赖数组多余 | 🟡 待处理 |
-| **3.5.3** | 无 Error Boundary | 🔴 待修复（高优） |
+| **3.5.3** | 无 Error Boundary | ✅ 已修复（ErrorBoundary 组件包裹 Routes） |
 | **3.5.4** | API Client 无 timeout | 🟡 待处理 |
 | **3.5.5** | Promise 静默吞错 | 🟡 待处理 |
 | **3.5.6** | 表单双击提交 | 🟡 待处理 |
