@@ -157,12 +157,26 @@ def delete_thread(
     session: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    """板块管理员或超级管理员可删除帖子。"""
+    """帖子作者可删除自己的帖子（记忆级联删除），管理员可删除任意帖子（记忆标记待审）。"""
     thread = thread_service.get_thread(session, thread_id)
     if not thread:
         raise HTTPException(404, "Thread not found")
-    check_board_permission(thread.namespace_id, session, user)
-    thread_service.delete_thread(session, thread_id)
+
+    is_admin = user.role in (SystemRole.SUPER_ADMIN, SystemRole.BOARD_ADMIN)
+    is_author = thread.author_id == user.id
+
+    if is_admin:
+        check_board_permission(thread.namespace_id, session, user)
+        deleted_by_admin = True
+    elif is_author:
+        deleted_by_admin = False
+    else:
+        raise HTTPException(403, "只有帖子作者或管理员可以删除帖子")
+
+    try:
+        thread_service.delete_thread(session, thread_id, deleted_by_admin=deleted_by_admin)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
 
 
 @router.post("/{thread_id}/comments/{comment_id}/upvote", response_model=UpvoteResponse)

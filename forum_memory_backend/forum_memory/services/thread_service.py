@@ -157,8 +157,12 @@ def timeout_close_thread(session: Session, thread_id: UUID) -> Thread:
     return thread
 
 
-def delete_thread(session: Session, thread_id: UUID) -> Thread:
-    """Soft-delete a thread."""
+def delete_thread(session: Session, thread_id: UUID, deleted_by_admin: bool = False) -> Thread:
+    """Soft-delete a thread and handle associated memories.
+
+    - deleted_by_admin=False (author self-delete): cascade soft-delete memories + remove from ES.
+    - deleted_by_admin=True (admin delete): mark memories pending_human_confirm for review.
+    """
     thread = session.get(Thread, thread_id)
     if not thread:
         raise ValueError("Thread not found")
@@ -166,6 +170,39 @@ def delete_thread(session: Session, thread_id: UUID) -> Thread:
         raise ValueError(f"Cannot delete thread in {thread.status} state")
     thread.status = ThreadStatus.DELETED
     _add_event(session, "thread.deleted", "Thread", thread)
+
+    # Handle associated memories
+    from forum_memory.models.memory import Memory
+    from forum_memory.models.enums import MemoryStatus
+
+    memories = list(session.exec(
+        select(Memory).where(
+            Memory.source_id == thread_id,
+            Memory.status != MemoryStatus.DELETED,
+        )
+    ).all())
+
+    if memories:
+        if deleted_by_admin:
+            for m in memories:
+                m.pending_human_confirm = True
+            logger.info(
+                "Admin deleted thread %s: %d memories marked pending_human_confirm",
+                thread_id, len(memories),
+            )
+        else:
+            from forum_memory.services import es_service
+            from forum_memory.models.namespace import Namespace
+            ns = session.get(Namespace, thread.namespace_id)
+            index_name = ns.es_index_name if ns else None
+            for m in memories:
+                m.status = MemoryStatus.DELETED
+                es_service.delete_memory_doc(m.id, index_name)
+            logger.info(
+                "Author deleted thread %s: %d memories cascade-deleted",
+                thread_id, len(memories),
+            )
+
     session.commit()
     session.refresh(thread)
     return thread

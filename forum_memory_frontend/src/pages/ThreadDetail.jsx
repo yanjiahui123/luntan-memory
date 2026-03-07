@@ -22,7 +22,9 @@ export default function ThreadDetail() {
   const navigate = useNavigate();
   const { data: thread, loading, error, refetch } = useAsync(() => threadApi.get(threadId), [threadId]);
   const { data: comments, refetch: refetchComments } = useAsync(() => threadApi.comments(threadId), [threadId]);
-  const { isSuperAdmin, isAdmin } = useUser();
+  const { currentUser, isSuperAdmin, isAdmin } = useUser();
+  const isAuthor = !!(currentUser && thread?.author_id && currentUser.id === thread.author_id);
+  const canDelete = isAuthor || isAdmin;
   const [replyText, setReplyText] = useState('');
   const [resolveTarget, setResolveTarget] = useState(null);
   const [aiLoading, setAiLoading] = useState(false);
@@ -107,7 +109,7 @@ export default function ThreadDetail() {
           <span>👁 {thread.view_count} 浏览</span>
           <span>💬 {thread.comment_count} 回复</span>
           <TimeAgo date={thread.created_at} />
-          {isSuperAdmin && (
+          {canDelete && (
             <button
               className="btn-sm btn-danger"
               style={{ marginLeft: 'auto' }}
@@ -200,7 +202,11 @@ export default function ThreadDetail() {
       <ConfirmModal
         open={showDeleteConfirm}
         title="删除帖子"
-        message="确认删除此帖子？删除后帖子将不再显示在列表中。"
+        message={
+          isAdmin
+            ? '确认删除此帖子？帖子将不再显示，关联记忆将标记为"待人工审核"，请前往待处理中心确认是否保留。'
+            : '确认删除此帖子？帖子将不再显示，从中提取的知识记忆也将一并删除。'
+        }
         onConfirm={async () => {
           await threadApi.delete(threadId);
           setShowDeleteConfirm(false);
