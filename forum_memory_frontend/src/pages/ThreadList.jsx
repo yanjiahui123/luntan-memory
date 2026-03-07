@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { Link, useParams, useNavigate } from 'react-router-dom';
 import { threadApi, namespaceApi } from '../api/client';
 import { useAsync } from '../hooks/useAsync';
@@ -19,19 +19,11 @@ export default function ThreadList() {
   const navigate = useNavigate();
   const [status, setStatus] = useState('');
   const [page, setPage] = useState(1);
-  const [keyword, setKeyword] = useState('');
-  const [debouncedQ, setDebouncedQ] = useState('');
-
-  // Debounce keyword input (400ms)
-  useEffect(() => {
-    const timer = setTimeout(() => { setDebouncedQ(keyword); setPage(1); }, 400);
-    return () => clearTimeout(timer);
-  }, [keyword]);
 
   const { data: board } = useAsync(() => namespaceApi.get(boardId), [boardId]);
   const { data, loading, error, refetch } = useAsync(
-    () => threadApi.list({ namespace_id: boardId, status: status || undefined, q: debouncedQ || undefined, page, size: PAGE_SIZE }),
-    [boardId, status, debouncedQ, page]
+    () => threadApi.list({ namespace_id: boardId, status: status || undefined, page, size: PAGE_SIZE }),
+    [boardId, status, page]
   );
   const threads = data?.items;
   const totalCount = data?.total || 0;
@@ -58,32 +50,6 @@ export default function ThreadList() {
             </button>
           )}
           <button className="btn-primary" onClick={() => navigate(`/boards/${boardId}/new`)}>+ 发帖</button>
-        </div>
-      </div>
-
-      {/* Search + Filter bar */}
-      <div className="card" style={{ padding: '10px 14px', marginBottom: 12 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span style={{ fontSize: 15, color: 'var(--text-ter)', flexShrink: 0 }}>🔍</span>
-          <input
-            value={keyword}
-            onChange={e => setKeyword(e.target.value)}
-            placeholder="搜索帖子标题..."
-            style={{
-              flex: '1 1 120px', minWidth: 80,
-              border: 'none', outline: 'none',
-              background: 'transparent', fontSize: 13,
-              padding: '4px 0',
-            }}
-          />
-          {keyword && (
-            <button
-              onClick={() => { setKeyword(''); setDebouncedQ(''); }}
-              style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-ter)', fontSize: 15, padding: 0 }}
-            >
-              ×
-            </button>
-          )}
         </div>
       </div>
 
@@ -118,11 +84,15 @@ function ThreadItem({ thread }) {
         </Link>
         <div className="thread-item__meta">
           <StatusBadge status={thread.status} />
+          {thread.author_display_name && <span style={{ color: 'var(--text-ter)' }}>👤 {thread.author_display_name}</span>}
           {thread.tags?.map(t => <Badge key={t} type="gray">{t}</Badge>)}
         </div>
       </div>
       <div className="thread-item__right">
-        <div>{thread.comment_count} 回复</div>
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+          <span style={{ fontSize: 12, color: 'var(--text-ter)' }}>👁 {thread.view_count ?? 0}</span>
+          <span>{thread.comment_count} 回复</span>
+        </div>
         <TimeAgo date={thread.created_at} />
       </div>
     </div>

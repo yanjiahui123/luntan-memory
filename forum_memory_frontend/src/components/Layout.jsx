@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState } from 'react';
 import { Link, useLocation, useNavigate, Outlet } from 'react-router-dom';
 import { userApi, setEmployeeId } from '../api/client';
 import { useUser } from '../contexts/UserContext';
@@ -39,6 +39,7 @@ export default function Layout() {
   const currentBoardId = boardForumMatch ? boardForumMatch[1] : null;
 
   const [showUserMenu, setShowUserMenu] = useState(false);
+  const [showSwitchUser, setShowSwitchUser] = useState(false);
   const [inputId, setInputId] = useState('');
   const [searchQ, setSearchQ] = useState('');
 
@@ -121,33 +122,49 @@ export default function Layout() {
           </div>
 
           {showUserMenu && (
-            <div style={{
-              position: 'absolute', top: 40, right: 0, width: 240,
-              background: 'var(--surface)', border: '1px solid var(--border)',
-              borderRadius: 'var(--radius-lg)', boxShadow: 'var(--shadow-lg)',
-              padding: 14, zIndex: 200,
-            }}>
-              {currentUser && (
-                <div style={{ marginBottom: 12, paddingBottom: 10, borderBottom: '1px solid var(--border)' }}>
-                  <div style={{ fontWeight: 700, fontSize: 14 }}>{displayName}</div>
-                  <div style={{ fontSize: 12, color: 'var(--text-sec)' }}>工号: {currentUser.employee_id}</div>
-                  <div style={{ fontSize: 12, color: roleColor }}>
-                    {roleLabel}
+            <>
+              {/* 点击遮罩关闭 */}
+              <div
+                style={{ position: 'fixed', inset: 0, zIndex: 199 }}
+                onClick={() => { setShowUserMenu(false); setShowSwitchUser(false); }}
+              />
+              <div style={{
+                position: 'absolute', top: 40, right: 0, width: 220,
+                background: 'var(--surface)', border: '1px solid var(--border)',
+                borderRadius: 'var(--radius-lg)', boxShadow: 'var(--shadow-lg)',
+                padding: 14, zIndex: 200,
+              }}>
+                {currentUser && (
+                  <div style={{ marginBottom: 10 }}>
+                    <div style={{ fontWeight: 700, fontSize: 14 }}>{displayName}</div>
+                    <div style={{ fontSize: 12, color: 'var(--text-sec)', marginTop: 2 }}>工号 {currentUser.employee_id}</div>
+                    <div style={{ fontSize: 11, color: roleColor, marginTop: 2 }}>{roleLabel}</div>
                   </div>
-                </div>
-              )}
-              <div style={{ fontSize: 12, color: 'var(--text-sec)', marginBottom: 6 }}>切换用户:</div>
-              <div style={{ display: 'flex', gap: 6 }}>
-                <input
-                  placeholder="输入工号"
-                  value={inputId}
-                  onChange={e => setInputId(e.target.value)}
-                  onKeyDown={e => e.key === 'Enter' && handleSwitchUser()}
-                  style={{ flex: 1, fontSize: 13, padding: '5px 8px' }}
-                />
-                <button className="btn-primary btn-sm" onClick={handleSwitchUser}>切换</button>
+                )}
+                {!showSwitchUser ? (
+                  <button
+                    onClick={() => setShowSwitchUser(true)}
+                    style={{ fontSize: 12, color: 'var(--text-ter)', background: 'none', border: 'none', padding: 0, cursor: 'pointer', marginTop: 4 }}
+                  >
+                    切换用户...
+                  </button>
+                ) : (
+                  <div style={{ marginTop: 8, paddingTop: 8, borderTop: '1px solid var(--border)' }}>
+                    <div style={{ display: 'flex', gap: 6 }}>
+                      <input
+                        placeholder="输入工号"
+                        value={inputId}
+                        onChange={e => setInputId(e.target.value)}
+                        onKeyDown={e => e.key === 'Enter' && handleSwitchUser()}
+                        style={{ flex: 1, fontSize: 13, padding: '5px 8px' }}
+                        autoFocus
+                      />
+                      <button className="btn-primary btn-sm" onClick={handleSwitchUser}>切换</button>
+                    </div>
+                  </div>
+                )}
               </div>
-            </div>
+            </>
           )}
         </div>
       </header>
