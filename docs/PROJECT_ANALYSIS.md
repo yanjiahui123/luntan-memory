@@ -1,166 +1,174 @@
-# Forum Memory Agent 项目审查与改进方案
+# Forum Memory Agent 项目审查报告
 
-> **文档状态**：2026-03-07 更新，已根据最新代码修订各问题状态
+> **最后更新**: 2026-03-07（全量重审，基于当前实际代码）
+
+---
 
 ## 目录
 
-- [第一部分：现有问题分析](#第一部分现有问题分析)
-- [第二部分：记忆提取模块改进方案](#第二部分记忆提取模块改进方案)
-- [第三部分：AI 智能问答效果提升方案](#第三部分ai-智能问答效果提升方案)
+- [一、系统架构概述](#一系统架构概述)
+- [二、已完成的改进](#二已完成的改进)
+- [三、当前存在的问题](#三当前存在的问题)
+- [四、改进方案与优先级](#四改进方案与优先级)
 
 ---
 
-## 第一部分：现有问题分析
+## 一、系统架构概述
 
-### 1. 架构层面问题
+### 1.1 核心数据流
 
-#### 1.1 ~~AI 回答同步阻塞用户请求~~ — **已修复**
+```
+用户发帖
+  └─ create_thread() ──→ 后台线程池 ──→ generate_ai_answer()
+                                           ├─ search_memories() [4 阶段搜索]
+                                           ├─ query_rag()        [外部知识库]
+                                           └─ LLM 生成回答 → Comment(is_ai=True)
 
-**文件**: `services/thread_service.py:89-115`
-
-```python
-# create_thread() 现已改为后台异步提交
-_submit_ai_answer(thread.id)   # 提交到线程池，立即返回
-
-def _submit_ai_answer(thread_id):
-    def _task():
-        with Session(engine) as bg_session:
-            generate_ai_answer(bg_session, thread_id)
-    submit(_task)
+用户结贴
+  └─ resolve_thread() ──→ DomainEvent("thread.resolved") ──→ Dagster sensor
+                                                               └─ run_extraction()
+                                                                    ├─ 压缩讨论
+                                                                    ├─ Stage 1: Structure
+                                                                    ├─ Stage 2: Atomize
+                                                                    ├─ Stage 3: Gate
+                                                                    └─ AUDN × N facts
+                                                                         └─ ADD/UPDATE/DELETE/NONE
 ```
 
-`create_thread()` 已通过 `forum_memory.core.background.submit` 将 AI 回答生成提交到后台线程池，HTTP 请求立即返回。后台任务使用独立 DB session，失败只记录日志不影响帖子本身。
+### 1.2 关键设计约定
 
----
+| 模块 | 机制 |
+|------|------|
+| AI 回答生成 | 后台 ThreadPoolExecutor（fire-and-forget，独立 session） |
+| 记忆提取 | Dagster sensor 轮询 DomainEvent 表（30s 间隔） |
+| ES-DB 同步修复 | Dagster sensor 每 10 分钟扫描 `indexed_at IS NULL` |
+| 帖子超时关闭 | Dagster sensor 每小时触发 `batch_timeout_threads()` |
+| 记忆生命周期 | Dagster sensor 每日触发 ACTIVE→COLD→ARCHIVED 转换 |
+| 质量分刷新 | Dagster sensor 每日触发 `bulk_refresh_quality()` |
 
-#### ~~1.2 LLM 调用分级使用~~ — **已移除设计**
+### 1.3 质量分公式
 
-`small_model` 分级设计已从代码和配置中彻底移除：
-- `config.py` 中的 `llm_small_model` 配置项已删除
-- `LLMProvider.complete()` 接口中的 `model` 参数已删除
-- `OpenAIProvider` 和 `CustomProvider` 的 `small_model` 属性已删除
-
-所有 LLM 调用统一使用 `llm_main_model` 配置的模型。
-
----
-
-#### 1.3 ~~事件处理的幂等性依赖不够健壮~~ — **已修复**
-
-**文件**: `services/extraction_service.py:82-99`
-
-```python
-def _already_extracted(session, thread_id):
-    stmt = select(ExtractionRecord).where(
-        ExtractionRecord.thread_id == thread_id,
-        ExtractionRecord.status == ExtractionStatus.COMPLETED,   # 明确只检查 COMPLETED
-    )
-    return session.exec(stmt).first() is not None
-
-def _cleanup_failed_record(session, thread_id):
-    # 在每次 run_extraction 开始时自动清理 FAILED 记录，允许重试
-    ...
+```
+quality_score =
+    35% × useful_ratio          (有用反馈 / 总反馈)
+  + 20% × source_weight         (admin=1.0 > commenter=poster=0.7 > ai=0.5)
+  + 15% × retrieve_heat         (min(retrieve_count / 100, 1.0))
+  + 15% × freshness             (1.0 - 创建天数/365, 最低 0)
+  - 15% × penalty               ((wrong + outdated×0.5) / wrong_threshold)
 ```
 
-现在幂等检查只针对 `COMPLETED` 状态，且新增 `_cleanup_failed_record()` 在每次执行前自动清理 FAILED 记录。FAILED 帖子无需手动调用 `re_extract()`，由 sensor 自动重试。
+### 1.4 权威度映射
+
+| 结贴方式 | Authority | pending_human_confirm |
+|----------|-----------|----------------------|
+| 人工结贴 | LOCKED | False |
+| AI 结贴 | NORMAL | False |
+| 超时关闭 | NORMAL | True |
 
 ---
 
-### 2. 数据一致性问题
+## 二、已完成的改进
 
-#### ~~2.1 ES 索引与 DB 状态不一致风险~~ — **已完整修复**
-
-**文件**: `services/memory_service.py:446-476`、`dagster/assets.py`、`dagster/sensors.py`
-
-三层保障已全部到位：
-
-1. **`indexed_at` 字段**：ES 索引失败时保持 `None`，成功时记录时间戳
-2. **`reindex_unsynced_memories()`**：主动修复函数，查询 `ACTIVE + indexed_at IS NULL`，按 `created_at` 有序扫描，批量成功后一次 commit
-3. **`es_sync_repair_sensor`**：Dagster sensor 每 10 分钟检查未同步记忆数量，有未同步时触发 `repair_es_sync_job`
-
----
-
-#### 2.2 ~~质量评分刷新时的 N+1 查询~~ — **已改进**
-
-`bulk_refresh_quality()` 现在支持分批处理（默认 batch=200），避免全量加载到内存。
+| # | 问题 | 解决方案 | 关键文件 |
+|---|------|---------|---------|
+| 1 | AI 回答同步阻塞 HTTP 请求 | 后台 ThreadPoolExecutor，HTTP 立即返回 | `thread_service.py:95-115` |
+| 2 | 提取幂等性：FAILED 不重试 | `_already_extracted()` 只检查 COMPLETED，新增 `_cleanup_failed_record()` | `extraction_service.py:82-99` |
+| 3 | 提取质量低 | 三阶段流水线：Structure → Atomize → Gate | `extraction_service.py`, `core/extraction.py` |
+| 4 | ES-DB 不一致被动修复 | `indexed_at` 追踪 + `es_sync_repair_sensor`（10 分钟）主动补索引 | `memory_service.py:446-478`, `dagster/sensors.py` |
+| 5 | 质量刷新全量加载内存 | `bulk_refresh_quality()` 分批处理（batch=200） | `memory_service.py:302-348` |
+| 6 | LLM 分级设计（dead config） | 彻底删除 `llm_small_model` 配置与 `model` 参数 | `config.py`, `providers/*.py` |
 
 ---
 
-#### 2.3 反馈计数器的潜在竞态 — **风险低，可接受**
+## 三、当前存在的问题
 
-**文件**: `services/feedback_service.py`
+### 3.1 架构层面
 
-使用 SQL 原子递增（`column + 1`），这在 PostgreSQL 层面是安全的。即使 ORM session 有并发，PostgreSQL 的行锁保证计数器不会丢失更新。对于内部论坛这种低并发场景，当前实现风险可接受。
+#### 3.1.1 thread_created_sensor 是死代码
+
+**文件**: `dagster/sensors.py:thread_created_sensor`、`dagster/assets.py:ai_answer_job`
+
+Dagster 定义了 `thread_created_sensor`，轮询 `DomainEvent.event_type == "thread.created"` 以触发 AI 回答。但 `create_thread()` 从未向 DomainEvent 表写入此类事件——实际的 AI 回答是由后台线程池驱动的。
+
+**结果**：
+- `thread_created_sensor` 永远找不到任何事件，始终 yield `SkipReason`
+- `ai_answer_job` 在 Dagster UI 中永远不会被触发
+- Dagster 的 `definitions.py` 注册了这两个无效资源，造成误导
+
+**根因**：AI 回答生成使用了两套机制（线程池 + Dagster），但只有线程池真正生效，Dagster 侧的部分未完成对接。
+
+**影响**：当前功能不受影响，但维护者会在 Dagster UI 中看到一个"永远不运行"的 job，且如果未来想迁移到纯 Dagster 驱动，需要补发 DomainEvent。
 
 ---
 
-### 3. 搜索质量问题
+#### 3.1.2 bulk_refresh_quality 中的 N 次 embedding 调用
 
-#### 3.1 搜索排序未充分利用质量评分 — **仍存在**
+**文件**: `services/memory_service.py:335-343`
+
+```python
+for m in changed:
+    index_name = _resolve_es_index(session, m.namespace_id)
+    if _index_to_es(m, index_name=index_name):   # 内部调用 provider.embed(m.content)
+        m.indexed_at = datetime.now(timezone.utc)
+```
+
+`_index_to_es()` 每次调用 `provider.embed(content)`，即**每条记忆一次 embedding API 请求**。当 batch=200 中有 100 条质量分变化时，将产生 100 次独立 embedding 调用。
+
+`LLMProvider` 已有 `embed_batch()` 接口，可以一次调用处理所有文本。`es_service` 也有 `bulk_reindex()` 支持批量写入 ES。当前实现未利用这两个接口，是 bulk 场景下最大的性能瓶颈。
+
+---
+
+### 3.2 搜索质量
+
+#### 3.2.1 排序未融合质量分
 
 **文件**: `services/search_service.py:152-197`
 
-`_simple_rank()` 使用 embedding cosine similarity 排序，`_build_hits()` 设置 `hit.score = m.quality_score` 仅供展示，**质量分没有参与实际排序**。
-
 ```python
 def _simple_rank(candidates, query, top_k):
-    scores = provider.rerank(query, docs)   # 只有语义相关性
+    scores = provider.rerank(query, docs)   # 纯语义相关性
     scored.sort(key=lambda x: x[1], reverse=True)
-    # quality_score 完全没有融入
+    return [m for m, _ in scored[:top_k]]  # quality_score 完全未参与
+
+def _build_hits(session, memories, env):
+    hit = MemorySearchHit(
+        memory=...,
+        score=m.quality_score,   # 只用于展示，不影响排序
+    )
 ```
 
-**建议**: 在排序阶段融合质量分：
+`quality_score` 字段记录了记忆的反馈质量、时效性、来源权威等综合评估，但在排序阶段被完全忽略。两条语义相似度相同的记忆，一条有 50 次正向反馈（quality=0.9），一条从未被使用过（quality=0.5），搜索结果中排名完全相同。
+
+**建议**：
 
 ```python
-final = 0.7 * sem_score + 0.3 * m.quality_score
+final_score = 0.7 * semantic_score + 0.3 * m.quality_score
 ```
 
 ---
 
-#### 3.2 搜索预处理的 LLM 查询改写成本过高 — **仍存在**
+#### 3.2.2 查询改写无条件触发
 
 **文件**: `services/search_service.py:75-99`
 
-每次搜索无条件调用 LLM 改写，无 token 数量判断、无结果缓存。
-
-**建议**:
-- 简单查询（词数 ≤ 5）跳过 LLM 改写，仅做字典映射
-- 对查询改写结果做短时缓存（同一查询 5 分钟内复用）
-- 改写使用 `small_model` 而非 `main_model`
-
----
-
-#### 3.3 环境匹配逻辑过于简单 — **仍存在**
-
-**文件**: `services/search_service.py:200-203`
-
 ```python
-def _check_env(mem_env, req_env):
-    if not req_env or not mem_env:
-        return True
-    return req_env.lower() in mem_env.lower()
+def _preprocess_query(session, req):
+    # 无论查询长短复杂度，都调用 LLM 改写
+    rewritten = provider.complete([
+        {"role": "system", "content": QUERY_REWRITE_SYSTEM},
+        {"role": "user", "content": QUERY_REWRITE_USER.format(query=query, ...)},
+    ])
 ```
 
-简单子串匹配，无法处理同义词（"prod" vs "production"）或层级关系（"prod-us" 包含 "prod"）。低优先级，可通过扩展字典配置缓解。
+每次搜索都触发一次完整的 LLM 调用（1-3 秒）。对于简单查询如 "K8s HPA"，LLM 改写的收益微乎其微，反而增加延迟和成本。
+
+**建议**：
+- 查询词数 ≤ 4 时，跳过 LLM 改写，仅做字典映射
+- 对改写结果按查询字符串做短时缓存（TTL=5 分钟）
 
 ---
 
-### 4. 知识提取质量问题
-
-#### 4.1 ~~提取 Prompt 缺乏结构化约束~~ — **已通过三阶段实现**
-
-见[第二部分方案 1](#方案-1多阶段精细化提取推荐)，三阶段流水线已落地。
-
----
-
-#### 4.2 讨论压缩的 3000 字符阈值 — **仍存在，低优先级**
-
-**文件**: `core/extraction.py`（`build_compress_messages` 调用方）
-
-压缩触发阈值硬编码为字符数，未按 token 数量判断。中文语境下 3000 字符已经较长，实际影响有限，可暂时接受。
-
----
-
-#### 4.3 AUDN 相似度搜索只查 top_k=5 — **仍存在**
+#### 3.2.3 AUDN 相似度搜索 top_k 固定为 5
 
 **文件**: `services/search_service.py:34`
 
@@ -168,179 +176,131 @@ def _check_env(mem_env, req_env):
 def find_similar(session, namespace_id, content, top_k=5):
 ```
 
-知识库积累后，5 条可能不足以覆盖潜在重复。可以考虑适当增大到 top_k=10，并在 AUDN Prompt 中截断到最相关的 5 条。
+提取流水线中为每个知识点调用 `find_similar()` 时始终使用 top_k=5（默认值，`_process_one_fact` 未覆盖）。当知识库积累到数千条记忆后，仅检索 5 条候选可能遗漏与新知识点高度重叠但排名靠后的已有记忆，导致 AUDN 误判为 ADD，产生重复记忆。
 
 ---
 
-### 5. 前端体验问题
+### 3.3 数据一致性
 
-#### 5.1 AI 回答轮询策略 — **现状可接受**
+#### 3.3.1 comment_count 手动维护，存在漂移风险
 
-前端使用渐进退避轮询（3s→30s）。AI 回答已改为后台异步生成（1.1 已修复），轮询机制能正常感知结果。若有 SSE/WebSocket 需求，作为长期优化项。
+**文件**: `services/thread_service.py`
 
-#### 5.2 缺少记忆版本历史展示 — **仍存在**
+`Thread.comment_count` 通过代码中的 `+= 1` / `-= 1` 手动维护，而非从 Comment 表实时聚合。若事务在 commit 前失败、或未来新增不经过 `thread_service` 的评论写入路径，计数器会出现漂移。
 
-OperationLog 记录了每次记忆变更的 before_snapshot，但前端没有展示历史。管理员无法查看知识演化过程。
-
-#### 5.3 搜索结果缺少上下文解释 — **仍存在**
-
-搜索结果只展示内容和评分，没有高亮匹配词或相关性解释。
+**建议**：读取时通过 COUNT 子查询补充，或定期校验/修正计数器。
 
 ---
 
-### 6. 安全与健壮性问题
+#### 3.3.2 COLD 记忆从 ES 删除但 DB 保留
 
-#### 6.1 LIKE 查询通配符注入 — **风险低**
-
-**文件**: `services/thread_service.py:41`
+**文件**: `services/memory_service.py:262-276`
 
 ```python
-stmt = stmt.where(Thread.title.ilike(f"%{q}%"))
+def transition_cold_memories(session, cold_days=180):
+    for m in memories:
+        m.status = MemoryStatus.COLD
+        m.indexed_at = None
+        ...
+    # Remove from ES after successful DB commit
+    for memory_id, index_name in es_cleanup:
+        es_service.delete_memory_doc(memory_id, index_name=index_name)
 ```
 
-SQLModel 的 `.ilike()` 已做参数化，无 SQL 注入风险。用户输入 `%` 或 `_` 只影响搜索精确度，不影响安全性。风险可接受。
+记忆转为 COLD 后从 ES 中删除，此后不再出现在搜索结果中。但 `es_sync_repair_sensor` 只修复 `status == ACTIVE` 的记忆，所以 COLD 记忆即使之后被恢复为 ACTIVE，也不会被修复传感器主动补索引——必须等待代码路径中的 `_index_to_es()` 主动调用或手动 reindex。
 
-#### 6.2 缺少 API 限流 — **仍存在**
-
-所有 API 端点无速率限制。恶意用户可批量发帖触发大量 LLM 调用（成本攻击）。建议在 FastAPI 层或 Nginx 层加限流。
-
-#### 6.3 Employee ID 认证过于简单 — **已知问题，设计取舍**
-
-内部论坛场景下，`X-Employee-Id` 简化认证是有意的设计取舍。如需真正的认证，需引入 OAuth2/JWT，工作量较大，作为独立需求规划。
+这一行为可能是设计意图（COLD 记忆不应出现在搜索中），但应当明确记录，且 status 恢复路径缺少 ES 补索引逻辑。
 
 ---
 
-## 第二部分：记忆提取模块改进方案
+### 3.4 安全与运维
 
-### 方案 1：多阶段精细化提取（推荐）— **已实现**
+#### 3.4.1 无 API 限流
 
-三阶段提取流水线已在 `core/extraction.py` 中完整实现：
+所有 API 端点无速率限制。涉及 LLM 的高成本端点尤其危险：
 
-#### 阶段 1：结构化解析（Structure）
+| 端点 | LLM 调用数 |
+|------|-----------|
+| `POST /threads`（触发 AI 回答） | ~2-4 次（搜索改写 + 生成） |
+| `POST /memories/search` | ~2 次（改写 + rerank） |
+| `POST /memories/extract/{thread_id}` | ~10-20 次（三阶段 + N×AUDN） |
 
-```json
-{
-  "problem": "具体问题描述",
-  "context": "环境/背景/前置条件",
-  "root_cause": "根本原因分析",
-  "solution": "解决方案",
-  "verification": "验证方法",
-  "caveats": ["注意事项1", "注意事项2"]
-}
-```
+恶意或误操作的批量请求可在短时间内产生大量 LLM API 费用。
 
-#### 阶段 2：原子化拆分（Atomize）
-
-从结构化结果提取原子知识点，每个知识点包含 what / when / how / why / tags。
-
-#### 阶段 3：质量门控（Gate）
-
-对每个知识点自评估（pass_gate + gate_reason），不通过的直接丢弃。
-
-三阶段均使用统一的 `llm_main_model`，保证提取质量的一致性。
+**建议**：在 Nginx 层或 FastAPI 中间件层对以上端点加限流（如每用户每分钟 10 次）。
 
 ---
 
-### 方案 2：对比学习增强的 AUDN — **待实现**
+#### 3.4.2 X-Employee-Id 认证无验证
 
-当前 AUDN 只做 top-5 embedding 相似度召回，建议改为多维度召回：
-
-```
-候选集 = KNN top-10 ∪ 相同 tags 记忆 ∪ 相同 knowledge_type 近期记忆
-```
-
-然后截断到最多 15 条送入 AUDN LLM，减少遗漏。
-
----
-
-### 方案 3：反馈驱动的提取优化 — **待实现**
-
-收集高质量记忆（LOCKED + 高评分）作为 few-shot 示例加入提取 Prompt，显著提升提取一致性。
-
----
-
-## 第三部分：AI 智能问答效果提升方案
-
-### 方案 1：检索增强 + 思维链（RAG + CoT，推荐）— **部分实现**
-
-当前 AI 回答已通过 `AI_ANSWER_SYSTEM` 引导结构化输出，但缺少**多轮检索**：
-
-```
-Step 1: 初始检索 → top-5 记忆
-Step 2: 基于结果生成补充查询
-Step 3: 补充检索 → 合并去重后生成回答
-```
-
-此改进适合用户问题跨多个知识点的场景，如"部署到 K8s 后 OOM 怎么办"。
-
----
-
-### 方案 2：知识图谱增强 — **待实现，长期目标**
-
-在记忆之间建立补充/前置/冲突关系，实现图增强检索。工作量大，可作为长期规划。
-
----
-
-### 方案 3：用户意图理解增强 — **待实现**
-
-对用户问题进行分类（排查/操作/概念/配置），根据类型选择偏重的记忆类型和回答风格。
-
----
-
-### 方案 4：Rerank 精排优化（成本效益最高）— **基础已有，待增强**
-
-当前 `provider.rerank()` 使用 embedding cosine similarity（在 `openai_provider.py` 中是 fallback 实现）。配置已预留 `custom_rerank_url`，可对接专用 Reranker（Cohere / BGE-Reranker）。
-
-多因子融合排序（待实现）：
+**文件**: `api/deps.py`
 
 ```python
-final = (
-    0.50 * sem_score +       # 语义相关性
-    0.20 * m.quality_score + # 知识质量
-    0.15 * freshness(m) +    # 时效性
-    0.10 * env_match_score + # 环境匹配
-    0.05 * authority_bonus   # LOCKED 加分
-)
+def get_current_user(x_employee_id: str | None = Header(None)) -> User:
+    # 直接用 header 值查 DB，无签名/token 验证
 ```
+
+任何知道员工 ID 的人（或随机猜测）都可以伪造任意用户身份。内部网络环境下风险有限，但公网暴露时存在越权风险。
 
 ---
 
-## 优先级与实施建议（更新版）
+### 3.5 前端体验
 
-### 已完成
+#### 3.5.1 AI 回答轮询策略
 
-| 改进项 | 实现方式 |
-|--------|---------|
-| AI 回答异步化 | 后台线程池 + 独立 session |
-| 提取幂等性修复 | 检查 COMPLETED + cleanup FAILED |
-| 三阶段精细化提取 | Structure → Atomize → Gate |
-| 质量评分刷新分批 | batch=200 |
-| LLM 分级设计移除 | 删除 small_model 配置与接口参数 |
-| ES-DB 一致性修复 | indexed_at 追踪 + 定时 Dagster sensor 补索引 |
+前端使用渐进退避轮询（3s → 30s，5 分钟后放弃）等待 AI 回答。后端改为异步生成后，用户在网络正常情况下约 5-30 秒内可见回答，当前策略基本可用，但存在最终放弃的情况——若 AI 生成耗时超过 5 分钟（极少情况），用户页面不再刷新，需手动刷新页面。
 
-### 高优先级（待实现）
+**建议**：Server-Sent Events（SSE）可精确推送，消除轮询延迟和超时放弃问题，但工作量中等。
 
-| 改进项 | 预期效果 | 工作量 |
-|--------|---------|--------|
-| 搜索排序融合质量分 | 提升搜索结果准确性 | 小 |
-| 查询改写条件化 | 降低搜索延迟 | 小 |
+---
 
-### 中优先级（待实现）
+## 四、改进方案与优先级
 
-| 改进项 | 预期效果 | 工作量 |
-|--------|---------|--------|
-| Reranker 对接（custom_rerank_url）| 显著提升搜索精排质量 | 中 |
-| AUDN 多维度召回 | 减少重复知识遗漏 | 中 |
-| 多轮检索（Iterative RAG）| 提升回答覆盖度 | 中 |
-| Few-shot 提取示例 | 提升提取一致性 | 小 |
-| API 限流 | 防成本攻击 | 小 |
+### 高优先级（代码改动量小，收益明显）
 
-### 低优先级（长期）
+| 问题 | 方案 | 预期收益 | 工作量 |
+|------|------|---------|--------|
+| **3.2.1** 排序未融合质量分 | `_simple_rank()` 中加权融合：`0.7×语义 + 0.3×质量` | 搜索精准度提升 | 极小 |
+| **3.2.2** 查询改写无条件触发 | 词数 ≤ 4 跳过 LLM，加查询级缓存 | 搜索延迟降低 30-60% | 小 |
+| **3.1.1** thread_created_sensor 死代码 | 方案 A：在 `create_thread()` 中补发 `DomainEvent("thread.created")`，停用背后线程池；方案 B：从 `definitions.py` 移除无效 sensor/job | 架构清晰，消除误导 | 小 |
+| **3.1.2** bulk 场景 N 次 embedding | 收集 changed 记忆的 content，统一 `embed_batch()`，再 `bulk_reindex()` | bulk 场景性能提升 N 倍 | 小 |
 
-| 改进项 | 预期效果 | 工作量 |
-|--------|---------|--------|
-| 知识图谱关联 | 间接知识发现 | 大 |
-| 用户意图分类 | 个性化回答 | 中 |
-| SSE/WebSocket 推送 | 消除轮询延迟 | 中 |
-| 反馈驱动提取优化 | 持续提升提取质量 | 大 |
-| ES 一致性保障（Outbox 模式）| 强一致保证 | 中 |
+### 中优先级（需要一定设计考虑）
+
+| 问题 | 方案 | 预期收益 | 工作量 |
+|------|------|---------|--------|
+| **3.4.1** 无 API 限流 | Nginx 限流或 `slowapi` 中间件，对 LLM 端点加速率限制 | 防止成本攻击 | 小 |
+| **3.2.3** AUDN top_k=5 | `_process_one_fact()` 中将 top_k 提升到 10-15 | 减少重复记忆 | 极小 |
+| **3.3.2** COLD 恢复无补索引 | `change_status_to_active()` 路径（如有）调用 `_index_to_es()` | 状态恢复后可搜索 | 小 |
+| **3.3.1** comment_count 漂移 | 增加定期校验 job：`UPDATE threads SET comment_count = (SELECT COUNT(*) FROM comments WHERE ...)` | 数据准确性 | 小 |
+
+### 低优先级（长期规划）
+
+| 问题 | 方案 | 预期收益 | 工作量 |
+|------|------|---------|--------|
+| **3.4.2** 认证简单 | 接入 OAuth2 / JWT / SSO | 安全性 | 大 |
+| **3.5.1** 轮询策略 | Server-Sent Events 推送 AI 回答 | 体验提升 | 中 |
+| AUDN 多维度召回 | KNN top-10 ∪ 相同 tags ∪ 相同 knowledge_type | 减少重复知识遗漏 | 中 |
+| 搜索质量分融合（高级） | 引入专用 Reranker 替代 embedding cosine similarity | 搜索精准度大幅提升 | 中 |
+
+---
+
+## 附录：问题状态全表
+
+| 编号 | 问题描述 | 状态 |
+|------|---------|------|
+| 1.1 | AI 回答同步阻塞 HTTP | ✅ 已解决 |
+| 1.2 | LLM small_model 设计 | ✅ 已移除 |
+| 1.3 | 提取幂等性（FAILED 不重试） | ✅ 已解决 |
+| 2.1 | ES-DB 不一致（被动修复） | ✅ 已解决（主动 sensor） |
+| 2.2 | 质量刷新全量加载 | ✅ 已解决（batch=200） |
+| 3.1.1 | thread_created_sensor 死代码 | 🔴 待处理 |
+| 3.1.2 | bulk 刷新 N 次 embedding | 🔴 待处理 |
+| 3.2.1 | 排序未融合质量分 | 🔴 待处理 |
+| 3.2.2 | 查询改写无条件触发 | 🔴 待处理 |
+| 3.2.3 | AUDN top_k=5 过小 | 🟡 待处理 |
+| 3.3.1 | comment_count 手动维护漂移 | 🟡 待处理 |
+| 3.3.2 | COLD 恢复无 ES 补索引 | 🟡 待处理 |
+| 3.4.1 | 无 API 限流 | 🟡 待处理 |
+| 3.4.2 | X-Employee-Id 认证简单 | ⚪ 长期 |
+| 3.5.1 | AI 回答前端轮询 | ⚪ 长期 |
