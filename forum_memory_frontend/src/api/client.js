@@ -133,6 +133,14 @@ export const feedbackApi = {
 
 // ── Admin ─────────────────────────────────────
 export const adminApi = {
+  qualityAlerts: (params = {}) => {
+    const q = new URLSearchParams();
+    if (params.namespace_id) q.set('namespace_id', params.namespace_id);
+    q.set('page', params.page || 1);
+    q.set('size', params.size || 50);
+    return get(`/admin/quality-alerts?${q}`);
+  },
+  dismissAlert: (memoryId) => post(`/admin/quality-alerts/${memoryId}/dismiss`),
   /**
    * 通过文件上传批量导入历史帖子。
    * @param {string} namespaceId  - 目标板块 UUID

@@ -134,6 +134,10 @@ def resolve_thread(session: Session, thread_id: UUID, best_answer_id: UUID | Non
     _add_event(session, "thread.resolved", "Thread", thread, {"resolved_type": resolved_type.value})
     session.commit()
     session.refresh(thread)
+
+    # 更新被引用记忆的 resolved_citation_count，并刷新其质量分
+    _update_resolved_citations(session, thread_id)
+
     return thread
 
 
@@ -354,6 +358,44 @@ def _increment_comment_count(session: Session, thread_id: UUID) -> None:
     thread = session.get(Thread, thread_id)
     if thread:
         thread.comment_count += 1
+
+
+def _update_resolved_citations(session: Session, thread_id: UUID) -> None:
+    """当帖子被解决时，递增所有 AI 回答所引用记忆的 resolved_citation_count，并刷新其质量分。"""
+    from sqlalchemy import update as sa_update
+    from forum_memory.models.memory import Memory
+
+    # 收集该帖所有 AI 评论的 cited_memory_ids
+    ai_comments = session.exec(
+        select(Comment).where(Comment.thread_id == thread_id, Comment.is_ai == True)  # noqa: E712
+    ).all()
+    cited_ids: set[UUID] = set()
+    for c in ai_comments:
+        if c.cited_memory_ids:
+            for mid in c.cited_memory_ids:
+                try:
+                    cited_ids.add(UUID(str(mid)))
+                except (ValueError, AttributeError):
+                    pass
+
+    if not cited_ids:
+        return
+
+    # 批量递增计数
+    session.execute(
+        sa_update(Memory)
+        .where(Memory.id.in_(cited_ids))
+        .values(resolved_citation_count=Memory.resolved_citation_count + 1)
+    )
+    session.commit()
+
+    # 逐条刷新质量分（触发自动告警逻辑）
+    from forum_memory.services.memory_service import refresh_quality
+    for mid in cited_ids:
+        try:
+            refresh_quality(session, mid)
+        except Exception:
+            logger.warning("Failed to refresh quality for memory %s after resolve", mid)
 
 
 def _add_event(session: Session, event_type: str, agg_type: str, thread: Thread, payload: dict | None = None) -> None:
