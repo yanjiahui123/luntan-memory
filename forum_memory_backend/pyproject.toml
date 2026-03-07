@@ -17,6 +17,7 @@ dependencies = [
     "python-multipart>=0.0.9",
     "dagster>=1.6",
     "dagster-webserver>=1.6",
+    "slowapi>=0.1.9",
 ]
 
 [project.optional-dependencies]

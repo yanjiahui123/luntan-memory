@@ -63,7 +63,11 @@ export default function ThreadDetail() {
           setPollStatus('done');
           es.close();
         }
-      } catch (_) { /* ignore heartbeat comments or parse errors */ }
+      } catch (err) {
+        // `: heartbeat` SSE 注释行不含 data: 前缀，不会触发 onmessage，
+        // 所以此处 catch 只对真正格式异常的 JSON 生效，记录以便调试。
+        console.warn('SSE message parse error:', err, 'data:', event.data);
+      }
     };
 
     es.onerror = () => {
@@ -72,7 +76,7 @@ export default function ThreadDetail() {
     };
 
     return () => { es.close(); setPollStatus('idle'); };
-  }, [thread?.id, thread?.comment_count]);
+  }, [thread?.id]);
 
   // Animated dots for loading indicator
   useEffect(() => {
@@ -337,7 +341,9 @@ function CommentCard({ comment, thread, onResolve, onDelete, isAdmin }) {
   // Load cited memory details for AI comments
   useEffect(() => {
     if (isAi && hasCitations) {
-      memoryApi.batchGet(comment.cited_memory_ids).then(setCitedMemories).catch(() => {});
+      memoryApi.batchGet(comment.cited_memory_ids)
+        .then(setCitedMemories)
+        .catch(err => console.warn('Failed to load cited memories:', err));
     }
   }, [isAi, comment.cited_memory_ids]);
 

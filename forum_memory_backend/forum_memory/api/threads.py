@@ -5,11 +5,12 @@ import logging
 import time
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from fastapi.responses import StreamingResponse
 from sqlmodel import Session, select
 
 from forum_memory.api.deps import get_db, get_current_user, get_current_user_id, check_board_permission, check_namespace_read_access, check_namespace_write_access
+from forum_memory.api.rate_limit import limiter
 from forum_memory.models.user import User
 from forum_memory.models.enums import SystemRole
 from forum_memory.models.namespace_moderator import NamespaceModerator
@@ -61,7 +62,8 @@ def get_thread(thread_id: UUID, session: Session = Depends(get_db), user: User =
 
 
 @router.post("", response_model=ThreadRead, status_code=201)
-def create_thread(data: ThreadCreate, session: Session = Depends(get_db), user: User = Depends(get_current_user)):
+@limiter.limit("10/minute")
+def create_thread(request: Request, data: ThreadCreate, session: Session = Depends(get_db), user: User = Depends(get_current_user)):
     # Check write access based on namespace access_mode
     check_namespace_write_access(data.namespace_id, session, user)
     return thread_service.create_thread(session, data, user.id)

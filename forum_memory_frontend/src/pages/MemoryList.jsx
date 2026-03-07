@@ -257,7 +257,9 @@ export default function MemoryList() {
   const [debouncedQ, setDebouncedQ] = useState('');
 
   useEffect(() => {
-    memoryApi.tags(filters.namespace_id || undefined).then(setAllTags).catch(() => {});
+    memoryApi.tags(filters.namespace_id || undefined)
+      .then(setAllTags)
+      .catch(err => console.warn('Failed to load tags:', err));
   }, [filters.namespace_id]);
 
   // Debounce keyword input (400ms)
@@ -282,7 +284,7 @@ export default function MemoryList() {
   }
 
   function clearAll() {
-    setFilters(EMPTY_FILTERS);
+    setFilters({ ...EMPTY_FILTERS, namespace_id: boardId || '' });
     setDebouncedQ('');
   }
 

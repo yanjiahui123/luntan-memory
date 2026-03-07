@@ -8,7 +8,10 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
 
+from forum_memory.api.rate_limit import limiter
 from forum_memory.config import get_settings
 from forum_memory.database import init_db
 from forum_memory.api import register_routers
@@ -61,6 +64,8 @@ def create_app() -> FastAPI:
         version="1.0.0",
         lifespan=lifespan,
     )
+    app.state.limiter = limiter
+    app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
     _add_cors(app)
     register_routers(app)
     _mount_uploads(app, settings)

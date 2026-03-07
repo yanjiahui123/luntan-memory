@@ -13,10 +13,16 @@ export function UserProvider({ children }) {
     try {
       const u = await userApi.me();
       setCurrentUser(u);
-      // Fetch managed namespaces for any admin role
+      // Fetch managed namespaces for any admin role — failure here should not
+      // clear the already-loaded user, so it has its own try-catch.
       if (u?.role === 'super_admin' || u?.role === 'board_admin') {
-        const ns = await userApi.myNamespaces();
-        setMyNamespaces(ns);
+        try {
+          const ns = await userApi.myNamespaces();
+          setMyNamespaces(ns);
+        } catch (nsErr) {
+          console.warn('Failed to load managed namespaces:', nsErr);
+          setMyNamespaces(null);
+        }
       } else {
         setMyNamespaces(null);
       }

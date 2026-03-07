@@ -8,7 +8,13 @@ export default function MemoryDetail() {
   const { memoryId } = useParams();
   const navigate = useNavigate();
   const { data: memory, loading, error, refetch } = useAsync(() => memoryApi.get(memoryId), [memoryId]);
-  const { data: fbSummary } = useAsync(() => feedbackApi.summary(memoryId).catch(() => null), [memoryId]);
+  const { data: fbSummary } = useAsync(
+    () => feedbackApi.summary(memoryId).catch(err => {
+      console.warn('Failed to load feedback summary:', err);
+      return null;
+    }),
+    [memoryId],
+  );
   const [editing, setEditing] = useState(false);
   const [editContent, setEditContent] = useState('');
   const [showDelete, setShowDelete] = useState(false);

@@ -2,11 +2,12 @@
 
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import Response
 from sqlmodel import Session
 
 from forum_memory.api.deps import get_db, get_current_user, check_namespace_read_access, check_board_permission
+from forum_memory.api.rate_limit import limiter
 from forum_memory.models.user import User
 from forum_memory.schemas.memory import (
     MemoryCreate, MemoryUpdate, MemoryRead,
@@ -108,13 +109,15 @@ def change_authority(memory_id: UUID, data: AuthorityChange, session: Session = 
 
 
 @router.post("/search", response_model=MemorySearchResponse)
-def search(data: MemorySearchRequest, session: Session = Depends(get_db), user: User = Depends(get_current_user)):
+@limiter.limit("20/minute")
+def search(request: Request, data: MemorySearchRequest, session: Session = Depends(get_db), user: User = Depends(get_current_user)):
     check_namespace_read_access(data.namespace_id, session, user)
     return search_service.search_memories(session, data)
 
 
 @router.post("/extract/{thread_id}")
-def extract(thread_id: UUID, session: Session = Depends(get_db)):
+@limiter.limit("5/minute")
+def extract(request: Request, thread_id: UUID, session: Session = Depends(get_db)):
     try:
         ids = extraction_service.run_extraction(session, thread_id)
         return {"memory_ids_created": [str(i) for i in ids]}
