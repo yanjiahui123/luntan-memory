@@ -123,3 +123,19 @@ def repair_es_sync_op():
 @job
 def repair_es_sync_job():
     repair_es_sync_op()
+
+
+# ── Comment Count Reconciliation ────────────────────────
+
+@op
+def reconcile_comment_counts_op():
+    """Fix drifted comment_count values against actual Comment rows."""
+    from forum_memory.services.thread_service import reconcile_comment_counts
+    with Session(engine) as session:
+        count = reconcile_comment_counts(session)
+        logger.info("Reconciled comment_count for %d threads", count)
+
+
+@job
+def reconcile_comment_counts_job():
+    reconcile_comment_counts_op()

@@ -391,6 +391,35 @@ def batch_timeout_threads(session: Session, timeout_days: int = 7) -> int:
     return count
 
 
+def reconcile_comment_counts(session: Session) -> int:
+    """Fix drifted comment_count by reconciling against actual Comment rows.
+    Returns the number of threads corrected."""
+    from sqlmodel import func
+    from sqlalchemy import text as sa_text
+
+    rows = session.execute(sa_text(
+        "SELECT t.id, t.comment_count, COALESCE(c.cnt, 0) AS actual "
+        "FROM threads t "
+        "LEFT JOIN (SELECT thread_id, COUNT(*) AS cnt FROM comments GROUP BY thread_id) c "
+        "  ON t.id = c.thread_id "
+        "WHERE t.status != 'DELETED' AND t.comment_count != COALESCE(c.cnt, 0)"
+    )).all()
+
+    for row in rows:
+        thread = session.get(Thread, row[0])
+        if thread:
+            logger.info(
+                "comment_count drift: thread %s had %d, actual %d",
+                thread.id, thread.comment_count, row[2],
+            )
+            thread.comment_count = row[2]
+
+    if rows:
+        session.commit()
+    logger.info("Reconciled comment_count for %d threads", len(rows))
+    return len(rows)
+
+
 def _increment_comment_count(session: Session, thread_id: UUID) -> None:
     thread = session.get(Thread, thread_id)
     if thread:

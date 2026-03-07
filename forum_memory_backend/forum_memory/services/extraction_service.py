@@ -30,9 +30,17 @@ logger = logging.getLogger(__name__)
 
 def re_extract(session: Session, thread_id: UUID) -> list[UUID]:
     """Clear old extraction record and re-run extraction pipeline.
-    Marks old memories from this thread as DELETED, then re-extracts."""
+    Marks old memories from this thread as DELETED, then re-extracts.
+    Uses SELECT FOR UPDATE to prevent concurrent re-extractions on the same thread."""
     from forum_memory.models.memory import Memory
     from forum_memory.services import es_service
+    from sqlalchemy import text as sa_text
+
+    # Lock the thread row to prevent concurrent re_extract on the same thread
+    session.execute(
+        sa_text("SELECT id FROM threads WHERE id = :tid FOR UPDATE NOWAIT"),
+        {"tid": str(thread_id)},
+    )
 
     # 1. Delete old extraction record
     stmt = select(ExtractionRecord).where(ExtractionRecord.thread_id == thread_id)
@@ -220,7 +228,7 @@ def _stage_gate(llm, atoms: list[dict]) -> list[dict]:
 
 
 def _process_one_fact(session, llm, thread, fact, authority, pending) -> UUID | None:
-    similar = find_similar(session, thread.namespace_id, fact["content"])
+    similar = find_similar(session, thread.namespace_id, fact["content"], top_k=15)
     msgs = build_audn_messages(fact["content"], similar)
     raw = llm.complete(msgs)
     result = parse_audn_response(raw)

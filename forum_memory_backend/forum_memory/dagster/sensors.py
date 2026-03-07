@@ -101,3 +101,12 @@ def es_sync_repair_sensor(context: SensorEvaluationContext):
     logger.info("Found %d unsynced memories, triggering ES repair", count)
     yield RunRequest(run_key=f"es-repair-{context.cursor or '0'}")
     context.update_cursor(str(int(context.cursor or '0') + 1))
+
+
+# ── Scheduled: comment_count reconciliation (daily) ─────
+
+@sensor(job_name="reconcile_comment_counts_job", minimum_interval_seconds=86400)
+def comment_count_reconcile_sensor(context: SensorEvaluationContext):
+    """Daily trigger to fix drifted comment_count values."""
+    yield RunRequest(run_key=f"comment-count-{context.cursor or '0'}")
+    context.update_cursor(str(int(context.cursor or '0') + 1))
