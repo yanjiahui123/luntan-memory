@@ -4,9 +4,11 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from sqlmodel import Session, select
+from sqlmodel import Session, func, select
 
 from forum_memory.api.deps import get_db, get_current_user, require_admin, check_board_permission
+from forum_memory.models.thread import Thread
+from forum_memory.models.enums import ThreadStatus
 from forum_memory.models.user import User
 from forum_memory.models.namespace_moderator import NamespaceModerator
 from forum_memory.models.enums import SystemRole
@@ -25,7 +27,30 @@ class ModeratorAdd(BaseModel):
 @router.get("", response_model=list[NamespaceRead])
 def list_namespaces(session: Session = Depends(get_db)):
     """所有人可查看板块列表。"""
-    return namespace_service.list_namespaces(session)
+    namespaces = namespace_service.list_namespaces(session)
+    ns_ids = [ns.id for ns in namespaces]
+    total_counts: dict = {}
+    open_counts: dict = {}
+    if ns_ids:
+        for ns_id, cnt in session.exec(
+            select(Thread.namespace_id, func.count()).select_from(Thread)
+            .where(Thread.namespace_id.in_(ns_ids), Thread.status != ThreadStatus.DELETED)
+            .group_by(Thread.namespace_id)
+        ).all():
+            total_counts[ns_id] = cnt
+        for ns_id, cnt in session.exec(
+            select(Thread.namespace_id, func.count()).select_from(Thread)
+            .where(Thread.namespace_id.in_(ns_ids), Thread.status == ThreadStatus.OPEN)
+            .group_by(Thread.namespace_id)
+        ).all():
+            open_counts[ns_id] = cnt
+    result = []
+    for ns in namespaces:
+        d = NamespaceRead.model_validate(ns).model_dump()
+        d["thread_count"] = total_counts.get(ns.id, 0)
+        d["open_thread_count"] = open_counts.get(ns.id, 0)
+        result.append(d)
+    return result
 
 
 @router.get("/stats/aggregate", response_model=NamespaceStats)

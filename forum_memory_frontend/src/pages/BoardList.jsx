@@ -46,10 +46,14 @@ function BoardCard({ board }) {
       <div className="card" style={{ padding: 20, cursor: 'pointer' }}>
         <h3 style={{ fontSize: 16, marginBottom: 4 }}>{board.display_name}</h3>
         <p style={{ fontSize: 13, color: 'var(--text-sec)', marginBottom: 12 }}>{board.description || '暂无描述'}</p>
-        <div style={{ display: 'flex', gap: 16, fontSize: 12, color: 'var(--text-ter)' }}>
+        <div style={{ display: 'flex', gap: 16, fontSize: 12, color: 'var(--text-ter)', alignItems: 'center' }}>
           <span style={{ color: board.is_active ? 'var(--green)' : 'var(--red)' }}>
             {board.is_active ? '● 活跃' : '○ 已关闭'}
           </span>
+          <span>📝 {board.thread_count ?? 0} 帖子</span>
+          {(board.open_thread_count ?? 0) > 0 && (
+            <span style={{ color: 'var(--accent)' }}>🔵 {board.open_thread_count} 进行中</span>
+          )}
         </div>
       </div>
     </Link>
