@@ -6,11 +6,13 @@ import zipfile
 from pathlib import Path
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
-from sqlmodel import Session
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
+from pydantic import BaseModel
+from sqlmodel import Session, select
 
-from forum_memory.api.deps import check_board_permission, get_current_user, get_db
-from forum_memory.models.enums import SystemRole
+from forum_memory.api.deps import check_board_permission, get_current_user, get_db, require_admin
+from forum_memory.models.enums import SystemRole, Authority
+from forum_memory.models.memory import Memory
 from forum_memory.models.namespace import Namespace
 from forum_memory.models.user import User
 from forum_memory.schemas.admin import ImportTopicsRequest, ImportTopicsResult
@@ -157,3 +159,66 @@ def import_topics_upload(
             raise HTTPException(500, f"导入失败: {e}")
 
     return ImportTopicsResult(**stats)
+
+
+# ─── Quality Alerts ──────────────────────────────────────────────────────────
+
+class QualityAlertItem(BaseModel):
+    id: UUID
+    namespace_id: UUID
+    content: str
+    authority: str
+    quality_score: float
+    wrong_count: int
+    outdated_count: int
+    useful_count: int
+    not_useful_count: int
+    cite_count: int
+    resolved_citation_count: int
+    model_config = {"from_attributes": True}
+
+
+class QualityAlertList(BaseModel):
+    items: list[QualityAlertItem]
+    total: int
+
+
+@router.get("/quality-alerts", response_model=QualityAlertList)
+def list_quality_alerts(
+    namespace_id: UUID | None = Query(None),
+    page: int = Query(1, ge=1),
+    size: int = Query(20, ge=1, le=100),
+    session: Session = Depends(get_db),
+    _admin: User = Depends(require_admin),
+) -> QualityAlertList:
+    """返回 pending_human_confirm=True 的记忆（质量告警列表），按 wrong_count 降序。
+
+    可按板块过滤。超级管理员或板块管理员均可访问。
+    """
+    stmt = (
+        select(Memory)
+        .where(Memory.pending_human_confirm == True)  # noqa: E712
+        .order_by(Memory.wrong_count.desc(), Memory.updated_at.desc())
+    )
+    if namespace_id:
+        stmt = stmt.where(Memory.namespace_id == namespace_id)
+
+    total = len(session.exec(stmt).all())
+    items = list(session.exec(stmt.offset((page - 1) * size).limit(size)).all())
+    return QualityAlertList(items=items, total=total)
+
+
+@router.post("/quality-alerts/{memory_id}/dismiss", response_model=QualityAlertItem)
+def dismiss_quality_alert(
+    memory_id: UUID,
+    session: Session = Depends(get_db),
+    _admin: User = Depends(require_admin),
+) -> QualityAlertItem:
+    """管理员复核后关闭质量告警（清除 pending_human_confirm 标记）。"""
+    memory = session.get(Memory, memory_id)
+    if not memory:
+        raise HTTPException(404, "记忆不存在")
+    memory.pending_human_confirm = False
+    session.commit()
+    session.refresh(memory)
+    return memory

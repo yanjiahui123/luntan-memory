@@ -111,6 +111,8 @@ def create_memory(session: Session, data: MemoryCreate) -> Memory:
         source_role=memory.source_role,
         retrieve_count=0,
         created_at=datetime.now(timezone.utc),
+        cite_count=0,
+        resolved_citation_count=0,
     )
     session.add(memory)
     _add_log(session, memory, OperationType.ADD, reason="created")
@@ -186,6 +188,7 @@ def apply_audn(session: Session, new_fact: MemoryCreate, result: AUDNResult) -> 
 
 
 def refresh_quality(session: Session, memory_id: UUID) -> float:
+    from forum_memory.config import get_settings
     memory = session.get(Memory, memory_id)
     if not memory:
         return 0.0
@@ -197,9 +200,22 @@ def refresh_quality(session: Session, memory_id: UUID) -> float:
         source_role=memory.source_role,
         retrieve_count=memory.retrieve_count,
         created_at=memory.created_at,
+        cite_count=memory.cite_count,
+        resolved_citation_count=memory.resolved_citation_count,
     )
     memory.quality_score = score
     memory.updated_at = datetime.now(timezone.utc)
+
+    # 自动质量告警：wrong 反馈超阈值时标记为待复核
+    settings = get_settings()
+    threshold = getattr(settings, 'wrong_feedback_threshold', 3)
+    if memory.wrong_count >= threshold and not memory.pending_human_confirm:
+        memory.pending_human_confirm = True
+        logger.warning(
+            "Memory %s flagged for review: wrong_count=%d (threshold=%d), authority=%s",
+            memory.id, memory.wrong_count, threshold, memory.authority,
+        )
+
     session.commit()
     return score
 
@@ -315,6 +331,8 @@ def bulk_refresh_quality(session: Session, batch_size: int = 200) -> int:
         if not memories:
             break
 
+        from forum_memory.config import get_settings
+        wrong_threshold = getattr(get_settings(), 'wrong_feedback_threshold', 3)
         changed = []
         for m in memories:
             old_score = m.quality_score
@@ -326,7 +344,12 @@ def bulk_refresh_quality(session: Session, batch_size: int = 200) -> int:
                 source_role=m.source_role,
                 retrieve_count=m.retrieve_count,
                 created_at=m.created_at,
+                cite_count=m.cite_count,
+                resolved_citation_count=m.resolved_citation_count,
             )
+            # 自动告警标记
+            if m.wrong_count >= wrong_threshold and not m.pending_human_confirm:
+                m.pending_human_confirm = True
             if abs(new_score - old_score) > 0.001:
                 m.quality_score = new_score
                 m.indexed_at = None  # Mark ES as stale

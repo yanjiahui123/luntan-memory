@@ -58,6 +58,17 @@ def _penalty(wrong: int, outdated: int) -> float:
     return min(1.0, score)
 
 
+def _citation_resolution_rate(cite_count: int, resolved_citation_count: int) -> float:
+    """Fraction of times this memory was cited and the thread was later resolved.
+
+    Returns 0.5 (neutral) when the memory has never been cited, so it has no
+    negative impact on new memories.
+    """
+    if cite_count <= 0:
+        return 0.5
+    return min(1.0, resolved_citation_count / cite_count)
+
+
 def compute_quality_score(
     useful: int,
     not_useful: int,
@@ -66,13 +77,25 @@ def compute_quality_score(
     source_role: str | None,
     retrieve_count: int,
     created_at: datetime,
+    cite_count: int = 0,
+    resolved_citation_count: int = 0,
 ) -> float:
-    """Compute overall quality score (0..1) from five factors."""
+    """Compute overall quality score (0..1) from six factors.
+
+    Weights:
+      useful_ratio          0.30  — explicit user approval
+      citation_resolution   0.20  — did citing this memory lead to resolution?
+      source_weight         0.15  — role of the answer author
+      retrieve_heat         0.10  — popularity / retrieval frequency
+      freshness             0.15  — age decay (1yr → 0.1)
+      penalty               0.10  — wrong / outdated deduction
+    """
     ur = _useful_ratio(useful, not_useful, wrong)
     sw = _source_weight(source_role)
     rh = _retrieve_heat(retrieve_count)
     fr = _freshness(created_at)
     pn = _penalty(wrong, outdated)
+    cr = _citation_resolution_rate(cite_count, resolved_citation_count)
 
-    raw = 0.35 * ur + 0.20 * sw + 0.15 * rh + 0.15 * fr + 0.15 * (1 - pn)
+    raw = 0.30 * ur + 0.20 * cr + 0.15 * sw + 0.10 * rh + 0.15 * fr + 0.10 * (1 - pn)
     return round(max(0.0, min(1.0, raw)), 4)

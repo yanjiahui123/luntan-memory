@@ -46,6 +46,7 @@ class Memory(UUIDMixin, TimestampMixin, table=True):
     # Retrieval stats
     retrieve_count: int = Field(default=0)
     cite_count: int = Field(default=0)
+    resolved_citation_count: int = Field(default=0)  # 引用此记忆后帖子被解决的次数
     last_retrieved_at: datetime | None = Field(default=None)
 
     # ES sync tracking — NULL means ES index pending/failed
