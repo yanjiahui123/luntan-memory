@@ -1,6 +1,6 @@
 # Forum Memory Agent 项目审查报告
 
-> **最后更新**: 2026-03-07（全量重审，基于当前实际代码）
+> **最后更新**: 2026-03-07（第二次全量重审，覆盖前后端完整代码审查）
 
 ---
 
@@ -71,6 +71,22 @@ quality_score =
 | AI 结贴 | NORMAL | False |
 | 超时关闭 | NORMAL | True |
 
+### 1.5 技术栈全景
+
+| 层 | 技术选型 | 备注 |
+|----|----------|------|
+| 后端框架 | FastAPI (同步路由) | 无 async/await |
+| ORM | SQLModel + PostgreSQL | psycopg2 同步驱动 |
+| 搜索引擎 | Elasticsearch 8.9 | 每板块独立索引，BM25+KNN+RRF |
+| 任务编排 | Dagster (sensor 轮询) | 独立进程运行 |
+| 后台任务 | ThreadPoolExecutor (4 workers) | 仅 AI 回答生成 |
+| LLM | OpenAI / Custom HTTP | 同步调用，无 timeout |
+| 前端框架 | React 18 + Vite | 纯 JS（无 TypeScript） |
+| 路由 | react-router-dom v6 | |
+| 样式 | 纯 CSS (设计令牌) | 无 Tailwind / CSS-in-JS |
+| 状态管理 | React Context + useState | 无 Redux/Zustand |
+| Markdown | react-markdown + remark-gfm | |
+
 ---
 
 ## 二、已完成的改进
@@ -85,7 +101,7 @@ quality_score =
 | 6 | LLM 分级设计（dead config） | 彻底删除 `llm_small_model` 配置与 `model` 参数 | `config.py`, `providers/*.py` |
 | 7 | thread_created_sensor 死代码 | 删除 `ai_answer_job` + `thread_created_sensor`，仅保留线程池驱动路径 | `dagster/assets.py`, `dagster/sensors.py`, `dagster/definitions.py` |
 | 8 | bulk 刷新 N 次独立 embedding API 调用 | `embed_batch()` 批量嵌入 + `bulk_reindex()` 分 namespace 批量写 ES | `memory_service.py:bulk_refresh_quality` |
-| 9 | 搜索排序未融合质量分 | `_simple_rank()` 归一化 rerank 分 + 加权融合：`0.7×语义 + 0.3×质量` | `search_service.py:152-175` |
+| 9 | 搜索排序未融合质量分 | `_simple_rank()` 归一化 rerank 分 + 加权融合：`0.7×语义 + 0.3×质量` | `search_service.py:156-177` |
 | 10 | 查询改写无条件触发 LLM | 词数 ≤ 4 跳过改写直接返回，避免无效 LLM 延迟 | `search_service.py:_preprocess_query` |
 | 11 | 前端 AI 回答依赖渐进退避轮询 | 后端新增 SSE 端点；前端替换为 `EventSource`，精确推送，最长 120s | `api/threads.py`, `ThreadDetail.jsx` |
 
@@ -93,58 +109,168 @@ quality_score =
 
 ## 三、当前存在的问题
 
-### 3.1 搜索质量
+### 3.1 后端 — 可靠性与健壮性
 
-#### 3.1.1 AUDN 相似度搜索 top_k 固定为 5
+#### 3.1.1 LLM / HTTP 调用无 timeout
 
-**文件**: `services/search_service.py:34`
+**文件**: `providers/openai_provider.py`, `providers/custom_provider.py`
 
-```python
-def find_similar(session, namespace_id, content, top_k=5):
-```
-
-提取流水线中为每个知识点调用 `find_similar()` 时始终使用 top_k=5（默认值，`_process_one_fact` 未覆盖）。当知识库积累到数千条记忆后，仅检索 5 条候选可能遗漏与新知识点高度重叠但排名靠后的已有记忆，导致 AUDN 误判为 ADD，产生重复记忆。
-
----
-
-### 3.2 数据一致性
-
-#### 3.2.1 comment_count 手动维护，存在漂移风险
-
-**文件**: `services/thread_service.py`
-
-`Thread.comment_count` 通过代码中的 `+= 1` / `-= 1` 手动维护，而非从 Comment 表实时聚合。若事务在 commit 前失败、或未来新增不经过 `thread_service` 的评论写入路径，计数器会出现漂移。
-
-**建议**：读取时通过 COUNT 子查询补充，或定期校验/修正计数器。
-
----
-
-#### 3.2.2 COLD 记忆从 ES 删除但 DB 保留
-
-**文件**: `services/memory_service.py:262-276`
+所有 LLM 调用（complete / embed / embed_batch / rerank）均无超时配置。OpenAI SDK 和 `requests.post` 都可能无限期阻塞。CustomProvider 还使用 `verify=False` 关闭 SSL 验证。
 
 ```python
-def transition_cold_memories(session, cold_days=180):
-    for m in memories:
-        m.status = MemoryStatus.COLD
-        m.indexed_at = None
-        ...
-    # Remove from ES after successful DB commit
-    for memory_id, index_name in es_cleanup:
-        es_service.delete_memory_doc(memory_id, index_name=index_name)
+# openai_provider.py — 无 timeout
+resp = self.client.chat.completions.create(model=..., messages=..., temperature=0.2)
+
+# custom_provider.py — 无 timeout + verify=False
+resp = requests.post(self.llm_url, headers=..., json=..., verify=False)
 ```
 
-记忆转为 COLD 后从 ES 中删除，此后不再出现在搜索结果中。但 `es_sync_repair_sensor` 只修复 `status == ACTIVE` 的记忆，所以 COLD 记忆即使之后被恢复为 ACTIVE，也不会被修复传感器主动补索引——必须等待代码路径中的 `_index_to_es()` 主动调用或手动 reindex。
-
-这一行为可能是设计意图（COLD 记忆不应出现在搜索中），但应当明确记录，且 status 恢复路径缺少 ES 补索引逻辑。
+**影响**: 后台线程池（仅 4 worker）可能因一次 LLM 调用挂起而耗尽，导致后续 AI 回答和提取全部排队。
 
 ---
 
-### 3.3 安全与运维
+#### 3.1.2 SSE 端点持有长连接 session
 
-#### 3.3.1 无 API 限流
+**文件**: `api/threads.py:109-121`
 
-所有 API 端点无速率限制。涉及 LLM 的高成本端点尤其危险：
+```python
+def _generate():
+    with Session(engine) as session:         # session 最长持有 120 秒
+        for _ in range(60):
+            stmt = select(Comment).where(...)
+            if session.exec(stmt).first():
+                yield f"data: ..."
+                return
+            time.sleep(2)                    # 阻塞线程 2 秒
+            yield ": heartbeat\n\n"
+    yield f"data: ..."
+```
+
+一个 SSE 连接持有一个数据库 session 长达 120 秒。若客户端中途断开，`time.sleep(2)` 仍会继续执行直到下一次 yield 发现连接已关闭。高并发场景下可能耗尽连接池。
+
+---
+
+#### 3.1.3 提取流水线部分失败无回滚
+
+**文件**: `extraction_service.py:69-79`
+
+若 `_execute_pipeline()` 在处理第 3/5 个 fact 时失败，前 2 个 fact 的记忆已经 `apply_audn()` 写入 DB 和 ES。`ExtractionRecord` 被标记为 FAILED，但已创建的记忆没有回滚。下次重试时 `_cleanup_failed_record()` 只删除 FAILED 记录，不清理已创建的记忆。
+
+**影响**: 同一 thread 重试提取后可能产生重复记忆。
+
+---
+
+#### 3.1.4 `delete_comment` 触发的 `re_extract` 存在竞态
+
+**文件**: `api/threads.py:178-186`
+
+```python
+try:
+    extraction_service.re_extract(session, thread_id)
+except Exception:
+    pass  # Non-fatal: extraction failure shouldn't block comment deletion
+```
+
+`re_extract()` 先软删除旧记忆再重新提取，但没有对 thread 加行锁。若两个管理员几乎同时删除同一 thread 的不同评论，两个 `re_extract()` 可能并发运行，产生重复记忆。此外异常被静默吞掉，无任何日志。
+
+---
+
+#### 3.1.5 `_apply_dictionary` 大小写不一致 + 无循环保护
+
+**文件**: `search_service.py:106-111`
+
+```python
+def _apply_dictionary(query: str, dictionary: dict) -> str:
+    result = query
+    for slang, canonical in dictionary.items():
+        if slang.lower() in result.lower():   # 大小写不敏感匹配
+            result = result.replace(slang, canonical)  # 大小写敏感替换
+    return result
+```
+
+匹配用 `.lower()` 但替换用原始大小写，若原文大小写与词典 key 不同则替换不生效。此外若词典出现 `"a" → "the a"` 之类循环定义，虽然当前单次遍历不会无限循环，但替换结果不符合预期。
+
+---
+
+#### 3.1.6 `bulk_refresh_quality` commit 后访问脏对象
+
+**文件**: `memory_service.py:302-396`
+
+批量刷新中，先修改 `memory.quality_score` 后 `session.commit()`，接着用同一批对象调用 `provider.embed_batch([m.content for m in changed])` 和 `session.get(Namespace, m.namespace_id)`。SQLModel/SQLAlchemy 在 commit 后对象进入 expired 状态，访问属性会触发惰性加载。虽然功能上不会报错，但在 commit 后批量访问过期对象可能导致 N+1 查询。
+
+---
+
+#### 3.1.7 `bulk_reindex` 部分成功时所有 `indexed_at` 均不更新
+
+**文件**: `memory_service.py:363-390`
+
+```python
+ok = es_service.bulk_reindex(docs, index_name=index_name)
+if ok == len(docs):
+    for m, _ in pairs:
+        m.indexed_at = now
+else:
+    logger.warning("Partial bulk reindex (%d/%d)...", ok, len(docs), index_name)
+```
+
+若 100 条中成功 95 条，所有 100 条的 `indexed_at` 仍为 NULL，repair sensor 下次会重新发送全部 100 条。由于 ES 使用 upsert 语义不会产生数据问题，但浪费资源。
+
+---
+
+#### 3.1.8 Dagster sensor 无 cursor 管理
+
+**文件**: `dagster/sensors.py`
+
+`thread_resolved_sensor` 通过 `DomainEvent.processed == False` 查询未处理事件，每次最多 20 条。事件处理在对应 job/op 中标记 `processed = True`。若 Dagster 在 yield RunRequest 后但 job 执行前崩溃，事件不会被标记，下次重新处理。虽然有幂等性保护，但造成无效重试。
+
+---
+
+### 3.2 后端 — 搜索质量
+
+#### 3.2.1 AUDN 相似度搜索 top_k 固定为 5
+
+**文件**: `search_service.py:34`
+
+提取流水线中 `_process_one_fact()` 调用 `find_similar()` 使用默认 `top_k=5`。当知识库积累到数千条记忆后，仅检索 5 条候选可能遗漏高度重叠的已有记忆，导致 AUDN 误判为 ADD，产生重复。
+
+---
+
+### 3.3 后端 — 数据一致性
+
+#### 3.3.1 comment_count 手动维护，存在漂移风险
+
+**文件**: `thread_service.py`
+
+`Thread.comment_count` 通过代码中的 `+= 1` / `-= 1` 手动维护。若事务 commit 前失败或存在不经过 `thread_service` 的写入路径，计数器会漂移。
+
+---
+
+#### 3.3.2 COLD 记忆从 ES 删除但恢复路径缺少补索引
+
+**文件**: `memory_service.py:262-276`
+
+记忆转 COLD 后从 ES 删除。`es_sync_repair_sensor` 仅修复 `status == ACTIVE` 且 `indexed_at IS NULL` 的记忆。若 COLD 记忆被恢复为 ACTIVE，其 `indexed_at` 为 NULL，需要 repair sensor 补索引——这一路径可行，但中间有最长 10 分钟的不可搜索窗口。
+
+---
+
+#### 3.3.3 `bulk_refresh_quality` 中 namespace 为 None 时 index_name 为 None
+
+**文件**: `memory_service.py:358-361`
+
+```python
+ns_cache[m.namespace_id] = ns.es_index_name if ns else None
+by_index.setdefault(ns_cache[m.namespace_id], []).append((m, emb))
+```
+
+若 namespace 已被软删除，`ns` 为 None，导致 `by_index[None]` 存在条目。后续 `es_service.bulk_reindex(docs, index_name=None)` 会使用 fallback 全局索引或报错。
+
+---
+
+### 3.4 后端 — 安全与运维
+
+#### 3.4.1 无 API 限流
+
+所有 API 端点无速率限制。涉及 LLM 的高成本端点：
 
 | 端点 | LLM 调用数 |
 |------|-----------|
@@ -152,13 +278,9 @@ def transition_cold_memories(session, cold_days=180):
 | `POST /memories/search` | ~2 次（改写 + rerank） |
 | `POST /memories/extract/{thread_id}` | ~10-20 次（三阶段 + N×AUDN） |
 
-恶意或误操作的批量请求可在短时间内产生大量 LLM API 费用。
-
-**建议**：在 Nginx 层或 FastAPI 中间件层对以上端点加限流（如每用户每分钟 10 次）。
-
 ---
 
-#### 3.3.2 X-Employee-Id 认证无验证
+#### 3.4.2 X-Employee-Id 认证无验证
 
 **文件**: `api/deps.py`
 
@@ -167,28 +289,198 @@ def get_current_user(x_employee_id: str | None = Header(None)) -> User:
     # 直接用 header 值查 DB，无签名/token 验证
 ```
 
-任何知道员工 ID 的人（或随机猜测）都可以伪造任意用户身份。内部网络环境下风险有限，但公网暴露时存在越权风险。
+任何知道员工 ID 的人都可以伪造身份。内部网络环境下风险有限，但公网暴露时存在越权风险。
+
+---
+
+#### 3.4.3 Settings 缺少配置校验
+
+**文件**: `config.py`
+
+- `llm_api_key` 允许空字符串，运行时才报错
+- 无 URL 格式校验
+- `cold_inactive_days` / `archive_inactive_days` 未校验大小关系
+- `embedding_dimension` 无边界检查
+
+---
+
+### 3.5 前端 — 关键问题
+
+#### 3.5.1 `useAsync` Hook 存在竞态条件
+
+**文件**: `hooks/useAsync.js`
+
+```javascript
+const execute = useCallback(async () => {
+    setLoading(true);
+    try {
+        const result = await asyncFn();
+        setData(result);  // 无 stale 检测
+    } catch (e) { setError(e.message); }
+    finally { setLoading(false); }
+}, deps);
+```
+
+若 deps 变化触发新请求时旧请求仍在进行中，先发后至时旧数据覆盖新数据。影响所有使用 `useAsync` 的页面（MemoryList、ThreadList、ThreadDetail 等），可能导致切换板块后显示上一个板块的数据。
+
+---
+
+#### 3.5.2 SSE EventSource 依赖数组包含 `comment_count`
+
+**文件**: `pages/ThreadDetail.jsx`
+
+```javascript
+useEffect(() => {
+    // ... EventSource 创建 ...
+    return () => { es.close(); };
+}, [thread?.id, thread?.comment_count]);
+```
+
+`comment_count` 在 `refetchComments()` 后变化，会导致 effect 重新执行、旧 EventSource 关闭后立即创建新连接。虽然有 cleanup 函数，但在 AI 回答到来后仍可能建立不必要的新连接。
+
+---
+
+#### 3.5.3 无全局 Error Boundary
+
+**文件**: `App.jsx`
+
+任何组件内未捕获的异常会导致整个应用白屏崩溃。缺少 React Error Boundary 提供降级 UI。
+
+---
+
+#### 3.5.4 API Client 无 timeout / 重试
+
+**文件**: `api/client.js`
+
+```javascript
+async function request(url, options = {}) {
+    const res = await fetch(`${BASE}${url}`, { ... });
+    // 无 timeout，无 retry，无请求去重
+}
+```
+
+网络异常时 `fetch` 可能无限等待。5xx / 429 错误无自动重试。无请求去重（快速切换筛选条件时可能并发多个重复请求）。
+
+---
+
+#### 3.5.5 多处 Promise rejection 被静默吞掉
+
+**文件**: `ThreadDetail.jsx`, `MemoryList.jsx` 等
+
+```javascript
+memoryApi.batchGet(comment.cited_memory_ids)
+    .then(setCitedMemories)
+    .catch(() => {});   // 静默丢弃错误
+```
+
+用户不知道数据加载失败，显示为空白而非错误提示。
+
+---
+
+#### 3.5.6 表单双击提交未防护
+
+**文件**: `pages/NewThread.jsx`
+
+`handleSubmit` 设置 `setSubmitting(true)` 前存在竞态窗口。React 批处理更新在 `await` 之前不一定生效，快速双击可能触发两次 `threadApi.create()`。
+
+---
+
+#### 3.5.7 无响应式设计
+
+**文件**: `index.css`
+
+- `.sidebar` 固定 220px 宽度，无折叠能力
+- `.main-content` 使用 `margin-left: var(--sidebar-w)` 固定偏移
+- `.stat-grid` 固定 4 列，平板/手机端溢出
+- 无 `@media` 断点适配
+
+---
+
+### 3.6 前端 — 中等优先级
+
+#### 3.6.1 `UserContext` 链式请求容错不足
+
+**文件**: `contexts/UserContext.jsx`
+
+```javascript
+const u = await userApi.me();
+setCurrentUser(u);
+if (u?.role === 'super_admin' || u?.role === 'board_admin') {
+    const ns = await userApi.myNamespaces();  // 若此处失败
+    setMyNamespaces(ns);
+}
+```
+
+若 `myNamespaces()` 失败，整个 catch 块清空 `currentUser` 和 `myNamespaces`。应分开处理：用户信息获取成功后不应因为二级请求失败而丢失。
+
+---
+
+#### 3.6.2 MemoryList 筛选器 `clearAll()` 丢失 boardId 上下文
+
+**文件**: `pages/MemoryList.jsx`
+
+```javascript
+function clearAll() {
+    setFilters(EMPTY_FILTERS);  // boardId 被清空
+}
+```
+
+在板块管理页点击"清除筛选"后，namespace_id 被清空，列表显示全局数据而非当前板块。
+
+---
+
+#### 3.6.3 搜索高亮未转义正则特殊字符
+
+**文件**: `pages/MemoryList.jsx`
+
+搜索关键词直接作为正则匹配高亮，若关键词包含 `(`, `)`, `[`, `.` 等正则特殊字符会报错或高亮异常。
 
 ---
 
 ## 四、改进方案与优先级
 
-### 中优先级（需要一定设计考虑）
+### 高优先级（影响可靠性，应尽快修复）
 
-| 问题 | 方案 | 预期收益 | 工作量 |
-|------|------|---------|--------|
-| **3.3.1** 无 API 限流 | Nginx 限流或 `slowapi` 中间件，对 LLM 端点加速率限制 | 防止成本攻击 | 小 |
-| **3.1.1** AUDN top_k=5 | `_process_one_fact()` 中将 top_k 提升到 10-15 | 减少重复记忆 | 极小 |
-| **3.2.2** COLD 恢复无补索引 | `change_status_to_active()` 路径（如有）调用 `_index_to_es()` | 状态恢复后可搜索 | 小 |
-| **3.2.1** comment_count 漂移 | 增加定期校验 job：`UPDATE threads SET comment_count = (SELECT COUNT(*) FROM comments WHERE ...)` | 数据准确性 | 小 |
+| 编号 | 问题 | 方案 | 工作量 |
+|------|------|------|--------|
+| **3.1.1** | LLM 调用无 timeout | OpenAI: `client = OpenAI(timeout=30)`；Custom: `requests.post(timeout=30)` | 极小 |
+| **3.1.2** | SSE 长连接 session | 每次循环创建短命 session 或用连接池；增加客户端断连检测 | 小 |
+| **3.1.3** | 提取部分失败无回滚 | 在 `_execute_pipeline` 失败时清理本次已创建的记忆（按 `ExtractionRecord.id` 关联） | 小 |
+| **3.5.1** | useAsync 竞态 | 添加 AbortController 或 stale flag，确保旧请求不覆盖新数据 | 小 |
+| **3.5.3** | 无 Error Boundary | 在 `App.jsx` 顶层添加 Error Boundary 组件 | 极小 |
+| **3.4.3** | Settings 校验 | 添加 Pydantic `@field_validator` 校验 API key、URL 格式、天数关系 | 小 |
+
+### 中优先级（改善质量与体验）
+
+| 编号 | 问题 | 方案 | 工作量 |
+|------|------|------|--------|
+| **3.4.1** | 无 API 限流 | `slowapi` 中间件或 Nginx 限流，对 LLM 端点 ≤ 10 req/min | 小 |
+| **3.2.1** | AUDN top_k=5 | `_process_one_fact()` 传 `top_k=10-15` | 极小 |
+| **3.1.4** | re_extract 竞态 | `SELECT ... FOR UPDATE` 锁定 thread 行；re_extract 异常记录日志 | 小 |
+| **3.1.5** | dictionary 替换不一致 | 改用 `re.sub(re.escape(slang), canonical, result, flags=re.IGNORECASE)` | 极小 |
+| **3.1.7** | bulk_reindex 部分成功 | 逐条标记已成功的 `indexed_at`（ES bulk response 返回逐条状态） | 小 |
+| **3.3.1** | comment_count 漂移 | 增加定期校验 job 或改用 COUNT 子查询 | 小 |
+| **3.3.3** | namespace=None 导致 index_name=None | `if index_name is None: continue` 跳过 | 极小 |
+| **3.5.2** | SSE 依赖数组多余 | 移除 `comment_count` 依赖，仅保留 `thread?.id` | 极小 |
+| **3.5.4** | API Client 无 timeout | 使用 `AbortSignal.timeout(30_000)` 或封装带 timeout 的 fetch | 小 |
+| **3.5.5** | Promise 静默吞错 | `.catch(() => {})` 改为显示错误提示或 fallback UI | 小 |
+| **3.5.6** | 双击提交 | 提交按钮增加 `disabled={submitting}` 并在 onClick 前检查 ref flag | 极小 |
+| **3.6.1** | UserContext 容错 | 拆分两个 try-catch：me() 失败清空全部，myNamespaces() 失败仅清空 ns | 极小 |
+| **3.6.2** | clearAll 丢 boardId | `setFilters({...EMPTY_FILTERS, namespace_id: boardId})` | 极小 |
 
 ### 低优先级（长期规划）
 
-| 问题 | 方案 | 预期收益 | 工作量 |
-|------|------|---------|--------|
-| **3.3.2** 认证简单 | 接入 OAuth2 / JWT / SSO | 安全性 | 大 |
-| AUDN 多维度召回 | KNN top-10 ∪ 相同 tags ∪ 相同 knowledge_type | 减少重复知识遗漏 | 中 |
-| 搜索质量分融合（高级） | 引入专用 Reranker 替代 embedding cosine similarity | 搜索精准度大幅提升 | 中 |
+| 编号 | 问题 | 方案 | 工作量 |
+|------|------|------|--------|
+| **3.4.2** | 认证简单 | 接入 OAuth2 / JWT / SSO | 大 |
+| **3.3.2** | COLD 恢复不可搜索窗口 | 恢复时主动调用 `_index_to_es()` | 小 |
+| **3.1.6** | bulk_refresh N+1 | commit 后 `session.expire_all()` + 批量重新加载 | 小 |
+| **3.1.8** | sensor 无 cursor | 使用 Dagster cursor 机制记录已处理事件 ID | 中 |
+| **3.5.7** | 无响应式设计 | 添加 `@media` 断点、可折叠 sidebar、grid 自适应 | 中 |
+| — | 前端 TypeScript 迁移 | .jsx → .tsx，添加类型定义 | 大 |
+| — | AUDN 多维度召回 | KNN top-10 ∪ 相同 tags ∪ 相同 knowledge_type | 中 |
+| — | 搜索引入专用 Reranker | 替代 embedding cosine similarity | 中 |
+| — | Custom Provider 移除 verify=False | 改为可配置 `FM_CUSTOM_VERIFY_CERTS` | 极小 |
 
 ---
 
@@ -201,13 +493,33 @@ def get_current_user(x_employee_id: str | None = Header(None)) -> User:
 | 1.3 | 提取幂等性（FAILED 不重试） | ✅ 已解决 |
 | 2.1 | ES-DB 不一致（被动修复） | ✅ 已解决（主动 sensor） |
 | 2.2 | 质量刷新全量加载 | ✅ 已解决（batch=200） |
-| 3.1.1 | thread_created_sensor 死代码 | ✅ 已移除 |
-| 3.1.2 | bulk 刷新 N 次 embedding | ✅ 已优化（embed_batch + bulk_reindex） |
-| 3.2.1 | 排序未融合质量分 | ✅ 已实现（0.7×语义 + 0.3×质量） |
-| 3.2.2 | 查询改写无条件触发 | ✅ 已优化（≤ 4 词跳过 LLM） |
-| 3.5.1 | AI 回答前端轮询 | ✅ 已替换为 SSE EventSource |
-| 3.1.1（新）| AUDN top_k=5 过小 | 🟡 待处理 |
-| 3.2.1（新）| comment_count 手动维护漂移 | 🟡 待处理 |
-| 3.2.2（新）| COLD 恢复无 ES 补索引 | 🟡 待处理 |
-| 3.3.1 | 无 API 限流 | 🟡 待处理 |
-| 3.3.2 | X-Employee-Id 认证简单 | ⚪ 长期 |
+| 3.1.1（新）| thread_created_sensor 死代码 | ✅ 已移除 |
+| 3.1.2（旧）| bulk 刷新 N 次 embedding | ✅ 已优化（embed_batch + bulk_reindex） |
+| 3.2.1（旧）| 排序未融合质量分 | ✅ 已实现（0.7×语义 + 0.3×质量） |
+| 3.2.2（旧）| 查询改写无条件触发 | ✅ 已优化（≤ 4 词跳过 LLM） |
+| 3.5.1（旧）| AI 回答前端轮询 | ✅ 已替换为 SSE EventSource |
+| **3.1.1** | LLM 调用无 timeout | 🔴 待修复（高优） |
+| **3.1.2** | SSE 长连接 session | 🔴 待修复（高优） |
+| **3.1.3** | 提取部分失败无回滚 | 🔴 待修复（高优） |
+| **3.1.4** | re_extract 竞态条件 | 🟡 待处理 |
+| **3.1.5** | dictionary 替换不一致 | 🟡 待处理 |
+| **3.1.6** | bulk_refresh commit 后 N+1 | ⚪ 长期 |
+| **3.1.7** | bulk_reindex 部分成功不标记 | 🟡 待处理 |
+| **3.1.8** | sensor 无 cursor | ⚪ 长期 |
+| **3.2.1** | AUDN top_k=5 过小 | 🟡 待处理 |
+| **3.3.1** | comment_count 手动维护漂移 | 🟡 待处理 |
+| **3.3.2** | COLD 恢复不可搜索窗口 | ⚪ 长期 |
+| **3.3.3** | namespace=None 导致 index_name=None | 🟡 待处理 |
+| **3.4.1** | 无 API 限流 | 🟡 待处理 |
+| **3.4.2** | X-Employee-Id 认证简单 | ⚪ 长期 |
+| **3.4.3** | Settings 缺少配置校验 | 🔴 待修复（高优） |
+| **3.5.1** | useAsync 竞态条件 | 🔴 待修复（高优） |
+| **3.5.2** | SSE 依赖数组多余 | 🟡 待处理 |
+| **3.5.3** | 无 Error Boundary | 🔴 待修复（高优） |
+| **3.5.4** | API Client 无 timeout | 🟡 待处理 |
+| **3.5.5** | Promise 静默吞错 | 🟡 待处理 |
+| **3.5.6** | 表单双击提交 | 🟡 待处理 |
+| **3.5.7** | 无响应式设计 | ⚪ 长期 |
+| **3.6.1** | UserContext 容错不足 | 🟡 待处理 |
+| **3.6.2** | clearAll 丢 boardId | 🟡 待处理 |
+| **3.6.3** | 搜索高亮未转义正则 | 🟡 待处理 |
