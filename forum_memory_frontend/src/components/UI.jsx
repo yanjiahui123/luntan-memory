@@ -46,12 +46,25 @@ export function EmptyState({ icon = '📭', message = '暂无数据' }) {
 export function Pagination({ page, total, size = 20, onChange }) {
   const pages = Math.max(1, Math.ceil(total / size));
   if (pages <= 1) return null;
+
+  // Build page list with ellipsis: always show first, last, and current ±2
+  const visible = new Set([1, pages]);
+  for (let p = Math.max(1, page - 2); p <= Math.min(pages, page + 2); p++) visible.add(p);
+  const sorted = [...visible].sort((a, b) => a - b);
+  const items = [];
+  sorted.forEach((p, i) => {
+    if (i > 0 && p - sorted[i - 1] > 1) items.push('...');
+    items.push(p);
+  });
+
   return (
     <div className="pagination">
       <button className="btn-secondary btn-sm" disabled={page <= 1} onClick={() => onChange(page - 1)}>‹</button>
-      {Array.from({ length: Math.min(pages, 7) }, (_, i) => i + 1).map(p => (
-        <button key={p} className={p === page ? 'btn-primary' : 'btn-secondary btn-sm'} onClick={() => onChange(p)}>{p}</button>
-      ))}
+      {items.map((item, i) =>
+        item === '...'
+          ? <span key={`e${i}`} style={{ padding: '4px 4px', color: 'var(--text-ter)', fontSize: 13 }}>…</span>
+          : <button key={item} className={item === page ? 'btn-primary btn-sm' : 'btn-secondary btn-sm'} onClick={() => onChange(item)}>{item}</button>
+      )}
       <button className="btn-secondary btn-sm" disabled={page >= pages} onClick={() => onChange(page + 1)}>›</button>
     </div>
   );

@@ -85,7 +85,7 @@ export default function Layout() {
         <Link to="/boards" className="topbar__logo" style={{ textDecoration: 'none' }}>知识论坛</Link>
         <div style={{ flex: 1 }} />
         <nav className="topbar__nav">
-          {isSuperAdmin && (
+          {isAdmin && (
             <button className={`topbar__link ${isAdminPage ? 'topbar__link--active' : ''}`} onClick={handleAdminNav}>管理后台</button>
           )}
         </nav>
@@ -145,11 +145,17 @@ export default function Layout() {
             {item.icon} {item.label}
           </Link>
         ))}
-        {/* 板块管理员在板块后台时显示"返回全部板块"（超级管理员不需要，他们在全局后台已有overview） */}
-        {isAdminPage && isSuperAdmin && activeBoardId && (
-          <Link to="/admin" className="sidebar__item" style={{ marginTop: 16, color: 'var(--text-ter)', fontSize: 12 }}>
-            ← 全局仪表盘
-          </Link>
+        {isAdminPage && (
+          <>
+            {isSuperAdmin && activeBoardId && (
+              <Link to="/admin" className="sidebar__item" style={{ marginTop: 8, color: 'var(--text-ter)', fontSize: 12 }}>
+                ← 全局仪表盘
+              </Link>
+            )}
+            <Link to="/boards" className="sidebar__item" style={{ marginTop: 8, color: 'var(--text-ter)', fontSize: 12 }}>
+              ← 返回论坛
+            </Link>
+          </>
         )}
       </aside>
 
