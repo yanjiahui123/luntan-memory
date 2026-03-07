@@ -361,6 +361,12 @@ def bulk_refresh_quality(session: Session, batch_size: int = 200) -> int:
                 by_index.setdefault(ns_cache[m.namespace_id], []).append((m, emb))
 
             for index_name, pairs in by_index.items():
+                if index_name is None:
+                    logger.warning(
+                        "Skipping %d memories with no ES index (namespace deleted?)",
+                        len(pairs),
+                    )
+                    continue
                 docs = [
                     {
                         "memory_id": str(m.id),
@@ -375,14 +381,15 @@ def bulk_refresh_quality(session: Session, batch_size: int = 200) -> int:
                     }
                     for m, emb in pairs
                 ]
-                ok = es_service.bulk_reindex(docs, index_name=index_name)
-                if ok == len(docs):
-                    for m, _ in pairs:
+                ok, failed_ids = es_service.bulk_reindex(docs, index_name=index_name)
+                # Mark indexed_at per-item: only for successfully indexed memories
+                for m, _ in pairs:
+                    if str(m.id) not in failed_ids:
                         m.indexed_at = now
-                else:
+                if failed_ids:
                     logger.warning(
                         "Partial bulk reindex (%d/%d) for index %s; "
-                        "remaining will be repaired by es_sync_repair_sensor",
+                        "failed IDs will be repaired by es_sync_repair_sensor",
                         ok, len(docs), index_name,
                     )
 

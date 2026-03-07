@@ -5,6 +5,7 @@ Uses ES hybrid search (BM25 + knn) for recall, falls back to SQL LIKE if ES unav
 """
 
 import logging
+import re as re_mod
 from uuid import UUID
 from datetime import datetime, timezone
 
@@ -106,8 +107,7 @@ def _preprocess_query(session: Session, req: MemorySearchRequest) -> str:
 def _apply_dictionary(query: str, dictionary: dict) -> str:
     result = query
     for slang, canonical in dictionary.items():
-        if slang.lower() in result.lower():
-            result = result.replace(slang, canonical)
+        result = re_mod.sub(re_mod.escape(slang), canonical, result, flags=re_mod.IGNORECASE)
     return result
 
 

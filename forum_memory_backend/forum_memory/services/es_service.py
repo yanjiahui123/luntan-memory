@@ -257,15 +257,17 @@ def _parse_hits(resp: dict) -> list[dict]:
 
 # ── Bulk ─────────────────────────────────────────────────
 
-def bulk_reindex(memories: list[dict], batch_size: int = 100, index_name: str | None = None) -> int:
-    """Bulk index memory dicts into ES. Returns success count.
+def bulk_reindex(memories: list[dict], batch_size: int = 100, index_name: str | None = None) -> tuple[int, set[str]]:
+    """Bulk index memory dicts into ES.
 
+    Returns (success_count, failed_memory_ids).
     Each dict: memory_id, namespace_id, content, embedding, status,
     environment, tags, knowledge_type, quality_score.
     """
     es = get_es_client()
     if not es:
-        return 0
+        all_ids = {m["memory_id"] for m in memories}
+        return 0, all_ids
     name = index_name or _default_index_name()
 
     actions = [
@@ -288,6 +290,12 @@ def bulk_reindex(memories: list[dict], batch_size: int = 100, index_name: str | 
     ]
 
     success, errors = bulk(es, actions, chunk_size=batch_size, raise_on_error=False)
+    failed_ids: set[str] = set()
     if errors:
-        logger.warning("Bulk reindex had %d errors", len(errors))
-    return success
+        for err in errors:
+            for action_type in ("index", "create", "update"):
+                if action_type in err:
+                    failed_ids.add(err[action_type]["_id"])
+                    break
+        logger.warning("Bulk reindex had %d errors (failed IDs: %s)", len(errors), failed_ids)
+    return success, failed_ids

@@ -16,6 +16,7 @@ from forum_memory.dagster.assets import (
     lifecycle_memories_job,
     refresh_quality_job,
     repair_es_sync_job,
+    reconcile_comment_counts_job,
 )
 from forum_memory.dagster.sensors import (
     thread_resolved_sensor,
@@ -23,6 +24,7 @@ from forum_memory.dagster.sensors import (
     memory_lifecycle_sensor,
     quality_refresh_sensor,
     es_sync_repair_sensor,
+    comment_count_reconcile_sensor,
 )
 
 defs = Definitions(
@@ -32,6 +34,7 @@ defs = Definitions(
         lifecycle_memories_job,
         refresh_quality_job,
         repair_es_sync_job,
+        reconcile_comment_counts_job,
     ],
     sensors=[
         thread_resolved_sensor,
@@ -39,5 +42,6 @@ defs = Definitions(
         memory_lifecycle_sensor,
         quality_refresh_sensor,
         es_sync_repair_sensor,
+        comment_count_reconcile_sensor,
     ],
 )

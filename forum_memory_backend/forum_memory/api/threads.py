@@ -183,7 +183,7 @@ def delete_comment(
             try:
                 extraction_service.re_extract(session, thread_id)
             except Exception:
-                pass  # Non-fatal: extraction failure shouldn't block comment deletion
+                logger.exception("re_extract failed for thread %s after comment deletion", thread_id)
         return {"ok": True}
     except PermissionError as e:
         raise HTTPException(403, str(e))

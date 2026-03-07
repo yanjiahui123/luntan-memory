@@ -501,15 +501,15 @@ function clearAll() {
 | **3.1.1** | LLM 调用无 timeout | ✅ 已修复（llm_timeout=60，OpenAI+Custom 均生效） |
 | **3.1.2** | SSE 长连接 session | ✅ 已修复（session 移入循环内，每次查询独立获取/释放） |
 | **3.1.3** | 提取部分失败无回滚 | ✅ 已修复（_rollback_partial_memories 软删除+ES清理） |
-| **3.1.4** | re_extract 竞态条件 | 🟡 待处理 |
-| **3.1.5** | dictionary 替换不一致 | 🟡 待处理 |
+| **3.1.4** | re_extract 竞态条件 | ✅ 已修复（SELECT FOR UPDATE NOWAIT 行锁 + 异常日志） |
+| **3.1.5** | dictionary 替换不一致 | ✅ 已修复（re.sub + re.IGNORECASE 大小写不敏感替换） |
 | **3.1.6** | bulk_refresh commit 后 N+1 | ⚪ 长期 |
-| **3.1.7** | bulk_reindex 部分成功不标记 | 🟡 待处理 |
+| **3.1.7** | bulk_reindex 部分成功不标记 | ✅ 已修复（bulk_reindex 返回 failed_ids，逐条标记 indexed_at） |
 | **3.1.8** | sensor 无 cursor | ⚪ 长期 |
-| **3.2.1** | AUDN top_k=5 过小 | 🟡 待处理 |
-| **3.3.1** | comment_count 手动维护漂移 | 🟡 待处理 |
+| **3.2.1** | AUDN top_k=5 过小 | ✅ 已修复（_process_one_fact 传 top_k=15） |
+| **3.3.1** | comment_count 手动维护漂移 | ✅ 已修复（reconcile_comment_counts + Dagster 每日校验 sensor） |
 | **3.3.2** | COLD 恢复不可搜索窗口 | ⚪ 长期 |
-| **3.3.3** | namespace=None 导致 index_name=None | 🟡 待处理 |
+| **3.3.3** | namespace=None 导致 index_name=None | ✅ 已修复（bulk_refresh_quality 跳过 None index_name） |
 | **3.4.1** | 无 API 限流 | 🟡 待处理 |
 | **3.4.2** | X-Employee-Id 认证简单 | ⚪ 长期 |
 | **3.4.3** | Settings 缺少配置校验 | ✅ 已修复（model_validator 校验 provider/天数/维度） |
