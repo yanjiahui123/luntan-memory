@@ -21,6 +21,20 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/threads", tags=["threads"])
 
 
+def _enrich_threads_with_authors(session: Session, threads: list) -> list[dict]:
+    """Batch-join author display names onto thread dicts."""
+    author_ids = [t.author_id for t in threads if t.author_id]
+    users = {}
+    if author_ids:
+        users = {u.id: u.display_name for u in session.exec(select(User).where(User.id.in_(author_ids))).all()}
+    result = []
+    for t in threads:
+        d = t.model_dump()
+        d["author_display_name"] = users.get(t.author_id) if t.author_id else None
+        result.append(d)
+    return result
+
+
 @router.get("", response_model=list[ThreadRead])
 def list_threads(
     response: Response,
@@ -34,7 +48,7 @@ def list_threads(
     items = thread_service.list_threads(session, namespace_id, status, page, size, q)
     total = thread_service.count_threads(session, namespace_id, status, q)
     response.headers["X-Total-Count"] = str(total)
-    return items
+    return _enrich_threads_with_authors(session, items)
 
 
 @router.get("/{thread_id}", response_model=ThreadRead)
@@ -43,7 +57,7 @@ def get_thread(thread_id: UUID, session: Session = Depends(get_db), user: User =
     if not thread:
         raise HTTPException(404, "Thread not found")
     check_namespace_read_access(thread.namespace_id, session, user)
-    return thread
+    return _enrich_threads_with_authors(session, [thread])[0]
 
 
 @router.post("", response_model=ThreadRead, status_code=201)

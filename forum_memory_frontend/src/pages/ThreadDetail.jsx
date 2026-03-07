@@ -90,7 +90,7 @@ export default function ThreadDetail() {
       <div className="breadcrumb">
         <Link to="/boards">板块</Link> <span>›</span>
         <Link to={`/boards/${thread.namespace_id}/threads`}>帖子列表</Link> <span>›</span>
-        <span>详情</span>
+        <span style={{ maxWidth: 300, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'inline-block', verticalAlign: 'middle' }}>{thread.title}</span>
       </div>
 
       {/* Question */}
@@ -103,6 +103,7 @@ export default function ThreadDetail() {
         <h1 style={{ fontSize: 18, fontWeight: 700, marginBottom: 10 }}>{thread.title}</h1>
         <MarkdownContent content={thread.content} style={{ fontSize: 14, color: 'var(--text)' }} />
         <div style={{ display: 'flex', gap: 16, marginTop: 14, fontSize: 12, color: 'var(--text-ter)', alignItems: 'center' }}>
+          {thread.author_display_name && <span>👤 {thread.author_display_name}</span>}
           <span>👁 {thread.view_count} 浏览</span>
           <span>💬 {thread.comment_count} 回复</span>
           <TimeAgo date={thread.created_at} />
@@ -484,7 +485,12 @@ function CommentCard({ comment, thread, onResolve, onDelete, isAdmin }) {
         </div>
       )}
 
-      <div className="comment-actions">
+      {thread.status === 'OPEN' && !isBest && (
+        <div style={{ padding: '10px 0 4px', borderTop: '1px solid var(--border)', marginTop: 10 }}>
+          <button className="btn-success" onClick={onResolve} style={{ width: '100%' }}>✓ 采纳此回答</button>
+        </div>
+      )}
+      <div className="comment-actions" style={{ marginTop: thread.status === 'OPEN' && !isBest ? 6 : undefined }}>
         <button
           className={`btn-sm ${upvoted ? 'btn-primary' : 'btn-secondary'}`}
           onClick={handleUpvote}
@@ -501,9 +507,6 @@ function CommentCard({ comment, thread, onResolve, onDelete, isAdmin }) {
         <div style={{ flex: 1 }} />
         {isAdmin && !isBest && (
           <button className="btn-sm btn-danger" onClick={() => setShowDeleteConfirm(true)} style={{ fontSize: 11 }}>删除</button>
-        )}
-        {thread.status === 'OPEN' && !isBest && (
-          <button className="btn-success" onClick={onResolve}>✓ 采纳此回答</button>
         )}
       </div>
 

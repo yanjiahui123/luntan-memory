@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { threadApi } from '../api/client';
 import ImagePasteTextarea from '../components/ImagePasteTextarea';
+import { TagChipsInput } from '../components/UI';
 
 export default function NewThread() {
   const { boardId } = useParams();
@@ -9,6 +10,7 @@ export default function NewThread() {
   const [form, setForm] = useState({ title: '', content: '', tags: '', environment: '' });
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState(null);
+  const [showAdvanced, setShowAdvanced] = useState(false);
 
   function update(field, value) {
     setForm(f => ({ ...f, [field]: value }));
@@ -57,15 +59,26 @@ export default function NewThread() {
           <ImagePasteTextarea placeholder="详细描述你遇到的问题，支持粘贴图片、Markdown 和代码块..." value={form.content} onChange={v => update('content', v)} style={{ minHeight: 160 }} required />
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 24 }}>
-          <div>
-            <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6 }}>技术分类标签</label>
-            <input placeholder="逗号分隔: 超时, 配置, K8s" value={form.tags} onChange={e => update('tags', e.target.value)} />
-          </div>
-          <div>
-            <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6 }}>适用环境</label>
-            <input placeholder="如: JDK17, K8s, 生产环境" value={form.environment} onChange={e => update('environment', e.target.value)} />
-          </div>
+        <div style={{ marginBottom: 20 }}>
+          <button
+            type="button"
+            onClick={() => setShowAdvanced(v => !v)}
+            style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontSize: 13, color: 'var(--text-sec)', display: 'flex', alignItems: 'center', gap: 4 }}
+          >
+            {showAdvanced ? '▾' : '▸'} 高级选项（标签、环境）
+          </button>
+          {showAdvanced && (
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginTop: 12 }}>
+              <div>
+                <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6 }}>技术分类标签</label>
+                <TagChipsInput value={form.tags} onChange={v => update('tags', v)} placeholder="按 Enter 添加标签" />
+              </div>
+              <div>
+                <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6 }}>适用环境</label>
+                <input placeholder="如: JDK17, K8s, 生产环境" value={form.environment} onChange={e => update('environment', e.target.value)} />
+              </div>
+            </div>
+          )}
         </div>
 
         {error && <div style={{ color: 'var(--red)', fontSize: 13, marginBottom: 12 }}>❌ {error}</div>}

@@ -73,7 +73,10 @@ export function Pagination({ page, total, size = 20, onChange }) {
 export function ConfirmModal({ open, title, message, onConfirm, onCancel, loading, error }) {
   if (!open) return null;
   return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
+    <div
+      style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}
+      onClick={e => { if (e.target === e.currentTarget && !loading) onCancel(); }}
+    >
       <div className="card fade-in" style={{ padding: 24, maxWidth: 400, width: '90%' }}>
         <h3 style={{ marginBottom: 8 }}>{title}</h3>
         <p style={{ color: 'var(--text-sec)', fontSize: 14, marginBottom: error ? 8 : 20 }}>{message}</p>
@@ -83,6 +86,53 @@ export function ConfirmModal({ open, title, message, onConfirm, onCancel, loadin
           <button className="btn-primary" onClick={onConfirm} disabled={loading}>{loading ? '处理中...' : '确认'}</button>
         </div>
       </div>
+    </div>
+  );
+}
+
+export function TagChipsInput({ value = '', onChange, placeholder = '输入标签后按 Enter 或逗号添加' }) {
+  const [input, setInput] = React.useState('');
+  const tags = value ? value.split(',').map(t => t.trim()).filter(Boolean) : [];
+
+  function addTag(raw) {
+    const t = raw.trim();
+    if (!t || tags.includes(t)) { setInput(''); return; }
+    onChange([...tags, t].join(','));
+    setInput('');
+  }
+
+  function removeTag(tag) {
+    onChange(tags.filter(t => t !== tag).join(','));
+  }
+
+  function handleKeyDown(e) {
+    if (e.key === 'Enter' || e.key === ',') {
+      e.preventDefault();
+      addTag(input);
+    } else if (e.key === 'Backspace' && !input && tags.length > 0) {
+      removeTag(tags[tags.length - 1]);
+    }
+  }
+
+  return (
+    <div
+      style={{ display: 'flex', flexWrap: 'wrap', gap: 5, alignItems: 'center', padding: '6px 10px', border: '1px solid var(--border)', borderRadius: 'var(--radius)', background: 'var(--surface)', minHeight: 40, cursor: 'text' }}
+      onClick={e => e.currentTarget.querySelector('input')?.focus()}
+    >
+      {tags.map(tag => (
+        <span key={tag} style={{ display: 'inline-flex', alignItems: 'center', gap: 3, padding: '2px 8px', borderRadius: 99, background: 'var(--accent-light)', color: 'var(--accent)', fontSize: 12, fontWeight: 600 }}>
+          {tag}
+          <button type="button" onClick={() => removeTag(tag)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--accent)', padding: 0, fontSize: 15, lineHeight: 1, display: 'flex', alignItems: 'center' }}>×</button>
+        </span>
+      ))}
+      <input
+        value={input}
+        onChange={e => setInput(e.target.value)}
+        onKeyDown={handleKeyDown}
+        onBlur={() => input.trim() && addTag(input)}
+        placeholder={tags.length === 0 ? placeholder : ''}
+        style={{ border: 'none', outline: 'none', background: 'transparent', fontSize: 13, minWidth: 80, flex: 1, padding: '2px 0', fontFamily: 'var(--font)' }}
+      />
     </div>
   );
 }

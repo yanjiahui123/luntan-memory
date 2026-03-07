@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { Link, useLocation, useNavigate, Outlet } from 'react-router-dom';
 import { userApi, setEmployeeId } from '../api/client';
 import { useUser } from '../contexts/UserContext';
@@ -34,8 +34,20 @@ export default function Layout() {
   const boardAdminMatch = location.pathname.match(/^\/admin\/boards\/([^/]+)/);
   const activeBoardId = boardAdminMatch ? boardAdminMatch[1] : null;
 
+  // 检测是否在论坛板块页面 /boards/:boardId/*
+  const boardForumMatch = location.pathname.match(/^\/boards\/([^/]+)/);
+  const currentBoardId = boardForumMatch ? boardForumMatch[1] : null;
+
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [inputId, setInputId] = useState('');
+  const [searchQ, setSearchQ] = useState('');
+
+  function handleSearch(e) {
+    e.preventDefault();
+    if (!searchQ.trim()) return;
+    navigate(`/search?q=${encodeURIComponent(searchQ.trim())}${currentBoardId ? `&ns=${currentBoardId}` : ''}`);
+    setSearchQ('');
+  }
 
   function handleSwitchUser() {
     if (!inputId.trim()) return;
@@ -83,7 +95,14 @@ export default function Layout() {
       {/* ── Topbar ─────────────────────────────── */}
       <header className="topbar">
         <Link to="/boards" className="topbar__logo" style={{ textDecoration: 'none' }}>知识论坛</Link>
-        <div style={{ flex: 1 }} />
+        <form onSubmit={handleSearch} style={{ flex: 1, maxWidth: 400, margin: '0 16px' }}>
+          <input
+            className="topbar__search"
+            placeholder={currentBoardId ? '搜索当前板块...' : '搜索知识...'}
+            value={searchQ}
+            onChange={e => setSearchQ(e.target.value)}
+          />
+        </form>
         <nav className="topbar__nav">
           {isAdmin && (
             <button className={`topbar__link ${isAdminPage ? 'topbar__link--active' : ''}`} onClick={handleAdminNav}>管理后台</button>
