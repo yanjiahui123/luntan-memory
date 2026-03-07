@@ -1,8 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { threadApi } from '../api/client';
 import ImagePasteTextarea from '../components/ImagePasteTextarea';
-import { TagChipsInput } from '../components/UI';
+import { TagChipsInput, StatusBadge } from '../components/UI';
 
 export default function NewThread() {
   const { boardId } = useParams();
@@ -12,9 +12,39 @@ export default function NewThread() {
   const [error, setError] = useState(null);
   const [showAdvanced, setShowAdvanced] = useState(false);
 
+  // 相似问题拦截
+  const [similar, setSimilar] = useState([]);
+  const [similarLoading, setSimilarLoading] = useState(false);
+  const [dismissed, setDismissed] = useState(false);
+  const lastQuery = useRef('');
+
   function update(field, value) {
     setForm(f => ({ ...f, [field]: value }));
+    if (field === 'title') setDismissed(false); // 标题变化时重置关闭状态
   }
+
+  // debounced 搜索相似帖子
+  useEffect(() => {
+    const q = form.title.trim();
+    if (q.length < 6 || dismissed) {
+      setSimilar([]);
+      return;
+    }
+    if (q === lastQuery.current) return;
+    const timer = setTimeout(async () => {
+      lastQuery.current = q;
+      setSimilarLoading(true);
+      try {
+        const result = await threadApi.list({ namespace_id: boardId, q, size: 5 });
+        setSimilar((result?.items || []).filter(t => t.status !== 'DELETED'));
+      } catch {
+        // 搜索失败静默处理，不影响发帖
+      } finally {
+        setSimilarLoading(false);
+      }
+    }, 600);
+    return () => clearTimeout(timer);
+  }, [form.title, boardId, dismissed]);
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -38,6 +68,12 @@ export default function NewThread() {
     }
   }
 
+  // 已解决的帖子排到前面
+  const sortedSimilar = [...similar].sort((a, b) =>
+    (b.status === 'RESOLVED' ? 1 : 0) - (a.status === 'RESOLVED' ? 1 : 0)
+  );
+  const hasResolved = similar.some(t => t.status === 'RESOLVED');
+
   return (
     <div style={{ maxWidth: 600 }}>
       <div className="breadcrumb">
@@ -49,10 +85,98 @@ export default function NewThread() {
       <h1 className="page-title" style={{ marginBottom: 20 }}>提一个问题</h1>
 
       <form onSubmit={handleSubmit}>
-        <div style={{ marginBottom: 16 }}>
+        <div style={{ marginBottom: similar.length > 0 && !dismissed ? 10 : 16 }}>
           <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6 }}>标题 *</label>
-          <input placeholder="简要描述你的问题" value={form.title} onChange={e => update('title', e.target.value)} required />
+          <input
+            placeholder="简要描述你的问题"
+            value={form.title}
+            onChange={e => update('title', e.target.value)}
+            required
+          />
+          {similarLoading && (
+            <div style={{ fontSize: 12, color: 'var(--text-ter)', marginTop: 6 }}>正在搜索相似问题...</div>
+          )}
         </div>
+
+        {/* 相似问题提示卡 */}
+        {sortedSimilar.length > 0 && !dismissed && (
+          <div style={{
+            marginBottom: 16,
+            border: `1px solid ${hasResolved ? 'var(--green)' : 'var(--border)'}`,
+            borderRadius: 'var(--radius)',
+            background: hasResolved ? 'rgba(var(--green-rgb, 34,197,94), 0.04)' : 'var(--bg)',
+            overflow: 'hidden',
+          }}>
+            <div style={{
+              padding: '9px 14px',
+              borderBottom: '1px solid var(--border)',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              background: hasResolved ? 'rgba(var(--green-rgb, 34,197,94), 0.06)' : 'var(--surface)',
+            }}>
+              <span style={{ fontSize: 13, fontWeight: 600, color: hasResolved ? 'var(--green)' : 'var(--text-sec)' }}>
+                {hasResolved ? '✓ 找到已解决的相似问题，可能不需要重复提问' : '💡 找到相似问题，供参考'}
+              </span>
+              <button
+                type="button"
+                onClick={() => setDismissed(true)}
+                style={{ fontSize: 18, color: 'var(--text-ter)', background: 'none', border: 'none', cursor: 'pointer', padding: '0 0 0 12px', lineHeight: 1 }}
+                title="关闭，继续发帖"
+              >
+                ×
+              </button>
+            </div>
+            {sortedSimilar.map((t, i) => (
+              <div key={t.id} style={{
+                padding: '10px 14px',
+                borderBottom: i < sortedSimilar.length - 1 ? '1px solid var(--border)' : 'none',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                gap: 12,
+              }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{
+                    fontSize: 13,
+                    fontWeight: 500,
+                    color: 'var(--text)',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                  }}>
+                    {t.title}
+                  </div>
+                  <div style={{ marginTop: 4, display: 'flex', gap: 6, alignItems: 'center' }}>
+                    <StatusBadge status={t.status} />
+                    {t.author_display_name && (
+                      <span style={{ fontSize: 11, color: 'var(--text-ter)' }}>👤 {t.author_display_name}</span>
+                    )}
+                    <span style={{ fontSize: 11, color: 'var(--text-ter)' }}>💬 {t.comment_count} 回复</span>
+                  </div>
+                </div>
+                <a
+                  href={`/threads/${t.id}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="btn-sm btn-secondary"
+                  style={{ textDecoration: 'none', flexShrink: 0, fontSize: 12 }}
+                >
+                  查看 →
+                </a>
+              </div>
+            ))}
+            <div style={{ padding: '8px 14px', borderTop: '1px solid var(--border)', textAlign: 'right' }}>
+              <button
+                type="button"
+                onClick={() => setDismissed(true)}
+                style={{ fontSize: 12, color: 'var(--text-ter)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
+              >
+                以上都不是我的问题，继续发帖
+              </button>
+            </div>
+          </div>
+        )}
 
         <div style={{ marginBottom: 16 }}>
           <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6 }}>详细描述 *</label>
