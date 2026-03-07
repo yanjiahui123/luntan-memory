@@ -12,7 +12,12 @@ from forum_memory.models.thread import Thread, Comment
 from forum_memory.models.extraction import ExtractionRecord
 from forum_memory.models.enums import ExtractionStatus, MemoryStatus
 from forum_memory.core.state_machine import default_authority, needs_human_confirm
-from forum_memory.core.extraction import build_compress_messages, build_extract_messages, parse_extracted_facts
+from forum_memory.core.extraction import (
+    build_compress_messages,
+    build_structure_messages, parse_structured_analysis,
+    build_atomize_messages, parse_atomized_facts,
+    build_gate_messages, parse_gated_facts,
+)
 from forum_memory.core.audn import build_audn_messages, parse_audn_response
 from forum_memory.schemas.memory import MemoryCreate
 from forum_memory.services.memory_service import apply_audn
@@ -143,9 +148,51 @@ def _maybe_compress(llm, title: str, discussion: str) -> str:
 
 
 def _extract_facts(llm, title: str, question: str, discussion: str) -> list[dict]:
-    msgs = build_extract_messages(title, question, discussion)
+    """Three-stage extraction: Structure → Atomize → Gate."""
+    structured = _stage_structure(llm, title, question, discussion)
+    if not structured:
+        logger.warning("Stage 1 (Structure) returned no result for thread '%s'", title)
+        return []
+
+    atoms = _stage_atomize(llm, structured)
+    if not atoms:
+        logger.warning("Stage 2 (Atomize) produced no knowledge points for thread '%s'", title)
+        return []
+
+    facts = _stage_gate(llm, atoms)
+    logger.info(
+        "Three-stage extraction for '%s': %d atoms → %d passed gate",
+        title, len(atoms), len(facts),
+    )
+    return facts
+
+
+def _stage_structure(llm, title: str, question: str, discussion: str) -> dict | None:
+    """Stage 1: Parse discussion into structured intermediate form."""
+    msgs = build_structure_messages(title, question, discussion)
     raw = llm.complete(msgs)
-    return parse_extracted_facts(raw)
+    result = parse_structured_analysis(raw)
+    if not result:
+        logger.warning("Stage 1 parse error — raw output: %s", raw[:300])
+    return result
+
+
+def _stage_atomize(llm, structured: dict) -> list[dict]:
+    """Stage 2: Extract atomic knowledge points from structured analysis."""
+    msgs = build_atomize_messages(structured)
+    raw = llm.complete(msgs)
+    atoms = parse_atomized_facts(raw)
+    logger.debug("Stage 2 (Atomize) produced %d atoms", len(atoms))
+    return atoms
+
+
+def _stage_gate(llm, atoms: list[dict]) -> list[dict]:
+    """Stage 3: Quality gate — filter and convert to standard fact format."""
+    msgs = build_gate_messages(atoms)
+    raw = llm.complete(msgs)
+    facts = parse_gated_facts(raw)
+    logger.debug("Stage 3 (Gate): %d/%d atoms passed", len(facts), len(atoms))
+    return facts
 
 
 def _process_one_fact(session, llm, thread, fact, authority, pending) -> UUID | None:
