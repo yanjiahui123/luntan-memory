@@ -13,12 +13,11 @@ class OpenAIProvider(LLMProvider):
         settings = get_settings()
         self.client = OpenAI(api_key=settings.llm_api_key)
         self.main_model = settings.llm_main_model
-        self.small_model = settings.llm_small_model
         self.embed_model = settings.llm_embedding_model
 
-    def complete(self, messages: list[dict], model: str | None = None) -> str:
+    def complete(self, messages: list[dict]) -> str:
         resp = self.client.chat.completions.create(
-            model=model or self.main_model,
+            model=self.main_model,
             messages=messages,
             temperature=0.2,
         )

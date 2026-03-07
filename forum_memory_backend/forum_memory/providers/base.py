@@ -7,7 +7,7 @@ class LLMProvider(ABC):
     """Base class for LLM providers."""
 
     @abstractmethod
-    def complete(self, messages: list[dict], model: str | None = None) -> str:
+    def complete(self, messages: list[dict]) -> str:
         """Run a chat completion and return the text."""
 
     @abstractmethod

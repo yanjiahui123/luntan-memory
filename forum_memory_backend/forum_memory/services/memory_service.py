@@ -454,23 +454,28 @@ def reindex_unsynced_memories(session: Session, batch_size: int = 50) -> int:
         select(Memory)
         .where(Memory.status == MemoryStatus.ACTIVE)
         .where(Memory.indexed_at == None)  # noqa: E711
+        .order_by(Memory.created_at)  # deterministic order so repeated runs make progress
         .limit(batch_size)
     )
     memories = list(session.exec(stmt).all())
     if not memories:
         return 0
 
-    count = 0
+    now = datetime.now(timezone.utc)
+    succeeded = []
     for m in memories:
         index_name = _resolve_es_index(session, m.namespace_id)
         if _index_to_es(m, index_name=index_name):
-            m.indexed_at = datetime.now(timezone.utc)
-            session.commit()
-            count += 1
+            m.indexed_at = now
+            succeeded.append(m)
         else:
             logger.warning("Repair reindex still failed for memory %s", m.id)
-    logger.info("Repair reindex: %d/%d memories synced to ES", count, len(memories))
-    return count
+
+    if succeeded:
+        session.commit()
+
+    logger.info("Repair reindex: %d/%d memories synced to ES", len(succeeded), len(memories))
+    return len(succeeded)
 
 
 def _add_log(session: Session, memory: Memory, op: OperationType, reason: str | None = None, before: dict | None = None) -> None:

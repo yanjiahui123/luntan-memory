@@ -26,11 +26,11 @@ class CustomProvider(LLMProvider):
         self.rerank_model = settings.custom_rerank_model
         self.embed_dimension = settings.embedding_dimension
 
-    def complete(self, messages: list[dict], model: str | None = None) -> str:
+    def complete(self, messages: list[dict]) -> str:
         resp = requests.post(
             self.llm_url,
             headers=self.headers,
-            json={"model": model or self.llm_model, "messages": messages},
+            json={"model": self.llm_model, "messages": messages},
             verify=False,
         )
         resp.raise_for_status()

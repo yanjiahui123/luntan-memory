@@ -27,7 +27,6 @@ class Settings(BaseSettings):
     llm_provider: str = "openai"
     llm_api_key: str = ""
     llm_main_model: str = "gpt-4o"
-    llm_small_model: str = "gpt-4o-mini"
     llm_embedding_model: str = "text-embedding-3-small"
     embedding_dimension: int = 1536
 
