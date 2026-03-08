@@ -13,6 +13,28 @@ export function setEmployeeId(id) {
   localStorage.setItem('employeeId', id);
 }
 
+/** JWT token management */
+export function getToken() {
+  return localStorage.getItem('jwt_token') || '';
+}
+
+export function setToken(token) {
+  localStorage.setItem('jwt_token', token);
+}
+
+export function clearToken() {
+  localStorage.removeItem('jwt_token');
+}
+
+/** Build auth headers: prefer JWT Bearer token, fallback to X-Employee-Id */
+function authHeaders() {
+  const token = getToken();
+  if (token) {
+    return { Authorization: `Bearer ${token}` };
+  }
+  return { 'X-Employee-Id': getEmployeeId() };
+}
+
 async function request(url, options = {}) {
   const { headers: extraHeaders, signal: callerSignal, ...restOptions } = options;
   const signal = callerSignal ?? AbortSignal.timeout(30_000);
@@ -20,7 +42,7 @@ async function request(url, options = {}) {
     signal,
     headers: {
       'Content-Type': 'application/json',
-      'X-Employee-Id': getEmployeeId(),
+      ...authHeaders(),
       ...extraHeaders,
     },
     ...restOptions,
@@ -41,7 +63,7 @@ async function requestPaginated(url, options = {}) {
     signal,
     headers: {
       'Content-Type': 'application/json',
-      'X-Employee-Id': getEmployeeId(),
+      ...authHeaders(),
       ...extraHeaders,
     },
     ...restOptions,
@@ -59,6 +81,11 @@ const get = (url) => request(url);
 const post = (url, body) => request(url, { method: 'POST', body: JSON.stringify(body) });
 const put = (url, body) => request(url, { method: 'PUT', body: JSON.stringify(body) });
 const del = (url) => request(url, { method: 'DELETE' });
+
+// ── Auth ─────────────────────────────────────
+export const authApi = {
+  login: (employeeId) => post('/auth/login', { employee_id: employeeId }),
+};
 
 // ── Users ────────────────────────────────────
 export const userApi = {
@@ -162,7 +189,7 @@ export const adminApi = {
     files.forEach(f => form.append('files', f));
     return fetch(`${BASE}/admin/import-topics/upload`, {
       method: 'POST',
-      headers: { 'X-Employee-Id': getEmployeeId() },
+      headers: authHeaders(),
       body: form,
       signal: AbortSignal.timeout(300_000),  // 5 分钟，批量导入文件可能较大
     }).then(async res => {
@@ -182,7 +209,7 @@ export const uploadApi = {
     form.append('file', file);
     return fetch(`${BASE}/uploads`, {
       method: 'POST',
-      headers: { 'X-Employee-Id': getEmployeeId() },
+      headers: authHeaders(),
       body: form,
       signal: AbortSignal.timeout(60_000),  // 60 秒，单文件上传
     }).then(res => {

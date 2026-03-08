@@ -32,30 +32,77 @@ def search_memories(session: Session, req: MemorySearchRequest) -> MemorySearchR
     return MemorySearchResponse(hits=hits, query_expanded=expanded, total_recalled=len(candidates))
 
 
-def find_similar(session: Session, namespace_id: UUID, content: str, top_k: int = 5) -> list[dict]:
-    """Find similar memories for AUDN dedup via ES knn, fallback to text overlap."""
+def find_similar(
+    session: Session,
+    namespace_id: UUID,
+    content: str,
+    top_k: int = 5,
+    tags: list[str] | None = None,
+    knowledge_type: str | None = None,
+) -> list[dict]:
+    """Find similar memories for AUDN dedup via multi-dimensional recall.
+
+    Recall strategy: KNN top-k UNION same-tags UNION same-knowledge_type,
+    then deduplicate and return up to top_k results.
+    """
     ns = session.get(Namespace, namespace_id)
     es_index = ns.es_index_name if ns else None
-    # Try ES knn search
+    seen_ids: set[str] = set()
+    results: list[dict] = []
+
+    def _add_memories(memory_ids: list[UUID]) -> None:
+        """Fetch memories by IDs and add unseen ones to results."""
+        if not memory_ids:
+            return
+        new_ids = [mid for mid in memory_ids if str(mid) not in seen_ids]
+        if not new_ids:
+            return
+        stmt = select(Memory).where(Memory.id.in_(new_ids))
+        memories_map = {str(m.id): m for m in session.exec(stmt).all()}
+        for mid in new_ids:
+            m = memories_map.get(str(mid))
+            if m:
+                seen_ids.add(str(m.id))
+                results.append({"id": str(m.id), "content": m.content, "authority": m.authority})
+
+    # Try ES-based multi-dimensional recall
     try:
         provider = get_provider()
         content_embedding = provider.embed(content)
-        es_hits = es_service.knn_search(
+
+        # 1. KNN recall (primary)
+        knn_hits = es_service.knn_search(
             namespace_id=namespace_id,
             query_embedding=content_embedding,
             limit=top_k,
             index_name=es_index,
         )
-        if es_hits:
-            memory_ids = [UUID(h["memory_id"]) for h in es_hits]
-            stmt = select(Memory).where(Memory.id.in_(memory_ids))
-            memories_map = {str(m.id): m for m in session.exec(stmt).all()}
-            results = []
-            for hit in es_hits:
-                m = memories_map.get(hit["memory_id"])
-                if m:
-                    results.append({"id": str(m.id), "content": m.content, "authority": m.authority})
-            return results
+        _add_memories([UUID(h["memory_id"]) for h in knn_hits])
+
+        # 2. Same-tags recall (if tags provided)
+        if tags:
+            tag_hits = es_service.term_search(
+                namespace_id=namespace_id,
+                field="tags",
+                values=tags,
+                limit=top_k,
+                index_name=es_index,
+            )
+            _add_memories([UUID(h["memory_id"]) for h in tag_hits])
+
+        # 3. Same knowledge_type recall (if provided)
+        if knowledge_type:
+            kt_hits = es_service.term_search(
+                namespace_id=namespace_id,
+                field="knowledge_type",
+                values=[knowledge_type],
+                limit=top_k,
+                index_name=es_index,
+            )
+            _add_memories([UUID(h["memory_id"]) for h in kt_hits])
+
+        if results:
+            return results[:top_k]
     except Exception:
         logger.exception("ES find_similar failed, falling back to text overlap")
 

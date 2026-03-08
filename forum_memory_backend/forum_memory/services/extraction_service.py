@@ -228,7 +228,10 @@ def _stage_gate(llm, atoms: list[dict]) -> list[dict]:
 
 
 def _process_one_fact(session, llm, thread, fact, authority, pending) -> UUID | None:
-    similar = find_similar(session, thread.namespace_id, fact["content"], top_k=15)
+    similar = find_similar(
+        session, thread.namespace_id, fact["content"], top_k=15,
+        tags=fact.get("tags"), knowledge_type=fact.get("knowledge_type"),
+    )
     msgs = build_audn_messages(fact["content"], similar)
     raw = llm.complete(msgs)
     result = parse_audn_response(raw)
