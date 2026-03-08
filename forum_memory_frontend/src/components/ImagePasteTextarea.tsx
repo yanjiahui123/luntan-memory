@@ -1,15 +1,20 @@
 import React, { useRef, useState } from 'react';
 import { uploadApi } from '../api/client';
 
+interface ImagePasteTextareaProps extends Omit<React.TextareaHTMLAttributes<HTMLTextAreaElement>, 'onChange'> {
+  value: string;
+  onChange: (value: string) => void;
+}
+
 /**
  * Textarea that supports pasting and dragging images.
  * Uploads images and inserts markdown ![image](url) at cursor position.
  */
-export default function ImagePasteTextarea({ value, onChange, placeholder, style, ...rest }) {
-  const textareaRef = useRef(null);
+export default function ImagePasteTextarea({ value, onChange, placeholder, style, ...rest }: ImagePasteTextareaProps) {
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [uploading, setUploading] = useState(false);
 
-  function insertAtCursor(text) {
+  function insertAtCursor(text: string) {
     const ta = textareaRef.current;
     if (!ta) {
       onChange(value + text);
@@ -26,7 +31,7 @@ export default function ImagePasteTextarea({ value, onChange, placeholder, style
     });
   }
 
-  async function handleFiles(files) {
+  async function handleFiles(files: File[] | FileList) {
     const images = Array.from(files).filter(f => f.type.startsWith('image/'));
     if (images.length === 0) return;
 
@@ -43,11 +48,11 @@ export default function ImagePasteTextarea({ value, onChange, placeholder, style
     }
   }
 
-  function handlePaste(e) {
+  function handlePaste(e: React.ClipboardEvent<HTMLTextAreaElement>) {
     const items = e.clipboardData?.items;
     if (!items) return;
-    const imageFiles = [];
-    for (const item of items) {
+    const imageFiles: File[] = [];
+    for (const item of Array.from(items)) {
       if (item.type.startsWith('image/')) {
         const file = item.getAsFile();
         if (file) imageFiles.push(file);
@@ -59,14 +64,14 @@ export default function ImagePasteTextarea({ value, onChange, placeholder, style
     }
   }
 
-  function handleDrop(e) {
+  function handleDrop(e: React.DragEvent<HTMLTextAreaElement>) {
     e.preventDefault();
     if (e.dataTransfer?.files?.length) {
       handleFiles(e.dataTransfer.files);
     }
   }
 
-  function handleDragOver(e) {
+  function handleDragOver(e: React.DragEvent<HTMLTextAreaElement>) {
     e.preventDefault();
   }
 

@@ -1,35 +1,51 @@
 import React from 'react';
+import type { ThreadStatus, MemoryAuthority, MemoryLifecycle, KnowledgeType } from '../types';
 
-export function Badge({ type = 'gray', children }) {
+// ── Badge ──────────────────────────────────────────────────────────────────
+
+interface BadgeProps {
+  type?: string;
+  children: React.ReactNode;
+}
+
+export function Badge({ type = 'gray', children }: BadgeProps) {
   return <span className={`badge badge-${type}`}>{children}</span>;
 }
 
-export function StatusBadge({ status }) {
-  const map = {
+export function StatusBadge({ status }: { status: ThreadStatus }) {
+  const map: Record<ThreadStatus, { type: string; label: string }> = {
     OPEN: { type: 'blue', label: '进行中' },
     RESOLVED: { type: 'green', label: '✓ 已解决' },
     TIMEOUT_CLOSED: { type: 'amber', label: '⏰ 超时关闭' },
+    DELETED: { type: 'red', label: '已删除' },
   };
-  const s = map[status] || { type: 'gray', label: status };
+  const s = map[status] ?? { type: 'gray', label: status };
   return <Badge type={s.type}>{s.label}</Badge>;
 }
 
-export function AuthorityBadge({ authority }) {
+export function AuthorityBadge({ authority }: { authority: MemoryAuthority }) {
   return authority === 'LOCKED'
     ? <Badge type="green">🔒 LOCKED</Badge>
     : <Badge type="blue">🤖 NORMAL</Badge>;
 }
 
-export function LifecycleBadge({ status }) {
-  const map = { ACTIVE: 'green', COLD: 'amber', ARCHIVED: 'gray', DELETED: 'red' };
-  return <Badge type={map[status] || 'gray'}>{status}</Badge>;
+export function LifecycleBadge({ status }: { status: MemoryLifecycle }) {
+  const map: Record<MemoryLifecycle, string> = { ACTIVE: 'green', COLD: 'amber', ARCHIVED: 'gray', DELETED: 'red' };
+  return <Badge type={map[status] ?? 'gray'}>{status}</Badge>;
 }
+
+// ── State indicators ───────────────────────────────────────────────────────
 
 export function Loading() {
   return <div className="empty-state fade-in"><div className="empty-state__icon">⏳</div>加载中...</div>;
 }
 
-export function ErrorMsg({ message, onRetry }) {
+interface ErrorMsgProps {
+  message: string;
+  onRetry?: () => void;
+}
+
+export function ErrorMsg({ message, onRetry }: ErrorMsgProps) {
   return (
     <div className="empty-state fade-in">
       <div className="empty-state__icon">⚠️</div>
@@ -39,11 +55,25 @@ export function ErrorMsg({ message, onRetry }) {
   );
 }
 
-export function EmptyState({ icon = '📭', message = '暂无数据' }) {
+interface EmptyStateProps {
+  icon?: string;
+  message?: string;
+}
+
+export function EmptyState({ icon = '📭', message = '暂无数据' }: EmptyStateProps) {
   return <div className="empty-state fade-in"><div className="empty-state__icon">{icon}</div>{message}</div>;
 }
 
-export function Pagination({ page, total, size = 20, onChange }) {
+// ── Pagination ─────────────────────────────────────────────────────────────
+
+interface PaginationProps {
+  page: number;
+  total: number;
+  size?: number;
+  onChange: (page: number) => void;
+}
+
+export function Pagination({ page, total, size = 20, onChange }: PaginationProps) {
   const pages = Math.max(1, Math.ceil(total / size));
   if (pages <= 1) return null;
 
@@ -51,7 +81,7 @@ export function Pagination({ page, total, size = 20, onChange }) {
   const visible = new Set([1, pages]);
   for (let p = Math.max(1, page - 2); p <= Math.min(pages, page + 2); p++) visible.add(p);
   const sorted = [...visible].sort((a, b) => a - b);
-  const items = [];
+  const items: (number | string)[] = [];
   sorted.forEach((p, i) => {
     if (i > 0 && p - sorted[i - 1] > 1) items.push('...');
     items.push(p);
@@ -63,14 +93,26 @@ export function Pagination({ page, total, size = 20, onChange }) {
       {items.map((item, i) =>
         item === '...'
           ? <span key={`e${i}`} style={{ padding: '4px 4px', color: 'var(--text-ter)', fontSize: 13 }}>…</span>
-          : <button key={item} className={item === page ? 'btn-primary btn-sm' : 'btn-secondary btn-sm'} onClick={() => onChange(item)}>{item}</button>
+          : <button key={item} className={item === page ? 'btn-primary btn-sm' : 'btn-secondary btn-sm'} onClick={() => onChange(item as number)}>{item}</button>
       )}
       <button className="btn-secondary btn-sm" disabled={page >= pages} onClick={() => onChange(page + 1)}>›</button>
     </div>
   );
 }
 
-export function ConfirmModal({ open, title, message, onConfirm, onCancel, loading, error }) {
+// ── ConfirmModal ───────────────────────────────────────────────────────────
+
+interface ConfirmModalProps {
+  open: boolean;
+  title: string;
+  message: string;
+  onConfirm: () => void;
+  onCancel: () => void;
+  loading?: boolean;
+  error?: string | null;
+}
+
+export function ConfirmModal({ open, title, message, onConfirm, onCancel, loading, error }: ConfirmModalProps) {
   if (!open) return null;
   return (
     <div
@@ -90,22 +132,30 @@ export function ConfirmModal({ open, title, message, onConfirm, onCancel, loadin
   );
 }
 
-export function TagChipsInput({ value = '', onChange, placeholder = '输入标签后按 Enter 或逗号添加' }) {
+// ── TagChipsInput ──────────────────────────────────────────────────────────
+
+interface TagChipsInputProps {
+  value?: string;
+  onChange: (value: string) => void;
+  placeholder?: string;
+}
+
+export function TagChipsInput({ value = '', onChange, placeholder = '输入标签后按 Enter 或逗号添加' }: TagChipsInputProps) {
   const [input, setInput] = React.useState('');
   const tags = value ? value.split(',').map(t => t.trim()).filter(Boolean) : [];
 
-  function addTag(raw) {
+  function addTag(raw: string) {
     const t = raw.trim();
     if (!t || tags.includes(t)) { setInput(''); return; }
     onChange([...tags, t].join(','));
     setInput('');
   }
 
-  function removeTag(tag) {
+  function removeTag(tag: string) {
     onChange(tags.filter(t => t !== tag).join(','));
   }
 
-  function handleKeyDown(e) {
+  function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
     if (e.key === 'Enter' || e.key === ',') {
       e.preventDefault();
       addTag(input);
@@ -117,7 +167,7 @@ export function TagChipsInput({ value = '', onChange, placeholder = '输入标�
   return (
     <div
       style={{ display: 'flex', flexWrap: 'wrap', gap: 5, alignItems: 'center', padding: '6px 10px', border: '1px solid var(--border)', borderRadius: 'var(--radius)', background: 'var(--surface)', minHeight: 40, cursor: 'text' }}
-      onClick={e => e.currentTarget.querySelector('input')?.focus()}
+      onClick={e => (e.currentTarget.querySelector('input') as HTMLInputElement | null)?.focus()}
     >
       {tags.map(tag => (
         <span key={tag} style={{ display: 'inline-flex', alignItems: 'center', gap: 3, padding: '2px 8px', borderRadius: 99, background: 'var(--accent-light)', color: 'var(--accent)', fontSize: 12, fontWeight: 600 }}>
@@ -137,7 +187,9 @@ export function TagChipsInput({ value = '', onChange, placeholder = '输入标�
   );
 }
 
-export function TimeAgo({ date }) {
+// ── Time / Quality helpers ─────────────────────────────────────────────────
+
+export function TimeAgo({ date }: { date: string | null | undefined }) {
   if (!date) return null;
   const d = new Date(date);
   const diff = (Date.now() - d.getTime()) / 1000;
@@ -148,12 +200,14 @@ export function TimeAgo({ date }) {
   return <span>{d.toLocaleDateString('zh-CN')}</span>;
 }
 
-export function QualityDot({ score }) {
+export function QualityDot({ score }: { score: number }) {
   const color = score > 0.8 ? 'var(--green)' : score > 0.5 ? 'var(--text)' : 'var(--red)';
   return <span style={{ color, fontWeight: 700 }}>{score.toFixed(2)}</span>;
 }
 
-export const KNOWLEDGE_TYPE_LABELS = {
+// ── KnowledgeType ──────────────────────────────────────────────────────────
+
+export const KNOWLEDGE_TYPE_LABELS: Record<KnowledgeType, string> = {
   how_to: '操作指南',
   troubleshoot: '故障排查',
   best_practice: '最佳实践',
@@ -161,8 +215,8 @@ export const KNOWLEDGE_TYPE_LABELS = {
   faq: '常见问题',
 };
 
-export function KnowledgeTypeBadge({ type }) {
+export function KnowledgeTypeBadge({ type }: { type: KnowledgeType | null | undefined }) {
   if (!type) return null;
-  const label = KNOWLEDGE_TYPE_LABELS[type] || type;
+  const label = KNOWLEDGE_TYPE_LABELS[type] ?? type;
   return <Badge type="gray">{label}</Badge>;
 }

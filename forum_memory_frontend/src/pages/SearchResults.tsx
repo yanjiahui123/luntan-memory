@@ -1,17 +1,17 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { memoryApi, threadApi } from '../api/client';
+import { memoryApi } from '../api/client';
 import { useAsync } from '../hooks/useAsync';
 import { useUser } from '../contexts/UserContext';
 import { Loading, EmptyState, AuthorityBadge, Badge, KnowledgeTypeBadge } from '../components/UI';
+import type { MemorySearchHit } from '../types';
 
 export default function SearchResults() {
   const [params] = useSearchParams();
   const query = params.get('q') || '';
-  const [nsId] = useState(params.get('ns') || '');
+  const nsId = params.get('ns') || '';
   const { isAdmin } = useUser();
 
-  // If we have a namespace, search memories; otherwise show message
   const { data: searchResult, loading } = useAsync(
     () => nsId ? memoryApi.search({ query, namespace_id: nsId, top_k: 10 }) : Promise.resolve(null),
     [query, nsId]
@@ -64,7 +64,7 @@ export default function SearchResults() {
   );
 }
 
-function SearchHit({ hit, isAdmin }) {
+function SearchHit({ hit, isAdmin }: { hit: MemorySearchHit; isAdmin: boolean }) {
   const m = hit.memory;
   return (
     <div className="card" style={{ padding: 14, marginBottom: 10, borderLeft: `3px solid ${m.authority === 'LOCKED' ? 'var(--green)' : 'var(--accent)'}` }}>

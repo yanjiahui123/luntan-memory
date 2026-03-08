@@ -3,24 +3,25 @@ import { useParams, useNavigate, Link } from 'react-router-dom';
 import { threadApi } from '../api/client';
 import ImagePasteTextarea from '../components/ImagePasteTextarea';
 import { TagChipsInput, StatusBadge } from '../components/UI';
+import type { Thread } from '../types';
 
 export default function NewThread() {
-  const { boardId } = useParams();
+  const { boardId } = useParams<{ boardId: string }>();
   const navigate = useNavigate();
   const [form, setForm] = useState({ title: '', content: '', tags: '', environment: '' });
   const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState(null);
+  const [error, setError] = useState<string | null>(null);
   const [showAdvanced, setShowAdvanced] = useState(false);
 
   // 相似问题拦截
-  const [similar, setSimilar] = useState([]);
+  const [similar, setSimilar] = useState<Thread[]>([]);
   const [similarLoading, setSimilarLoading] = useState(false);
   const [dismissed, setDismissed] = useState(false);
   const lastQuery = useRef('');
 
-  function update(field, value) {
+  function update(field: string, value: string) {
     setForm(f => ({ ...f, [field]: value }));
-    if (field === 'title') setDismissed(false); // 标题变化时重置关闭状态
+    if (field === 'title') setDismissed(false);
   }
 
   // debounced 搜索相似帖子
@@ -46,29 +47,28 @@ export default function NewThread() {
     return () => clearTimeout(timer);
   }, [form.title, boardId, dismissed]);
 
-  async function handleSubmit(e) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!form.title.trim() || !form.content.trim()) return;
     setSubmitting(true);
     setError(null);
     try {
       const data = {
-        namespace_id: boardId,
+        namespace_id: boardId!,
         title: form.title.trim(),
         content: form.content.trim(),
         tags: form.tags ? form.tags.split(',').map(t => t.trim()).filter(Boolean) : null,
         environment: form.environment || null,
-      };
+      } as Parameters<typeof threadApi.create>[0];
       const thread = await threadApi.create(data);
       navigate(`/threads/${thread.id}`);
     } catch (err) {
-      setError(err.message);
+      setError(err instanceof Error ? err.message : String(err));
     } finally {
       setSubmitting(false);
     }
   }
 
-  // 已解决的帖子排到前面
   const sortedSimilar = [...similar].sort((a, b) =>
     (b.status === 'RESOLVED' ? 1 : 0) - (a.status === 'RESOLVED' ? 1 : 0)
   );
@@ -98,7 +98,6 @@ export default function NewThread() {
           )}
         </div>
 
-        {/* 相似问题提示卡 */}
         {sortedSimilar.length > 0 && !dismissed && (
           <div style={{
             marginBottom: 16,
@@ -138,12 +137,8 @@ export default function NewThread() {
               }}>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{
-                    fontSize: 13,
-                    fontWeight: 500,
-                    color: 'var(--text)',
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    whiteSpace: 'nowrap',
+                    fontSize: 13, fontWeight: 500, color: 'var(--text)',
+                    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
                   }}>
                     {t.title}
                   </div>

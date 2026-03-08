@@ -2,12 +2,20 @@ import React, { useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { adminApi } from '../api/client';
 import { useUser } from '../contexts/UserContext';
-import { Loading, ErrorMsg } from '../components/UI';
+import { Loading } from '../components/UI';
+import type { ImportResult } from '../types';
 
 // ─── Result display ──────────────────────────────────────────────────────────
 
-function ResultPanel({ result }) {
-  const rows = [
+interface ResultRow {
+  label: string;
+  key: keyof ImportResult;
+  icon: string;
+  color?: string;
+}
+
+function ResultPanel({ result }: { result: ImportResult }) {
+  const rows: ResultRow[] = [
     { label: 'JSON 文件总数', key: 'total', icon: '📄' },
     { label: '成功导入', key: 'imported', icon: '✅', color: 'var(--green)' },
     { label: '跳过（已存在）', key: 'skipped', icon: '⏭️', color: 'var(--text-sec)' },
@@ -17,7 +25,7 @@ function ResultPanel({ result }) {
     { label: '记忆提取失败', key: 'extract_failed', icon: '⚠️', color: 'var(--amber)' },
   ];
 
-  const hasError = result.failed > 0 || result.extract_failed > 0;
+  const hasError = (result.failed ?? 0) > 0 || (result.extract_failed ?? 0) > 0;
 
   return (
     <div className="card fade-in" style={{ padding: 20, marginTop: 20 }}>
@@ -34,7 +42,7 @@ function ResultPanel({ result }) {
           }}>
             <div style={{ fontSize: 11, color: 'var(--text-sec)', marginBottom: 4 }}>{icon} {label}</div>
             <div style={{ fontSize: 22, fontWeight: 700, color: color || 'var(--text)' }}>
-              {result[key] ?? 0}
+              {(result[key] as number) ?? 0}
             </div>
           </div>
         ))}
@@ -45,29 +53,34 @@ function ResultPanel({ result }) {
 
 // ─── Drop zone ───────────────────────────────────────────────────────────────
 
-function FileDropZone({ files, onChange }) {
-  const inputRef = useRef(null);
+interface FileDropZoneProps {
+  files: File[];
+  onChange: React.Dispatch<React.SetStateAction<File[]>>;
+}
+
+function FileDropZone({ files, onChange }: FileDropZoneProps) {
+  const inputRef = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
 
-  function addFiles(newFiles) {
+  function addFiles(newFiles: FileList | null) {
+    if (!newFiles) return;
     const arr = Array.from(newFiles).filter(
       f => f.name.endsWith('.json') || f.name.endsWith('.zip')
     );
     if (arr.length === 0) return;
     onChange(prev => {
-      // Deduplicate by name
       const names = new Set(prev.map(f => f.name));
       return [...prev, ...arr.filter(f => !names.has(f.name))];
     });
   }
 
-  function handleDrop(e) {
+  function handleDrop(e: React.DragEvent<HTMLDivElement>) {
     e.preventDefault();
     setDragging(false);
     addFiles(e.dataTransfer.files);
   }
 
-  function removeFile(name) {
+  function removeFile(name: string) {
     onChange(prev => prev.filter(f => f.name !== name));
   }
 
@@ -163,18 +176,18 @@ function FileDropZone({ files, onChange }) {
 // ─── Main page ───────────────────────────────────────────────────────────────
 
 export default function ImportTopics() {
-  const { boardId: routeBoardId } = useParams();
+  const { boardId: routeBoardId } = useParams<{ boardId: string }>();
   const { isSuperAdmin, myNamespaces: boards, loading: userLoading } = useUser();
 
   const [namespaceId, setNamespaceId] = useState(routeBoardId || '');
-  const [files, setFiles] = useState([]);
+  const [files, setFiles] = useState<File[]>([]);
   const [workers, setWorkers] = useState(4);
   const [skipExtraction, setSkipExtraction] = useState(false);
   const [dryRun, setDryRun] = useState(false);
 
   const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState(null);
-  const [error, setError] = useState(null);
+  const [result, setResult] = useState<ImportResult | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   if (userLoading) return <Loading />;
 
@@ -192,7 +205,7 @@ export default function ImportTopics() {
       });
       setResult(res);
     } catch (err) {
-      setError(err.message);
+      setError(err instanceof Error ? err.message : String(err));
     } finally {
       setLoading(false);
     }

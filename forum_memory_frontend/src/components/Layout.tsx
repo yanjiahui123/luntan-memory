@@ -3,18 +3,24 @@ import { Link, useLocation, useNavigate, Outlet } from 'react-router-dom';
 import { userApi, setEmployeeId } from '../api/client';
 import { useUser } from '../contexts/UserContext';
 
-const FORUM_NAV = [
+interface NavItem {
+  path: string;
+  label: string;
+  icon: string;
+}
+
+const FORUM_NAV: NavItem[] = [
   { path: '/boards', label: '全部板块', icon: '🏠' },
 ];
 
-const GLOBAL_ADMIN_NAV = [
+const GLOBAL_ADMIN_NAV: NavItem[] = [
   { path: '/admin', label: '仪表盘', icon: '📊' },
   { path: '/admin/memories', label: '记忆管理', icon: '🧠' },
   { path: '/admin/pending', label: '待处理中心', icon: '📋' },
   { path: '/admin/settings', label: '板块配置', icon: '⚙️' },
 ];
 
-function boardAdminNav(boardId) {
+function boardAdminNav(boardId: string): NavItem[] {
   return [
     { path: `/admin/boards/${boardId}`, label: '仪表盘', icon: '📊' },
     { path: `/admin/boards/${boardId}/memories`, label: '记忆管理', icon: '🧠' },
@@ -44,7 +50,7 @@ export default function Layout() {
   const [inputId, setInputId] = useState('');
   const [searchQ, setSearchQ] = useState('');
 
-  function handleSearch(e) {
+  function handleSearch(e: React.FormEvent) {
     e.preventDefault();
     if (!searchQ.trim()) return;
     navigate(`/search?q=${encodeURIComponent(searchQ.trim())}${currentBoardId ? `&ns=${currentBoardId}` : ''}`);
@@ -74,8 +80,8 @@ export default function Layout() {
   const roleColor = isAdmin ? 'var(--green)' : 'var(--text-ter)';
 
   // 选择侧边栏导航
-  let nav;
-  let sidebarTitle;
+  let nav: NavItem[];
+  let sidebarTitle: string;
   if (!isAdminPage) {
     nav = FORUM_NAV;
     sidebarTitle = '导航';

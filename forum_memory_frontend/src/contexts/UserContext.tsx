@@ -1,11 +1,22 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { userApi } from '../api/client';
+import type { User, Namespace } from '../types';
 
-const UserContext = createContext(null);
+interface UserContextValue {
+  currentUser: User | null;
+  myNamespaces: Namespace[] | null;
+  loading: boolean;
+  isSuperAdmin: boolean;
+  isBoardAdmin: boolean;
+  isAdmin: boolean;
+  refetch: () => void;
+}
 
-export function UserProvider({ children }) {
-  const [currentUser, setCurrentUser] = useState(null);
-  const [myNamespaces, setMyNamespaces] = useState(null);
+const UserContext = createContext<UserContextValue | null>(null);
+
+export function UserProvider({ children }: { children: React.ReactNode }) {
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [myNamespaces, setMyNamespaces] = useState<Namespace[] | null>(null);
   const [loading, setLoading] = useState(true);
 
   const fetchUser = useCallback(async () => {
@@ -38,12 +49,14 @@ export function UserProvider({ children }) {
 
   const isSuperAdmin = currentUser?.role === 'super_admin';
   const isBoardAdmin = currentUser?.role === 'board_admin';
-  const isAdmin = isSuperAdmin || isBoardAdmin;
+  const isAdmin = (isSuperAdmin ?? false) || (isBoardAdmin ?? false);
 
   return (
     <UserContext.Provider value={{
       currentUser, myNamespaces, loading,
-      isSuperAdmin, isBoardAdmin, isAdmin,
+      isSuperAdmin: isSuperAdmin ?? false,
+      isBoardAdmin: isBoardAdmin ?? false,
+      isAdmin,
       refetch: fetchUser,
     }}>
       {children}
@@ -51,7 +64,7 @@ export function UserProvider({ children }) {
   );
 }
 
-export function useUser() {
+export function useUser(): UserContextValue {
   const ctx = useContext(UserContext);
   if (!ctx) throw new Error('useUser must be used within UserProvider');
   return ctx;
