@@ -40,6 +40,7 @@ export default function Layout() {
 
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [showSwitchUser, setShowSwitchUser] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [inputId, setInputId] = useState('');
   const [searchQ, setSearchQ] = useState('');
 
@@ -95,6 +96,13 @@ export default function Layout() {
     <>
       {/* ── Topbar ─────────────────────────────── */}
       <header className="topbar">
+        <button
+          className="topbar__hamburger"
+          onClick={() => setSidebarOpen(!sidebarOpen)}
+          aria-label="Toggle sidebar"
+        >
+          {sidebarOpen ? '\u2715' : '\u2630'}
+        </button>
         <Link to="/boards" className="topbar__logo" style={{ textDecoration: 'none' }}>知识论坛</Link>
         <form onSubmit={handleSearch} style={{ flex: 1, maxWidth: 400, margin: '0 16px' }}>
           <input
@@ -169,14 +177,20 @@ export default function Layout() {
         </div>
       </header>
 
+      {/* ── Sidebar overlay (mobile) ──────────── */}
+      {sidebarOpen && (
+        <div className="sidebar-overlay sidebar-overlay--visible" onClick={() => setSidebarOpen(false)} />
+      )}
+
       {/* ── Sidebar ────────────────────────────── */}
-      <aside className="sidebar">
+      <aside className={`sidebar${sidebarOpen ? ' sidebar--open' : ''}`}>
         <div className="sidebar__section">{sidebarTitle}</div>
         {nav.map(item => (
           <Link
             key={item.path}
             to={item.path}
             className={`sidebar__item ${location.pathname === item.path ? 'sidebar__item--active' : ''}`}
+            onClick={() => setSidebarOpen(false)}
           >
             {item.icon} {item.label}
           </Link>
@@ -184,11 +198,11 @@ export default function Layout() {
         {isAdminPage && (
           <>
             {isSuperAdmin && activeBoardId && (
-              <Link to="/admin" className="sidebar__item" style={{ marginTop: 8, color: 'var(--text-ter)', fontSize: 12 }}>
+              <Link to="/admin" className="sidebar__item" style={{ marginTop: 8, color: 'var(--text-ter)', fontSize: 12 }} onClick={() => setSidebarOpen(false)}>
                 ← 全局仪表盘
               </Link>
             )}
-            <Link to="/boards" className="sidebar__item" style={{ marginTop: 8, color: 'var(--text-ter)', fontSize: 12 }}>
+            <Link to="/boards" className="sidebar__item" style={{ marginTop: 8, color: 'var(--text-ter)', fontSize: 12 }} onClick={() => setSidebarOpen(false)}>
               ← 返回论坛
             </Link>
           </>

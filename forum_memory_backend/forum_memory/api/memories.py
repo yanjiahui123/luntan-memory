@@ -96,6 +96,19 @@ def delete_memory(memory_id: UUID, session: Session = Depends(get_db), user: Use
         raise HTTPException(404, "Memory not found")
 
 
+@router.put("/{memory_id}/restore", response_model=MemoryRead)
+def restore_memory(memory_id: UUID, session: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """Restore a COLD or ARCHIVED memory to ACTIVE status with immediate ES re-indexing."""
+    memory = memory_service.get_memory(session, memory_id)
+    if not memory:
+        raise HTTPException(404, "Memory not found")
+    check_board_permission(memory.namespace_id, session, user)
+    restored = memory_service.restore_memory(session, memory_id)
+    if not restored:
+        raise HTTPException(404, "Memory not found")
+    return restored
+
+
 @router.put("/{memory_id}/authority", response_model=MemoryRead)
 def change_authority(memory_id: UUID, data: AuthorityChange, session: Session = Depends(get_db), user: User = Depends(get_current_user)):
     memory = memory_service.get_memory(session, memory_id)

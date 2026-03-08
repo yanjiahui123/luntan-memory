@@ -224,13 +224,13 @@ function clearAll() {
 
 | 编号 | 问题 | 建议方案 |
 |------|------|---------|
-| L1 | X-Employee-Id 认证无签名验证 | 接入 OAuth2 / JWT / SSO |
-| L2 | COLD 记忆恢复有最长 10 分钟不可搜索窗口 | 恢复 ACTIVE 时主动调用 `_index_to_es()` |
-| L3 | `bulk_refresh_quality` commit 后 N+1 惰性加载 | commit 前提取所需属性到普通变量 |
-| L4 | Dagster sensor 无 cursor 管理 | 使用 Dagster cursor 记录已处理事件 ID，避免崩溃后重复处理 |
-| L5 | 无响应式设计 | 添加 `@media` 断点、可折叠 sidebar、grid 自适应 |
+| L1 | X-Employee-Id 认证无签名验证 | ✅ 已实现 JWT 认证（pyjwt，`POST /auth/login`，Bearer token + X-Employee-Id 双模式） |
+| L2 | COLD 记忆恢复有最长 10 分钟不可搜索窗口 | ✅ 已实现 `restore_memory()` + `PUT /memories/{id}/restore`，恢复时立即调用 `_index_to_es()` |
+| L3 | `bulk_refresh_quality` commit 后 N+1 惰性加载 | ✅ 已修复（预查询所有 namespace_id→es_index_name 映射，单次 SQL 替代 N 次 `session.get`） |
+| L4 | Dagster sensor 无 cursor 管理 | ✅ 已实现（事件驱动 sensor 用 JSON cursor 记录已分发事件 ID；定时 sensor 用 ISO 时间戳 cursor） |
+| L5 | 无响应式设计 | ✅ 已实现（`@media` 断点 767px/1024px，可折叠 sidebar + hamburger 菜单，grid 自适应） |
 | L6 | 前端无 TypeScript | `.jsx → .tsx`，添加类型定义 |
-| L7 | AUDN 仅 KNN 召回 | KNN top-15 ∪ 相同 tags ∪ 相同 knowledge_type 多维度召回 |
+| L7 | AUDN 仅 KNN 召回 | ✅ 已实现（KNN ∪ 同 tags ∪ 同 knowledge_type 多维度召回 + 去重） |
 | L8 | Custom Provider `verify=False` | 改为可配置环境变量 `FM_CUSTOM_VERIFY_CERTS` |
 
 ---
@@ -288,11 +288,11 @@ function clearAll() {
 | **3.2.3** | Promise rejection 静默吞掉 | ✅ 已修复（ThreadDetail×2, MemoryList, MemoryDetail 均改为 console.warn） |
 | **3.3.1** | UserContext 链式请求容错不足 | ✅ 已修复（myNamespaces 独立 try-catch，me() 成功不受影响） |
 | **3.3.2** | clearAll 丢失 boardId | ✅ 已修复（clearAll 保留 boardId || ''） |
-| **L1** | X-Employee-Id 认证简单 | ⚪ 长期 |
-| **L2** | COLD 恢复不可搜索窗口 | ⚪ 长期 |
-| **L3** | bulk_refresh commit 后 N+1 | ⚪ 长期 |
-| **L4** | sensor 无 cursor 管理 | ⚪ 长期 |
-| **L5** | 无响应式设计 | ⚪ 长期 |
+| **L1** | X-Employee-Id 认证简单 | ✅ 已实现（JWT + X-Employee-Id 双模式） |
+| **L2** | COLD 恢复不可搜索窗口 | ✅ 已修复（`restore_memory` 立即 ES 索引） |
+| **L3** | bulk_refresh commit 后 N+1 | ✅ 已修复（预查询 namespace 映射） |
+| **L4** | sensor 无 cursor 管理 | ✅ 已实现（JSON cursor + ISO 时间戳） |
+| **L5** | 无响应式设计 | ✅ 已实现（响应式断点 + 可折叠 sidebar） |
 | **L6** | 前端 TypeScript 迁移 | ⚪ 长期 |
-| **L7** | AUDN 多维度召回 | ⚪ 长期 |
+| **L7** | AUDN 多维度召回 | ✅ 已实现（KNN ∪ tags ∪ knowledge_type） |
 | **L8** | Custom Provider verify=False | ⚪ 长期 |

@@ -18,6 +18,7 @@ dependencies = [
     "dagster>=1.6",
     "dagster-webserver>=1.6",
     "slowapi>=0.1.9",
+    "pyjwt>=2.8",
 ]
 
 [project.optional-dependencies]

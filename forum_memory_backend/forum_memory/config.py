@@ -52,6 +52,12 @@ class Settings(BaseSettings):
     rag_base_url: str = ""
     rag_timeout: int = 30
 
+    # JWT authentication
+    jwt_secret_key: str = ""  # Required when jwt_enabled=True; set via FM_JWT_SECRET_KEY
+    jwt_algorithm: str = "HS256"
+    jwt_expire_hours: int = 24
+    jwt_enabled: bool = False  # Set True to require JWT; False keeps X-Employee-Id fallback
+
     # File uploads
     upload_dir: str = "uploads"
     upload_max_size_mb: int = 5
@@ -80,6 +86,10 @@ class Settings(BaseSettings):
                 missing.append("FM_CUSTOM_RERANK_URL")
             if missing:
                 raise ValueError(f"Required for custom provider: {', '.join(missing)}")
+
+        # JWT validation
+        if self.jwt_enabled and not self.jwt_secret_key:
+            raise ValueError("FM_JWT_SECRET_KEY is required when jwt_enabled is True")
 
         # Lifecycle day ordering
         if self.cold_inactive_days >= self.archive_inactive_days:

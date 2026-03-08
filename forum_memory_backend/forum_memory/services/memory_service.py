@@ -259,6 +259,43 @@ def _apply_delete(session: Session, result: AUDNResult) -> Memory | None:
     return memory
 
 
+def restore_memory(session: Session, memory_id: UUID) -> Memory | None:
+    """Restore a COLD or ARCHIVED memory to ACTIVE status and immediately re-index to ES.
+
+    This eliminates the 10-minute unindexed window that would occur if relying on
+    the es_sync_repair_sensor to pick up the restored memory.
+    """
+    memory = session.get(Memory, memory_id)
+    if not memory:
+        return None
+    if memory.status not in (MemoryStatus.COLD, MemoryStatus.ARCHIVED):
+        return memory  # Already ACTIVE or DELETED, no-op
+
+    before = _snapshot(memory)
+    old_status = memory.status
+    memory.status = MemoryStatus.ACTIVE
+    memory.updated_at = datetime.now(timezone.utc)
+    memory.indexed_at = None  # Will be set after successful ES index
+    _add_log(session, memory, OperationType.UPDATE, reason=f"{old_status} → ACTIVE (restored)", before=before)
+    session.commit()
+    session.refresh(memory)
+
+    # Immediately re-index to ES so the memory is searchable right away
+    index_name = _resolve_es_index(session, memory.namespace_id)
+    if _index_to_es(memory, index_name=index_name):
+        memory.indexed_at = datetime.now(timezone.utc)
+        session.commit()
+    else:
+        logger.warning(
+            "Memory %s restored to ACTIVE but ES index failed; "
+            "es_sync_repair_sensor will fix within 10 minutes",
+            memory.id,
+        )
+
+    logger.info("Restored memory %s from %s to ACTIVE", memory.id, old_status)
+    return memory
+
+
 def transition_cold_memories(session: Session, cold_days: int = 180) -> int:
     """Transition ACTIVE memories inactive for cold_days to COLD status."""
     from datetime import timedelta
@@ -374,14 +411,17 @@ def bulk_refresh_quality(session: Session, batch_size: int = 200) -> int:
                 continue
 
             # Group by namespace ES index for bulk reindex
+            # Pre-fetch all namespace_id → es_index_name in a single query to avoid N+1
             now = datetime.now(timezone.utc)
-            ns_cache: dict = {}
+            unique_ns_ids = list({m.namespace_id for m in changed})
+            ns_rows = list(session.exec(
+                select(Namespace.id, Namespace.es_index_name).where(Namespace.id.in_(unique_ns_ids))
+            ).all())
+            ns_cache = {row[0]: row[1] for row in ns_rows}
             by_index: dict = {}  # index_name → [(Memory, embedding)]
             for m, emb in zip(changed, embeddings):
-                if m.namespace_id not in ns_cache:
-                    ns = session.get(Namespace, m.namespace_id)
-                    ns_cache[m.namespace_id] = ns.es_index_name if ns else None
-                by_index.setdefault(ns_cache[m.namespace_id], []).append((m, emb))
+                index_name = ns_cache.get(m.namespace_id)
+                by_index.setdefault(index_name, []).append((m, emb))
 
             for index_name, pairs in by_index.items():
                 if index_name is None:

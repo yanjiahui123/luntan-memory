@@ -249,6 +249,43 @@ def knn_search(
         return []
 
 
+def term_search(
+    namespace_id: UUID,
+    field: str,
+    values: list[str],
+    limit: int = 15,
+    status_filter: str = "ACTIVE",
+    index_name: str | None = None,
+) -> list[dict]:
+    """Search by exact term match on a keyword field (e.g. tags, knowledge_type).
+
+    Returns [{"memory_id": str, "score": float}, ...]
+    """
+    es = get_es_client()
+    if not es or not values:
+        return []
+    name = index_name or _default_index_name()
+
+    try:
+        resp = es.search(
+            index=name,
+            size=limit,
+            query={
+                "bool": {
+                    "must": {"terms": {field: values}},
+                    "filter": [
+                        {"term": {"namespace_id": str(namespace_id)}},
+                        {"term": {"status": status_filter}},
+                    ],
+                }
+            },
+        )
+        return _parse_hits(resp)
+    except Exception:
+        logger.exception("ES term_search failed for field=%s values=%s", field, values)
+        return []
+
+
 def _parse_hits(resp: dict) -> list[dict]:
     """Extract memory_id and score from ES response."""
     hits = resp.get("hits", {}).get("hits", [])

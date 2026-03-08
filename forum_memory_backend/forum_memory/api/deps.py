@@ -1,4 +1,10 @@
-"""FastAPI dependencies — sync session, user lookup, and access control."""
+"""FastAPI dependencies — sync session, user lookup, and access control.
+
+Authentication strategy:
+- When jwt_enabled=True: Accepts Authorization: Bearer <token> (preferred)
+  and falls back to X-Employee-Id header for backward compatibility.
+- When jwt_enabled=False (default): Only X-Employee-Id header is used.
+"""
 
 from uuid import UUID
 
@@ -16,19 +22,54 @@ def get_db() -> Session:
     yield from get_session()
 
 
+def _resolve_user_from_jwt(authorization: str, session: Session) -> User | None:
+    """Try to resolve user from JWT Bearer token. Returns None if not applicable."""
+    from forum_memory.config import get_settings
+    settings = get_settings()
+    if not settings.jwt_enabled:
+        return None
+
+    if not authorization or not authorization.startswith("Bearer "):
+        return None
+
+    from forum_memory.core.auth import decode_access_token
+    token = authorization[7:]  # Strip "Bearer "
+    payload = decode_access_token(token)
+    if not payload:
+        raise HTTPException(401, "Token 无效或已过期，请重新登录")
+
+    employee_id = payload.get("sub")
+    if not employee_id:
+        raise HTTPException(401, "Token 格式异常")
+
+    stmt = select(User).where(User.employee_id == employee_id, User.is_active == True)
+    user = session.exec(stmt).first()
+    if not user:
+        raise HTTPException(401, f"Token 对应的工号 {employee_id} 未注册或已停用")
+    return user
+
+
 def get_current_user(
     x_employee_id: str = Header(default=""),
+    authorization: str = Header(default=""),
     session: Session = Depends(get_db),
 ) -> User:
     """
-    根据请求头 X-Employee-Id 查找用户。
-
-    FastAPI 的 Header() 自动将参数名下划线转连字符匹配，
-    即 x_employee_id → 匹配 x-employee-id（HTTP 头不区分大小写，
-    前端发 X-Employee-Id 同样能匹配）。
+    认证用户。支持两种方式：
+    1. JWT: Authorization: Bearer <token>（jwt_enabled=True 时优先使用）
+    2. 工号: X-Employee-Id 请求头（向后兼容）
     """
+    # Try JWT first (if enabled)
+    jwt_user = _resolve_user_from_jwt(authorization, session)
+    if jwt_user:
+        return jwt_user
+
+    # Fall back to X-Employee-Id
     employee_id = x_employee_id.strip()
     if not employee_id:
+        from forum_memory.config import get_settings
+        if get_settings().jwt_enabled:
+            raise HTTPException(401, "缺少认证信息：请提供 Authorization: Bearer <token> 或 X-Employee-Id 请求头")
         raise HTTPException(401, "缺少 X-Employee-Id 请求头，请设置你的工号")
 
     stmt = select(User).where(User.employee_id == employee_id, User.is_active == True)
