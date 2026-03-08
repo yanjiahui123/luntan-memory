@@ -217,6 +217,23 @@ export interface ImportResult {
   [key: string]: number | string[] | undefined;
 }
 
+// ── Import job (async) ────────────────────────────────────────────────────
+
+export type ImportJobStatus = 'pending' | 'running' | 'done' | 'error';
+
+export interface ImportJob {
+  job_id: string;
+  status: ImportJobStatus;
+  total_files: number;
+  created_at: string;
+}
+
+export interface ImportJobDetail extends ImportJob {
+  result: ImportResult | null;
+  error: string | null;
+  finished_at: string | null;
+}
+
 export interface QualityAlert {
   id: string;
   content: string;

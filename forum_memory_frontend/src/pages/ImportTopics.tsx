@@ -1,9 +1,9 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { adminApi } from '../api/client';
 import { useUser } from '../contexts/UserContext';
 import { Loading } from '../components/UI';
-import type { ImportResult } from '../types';
+import type { ImportResult, ImportJobDetail } from '../types';
 
 // ─── Result display ──────────────────────────────────────────────────────────
 
@@ -47,6 +47,52 @@ function ResultPanel({ result }: { result: ImportResult }) {
           </div>
         ))}
       </div>
+    </div>
+  );
+}
+
+// ─── Running job progress panel ──────────────────────────────────────────────
+
+function JobProgressPanel({ job }: { job: ImportJobDetail }) {
+  const elapsed = job.finished_at
+    ? Math.round((new Date(job.finished_at).getTime() - new Date(job.created_at).getTime()) / 1000)
+    : Math.round((Date.now() - new Date(job.created_at).getTime()) / 1000);
+
+  const minutes = Math.floor(elapsed / 60);
+  const seconds = elapsed % 60;
+  const elapsedLabel = minutes > 0 ? `${minutes}分${seconds}秒` : `${seconds}秒`;
+
+  const statusConfig: Record<string, { icon: string; label: string; color: string }> = {
+    pending: { icon: '⏳', label: '等待开始…', color: 'var(--text-sec)' },
+    running: { icon: '🔄', label: '正在导入中…', color: 'var(--accent)' },
+    done:    { icon: '✅', label: '导入完成', color: 'var(--green)' },
+    error:   { icon: '❌', label: '导入出错', color: 'var(--red)' },
+  };
+  const cfg = statusConfig[job.status] ?? statusConfig.pending;
+
+  return (
+    <div className="card fade-in" style={{ padding: 20, marginTop: 20 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
+        <span style={{ fontSize: 20 }}>{cfg.icon}</span>
+        <div>
+          <div style={{ fontWeight: 700, color: cfg.color }}>{cfg.label}</div>
+          <div style={{ fontSize: 12, color: 'var(--text-ter)', marginTop: 2 }}>
+            任务 ID：{job.job_id.slice(0, 8)}… · 已用时 {elapsedLabel} · 共 {job.total_files} 个文件
+          </div>
+        </div>
+      </div>
+
+      {job.status === 'running' && (
+        <div style={{ fontSize: 12, color: 'var(--text-sec)', padding: '8px 12px', background: 'var(--surface-alt)', borderRadius: 'var(--radius)' }}>
+          💡 大量文件包含记忆提取（LLM 调用）时需要较长时间，请耐心等待。你可以离开此页面，任务会在后台继续运行。
+        </div>
+      )}
+
+      {job.status === 'error' && job.error && (
+        <div style={{ color: 'var(--red)', fontSize: 13, padding: '8px 12px', background: 'var(--red-light, #fff0f0)', borderRadius: 'var(--radius)' }}>
+          错误详情：{job.error}
+        </div>
+      )}
     </div>
   );
 }
@@ -175,6 +221,8 @@ function FileDropZone({ files, onChange }: FileDropZoneProps) {
 
 // ─── Main page ───────────────────────────────────────────────────────────────
 
+const POLL_INTERVAL = 5_000; // 每 5 秒轮询一次
+
 export default function ImportTopics() {
   const { boardId: routeBoardId } = useParams<{ boardId: string }>();
   const { isSuperAdmin, myNamespaces: boards, loading: userLoading } = useUser();
@@ -185,31 +233,70 @@ export default function ImportTopics() {
   const [skipExtraction, setSkipExtraction] = useState(false);
   const [dryRun, setDryRun] = useState(false);
 
-  const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState<ImportResult | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  // 上传阶段状态
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
 
-  if (userLoading) return <Loading />;
+  // 异步任务状态
+  const [job, setJob] = useState<ImportJobDetail | null>(null);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // 清理轮询定时器
+  useEffect(() => {
+    return () => { if (pollRef.current) clearInterval(pollRef.current); };
+  }, []);
+
+  // 启动轮询
+  function startPolling(jobId: string) {
+    if (pollRef.current) clearInterval(pollRef.current);
+    pollRef.current = setInterval(async () => {
+      try {
+        const status = await adminApi.importJobStatus(jobId);
+        setJob(status);
+        if (status.status === 'done' || status.status === 'error') {
+          clearInterval(pollRef.current!);
+          pollRef.current = null;
+        }
+      } catch {
+        // 轮询失败时不中断，继续重试
+      }
+    }, POLL_INTERVAL);
+  }
 
   async function handleImport() {
-    if (!namespaceId) { setError('请选择目标板块'); return; }
-    if (files.length === 0) { setError('请选择要导入的文件'); return; }
-    setError(null);
-    setResult(null);
-    setLoading(true);
+    if (!namespaceId) { setUploadError('请选择目标板块'); return; }
+    if (files.length === 0) { setUploadError('请选择要导入的文件'); return; }
+    setUploadError(null);
+    setJob(null);
+    setUploading(true);
     try {
-      const res = await adminApi.importTopicsUpload(namespaceId, files, {
+      const jobInfo = await adminApi.importTopicsUpload(namespaceId, files, {
         workers,
         skipExtraction,
         dryRun,
       });
-      setResult(res);
+      // 构造初始 job 状态并开始轮询
+      const initialJob: ImportJobDetail = {
+        ...jobInfo,
+        result: null,
+        error: null,
+        finished_at: null,
+      };
+      setJob(initialJob);
+      setFiles([]); // 清空文件选择，避免重复提交
+      startPolling(jobInfo.job_id);
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setUploadError(err instanceof Error ? err.message : String(err));
     } finally {
-      setLoading(false);
+      setUploading(false);
     }
   }
+
+  if (userLoading) return <Loading />;
+
+  const isRunning = job?.status === 'pending' || job?.status === 'running';
+  const isDone = job?.status === 'done';
+  const isError = job?.status === 'error';
 
   return (
     <div>
@@ -229,7 +316,7 @@ export default function ImportTopics() {
           <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6 }}>
             目标板块 *
           </label>
-          <select value={namespaceId} onChange={e => setNamespaceId(e.target.value)}>
+          <select value={namespaceId} onChange={e => setNamespaceId(e.target.value)} disabled={isRunning}>
             <option value="">-- 请选择板块 --</option>
             {boards?.map(b => (
               <option key={b.id} value={b.id}>{b.display_name || b.name}</option>
@@ -265,6 +352,7 @@ export default function ImportTopics() {
                 value={workers}
                 onChange={e => setWorkers(Number(e.target.value))}
                 style={{ width: '100%' }}
+                disabled={isRunning}
               />
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: 'var(--text-ter)', marginTop: 2 }}>
                 <span>1（稳定）</span><span>8（最快）</span>
@@ -278,6 +366,7 @@ export default function ImportTopics() {
                   type="checkbox"
                   checked={skipExtraction}
                   onChange={e => setSkipExtraction(e.target.checked)}
+                  disabled={isRunning}
                 />
                 <span>
                   <strong>跳过记忆提取</strong>
@@ -289,6 +378,7 @@ export default function ImportTopics() {
                   type="checkbox"
                   checked={dryRun}
                   onChange={e => setDryRun(e.target.checked)}
+                  disabled={isRunning}
                 />
                 <span>
                   <strong>演练模式</strong>
@@ -299,10 +389,10 @@ export default function ImportTopics() {
           </div>
         </div>
 
-        {/* Error */}
-        {error && (
+        {/* Upload error */}
+        {uploadError && (
           <div style={{ color: 'var(--red)', fontSize: 13, marginBottom: 12, padding: '8px 12px', background: 'var(--red-light, #fff0f0)', borderRadius: 'var(--radius)' }}>
-            ❌ {error}
+            ❌ {uploadError}
           </div>
         )}
 
@@ -318,20 +408,34 @@ export default function ImportTopics() {
           <button
             className="btn-primary"
             onClick={handleImport}
-            disabled={loading || !namespaceId || files.length === 0}
+            disabled={uploading || isRunning || !namespaceId || files.length === 0}
           >
-            {loading ? '导入中...' : dryRun ? '🔍 演练预览' : '🚀 开始导入'}
+            {uploading ? '上传中…' : dryRun ? '🔍 演练预览' : '🚀 开始导入'}
           </button>
-          {loading && (
+          {uploading && (
             <span style={{ fontSize: 12, color: 'var(--text-sec)' }}>
-              正在处理，包含记忆提取时可能需要数分钟...
+              正在上传文件，请稍候…
             </span>
+          )}
+          {isRunning && (
+            <span style={{ fontSize: 12, color: 'var(--accent)' }}>
+              ⏳ 后台导入中，每 5 秒自动刷新状态…
+            </span>
+          )}
+          {(isDone || isError) && (
+            <button
+              className="btn-sm btn-secondary"
+              onClick={() => { setJob(null); setUploadError(null); }}
+            >
+              重新导入
+            </button>
           )}
         </div>
       </div>
 
-      {/* Result */}
-      {result && <ResultPanel result={result} />}
+      {/* Job progress / result */}
+      {job && !isDone && <JobProgressPanel job={job} />}
+      {isDone && job?.result && <ResultPanel result={job.result} />}
 
       {/* Notes */}
       <div className="card" style={{ padding: 16, marginTop: 16, fontSize: 12, color: 'var(--text-sec)' }}>
@@ -342,6 +446,7 @@ export default function ImportTopics() {
           <li>有最佳回答 (<code>best_answer_url</code> 或 <code>is_solution:true</code>) 的帖子会标记为已解决并提取知识</li>
           <li><code>topic_closed:true</code> 但无最佳回答的帖子标记为超时关闭</li>
           <li>并发数越高导入越快，但对 LLM API 的调用量也越大</li>
+          <li>大批量导入（数百篇以上）时，任务在后台运行，<strong>可关闭此页面</strong>，服务重启前结果均可查</li>
         </ul>
       </div>
     </div>

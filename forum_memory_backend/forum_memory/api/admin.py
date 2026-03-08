@@ -2,8 +2,13 @@
 
 import logging
 import tempfile
+import threading
+import uuid
 import zipfile
+from dataclasses import dataclass, field
+from datetime import datetime
 from pathlib import Path
+from typing import Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
@@ -27,6 +32,63 @@ def _require_super_admin(user: User = Depends(get_current_user)) -> User:
     if user.role != SystemRole.SUPER_ADMIN:
         raise HTTPException(403, "仅超级管理员可执行此操作")
     return user
+
+
+# ─── Background import job state ────────────────────────────────────────────
+
+JobStatus = Literal["pending", "running", "done", "error"]
+
+
+@dataclass
+class ImportJob:
+    job_id: str
+    status: JobStatus = "pending"
+    total_files: int = 0
+    result: dict = field(default_factory=dict)
+    error: str | None = None
+    created_at: str = field(default_factory=lambda: datetime.utcnow().isoformat())
+    finished_at: str | None = None
+
+
+# In-process job store: job_id → ImportJob
+# 进程内存储，重启后清空（对于长时批量任务已足够）
+_import_jobs: dict[str, ImportJob] = {}
+_import_jobs_lock = threading.Lock()
+
+
+def _run_import_thread(job_id: str, tmp_path: Path, ns_uuid: UUID,
+                       workers: int, skip_extraction: bool, dry_run: bool) -> None:
+    """后台线程执行导入，完成后更新 job 状态。"""
+    from forum_memory.scripts.import_topics import run_import
+
+    with _import_jobs_lock:
+        _import_jobs[job_id].status = "running"
+
+    try:
+        stats = run_import(
+            dir_path=tmp_path,
+            namespace_id=ns_uuid,
+            workers=workers,
+            skip_extraction=skip_extraction,
+            dry_run=dry_run,
+        )
+        with _import_jobs_lock:
+            job = _import_jobs[job_id]
+            job.status = "done"
+            job.result = stats
+            job.finished_at = datetime.utcnow().isoformat()
+        logger.info("import job %s done: %s", job_id, stats)
+    except Exception as e:
+        with _import_jobs_lock:
+            job = _import_jobs[job_id]
+            job.status = "error"
+            job.error = str(e)
+            job.finished_at = datetime.utcnow().isoformat()
+        logger.exception("import job %s failed", job_id)
+    finally:
+        # 删除临时目录（线程负责清理）
+        import shutil
+        shutil.rmtree(tmp_path, ignore_errors=True)
 
 
 # ─── Server-path import (super admin only) ──────────────────────────────────
@@ -69,7 +131,14 @@ def import_topics(
 
 # ─── File-upload import (super admin or board admin) ────────────────────────
 
-@router.post("/import-topics/upload", response_model=ImportTopicsResult)
+class ImportJobResponse(BaseModel):
+    job_id: str
+    status: JobStatus
+    total_files: int
+    created_at: str
+
+
+@router.post("/import-topics/upload", response_model=ImportJobResponse)
 def import_topics_upload(
     namespace_id: str = Form(..., description="目标板块 UUID"),
     workers: int = Form(default=4, ge=1, le=16),
@@ -78,8 +147,10 @@ def import_topics_upload(
     files: list[UploadFile] = File(..., description="JSON 文件或 ZIP 压缩包"),
     session: Session = Depends(get_db),
     user: User = Depends(get_current_user),
-) -> ImportTopicsResult:
+) -> ImportJobResponse:
     """通过文件上传批量导入历史帖子（超级管理员或板块管理员）。
+
+    立即返回 job_id，后台异步执行。通过 GET /admin/import-jobs/{job_id} 查询进度。
 
     支持上传格式：
     - 多个 .json 文件（直接选择 JSON）
@@ -102,63 +173,100 @@ def import_topics_upload(
     if not files:
         raise HTTPException(400, "未上传任何文件")
 
+    # ── Save uploaded files to a persistent temp directory ────────────────────
+    # 注意：不使用 with 语句，由后台线程负责清理
+    tmp_path = Path(tempfile.mkdtemp(prefix="fm_import_"))
+    json_count = 0
+
+    for uf in files:
+        filename = uf.filename or "unknown"
+        content = uf.file.read()
+
+        if filename.lower().endswith(".zip"):
+            zip_tmp = tmp_path / "upload.zip"
+            zip_tmp.write_bytes(content)
+            try:
+                with zipfile.ZipFile(zip_tmp) as zf:
+                    for member in zf.namelist():
+                        if member.lower().endswith(".json") and not member.startswith("__"):
+                            dest_name = Path(member).name
+                            (tmp_path / dest_name).write_bytes(zf.read(member))
+                            json_count += 1
+            except zipfile.BadZipFile:
+                import shutil
+                shutil.rmtree(tmp_path, ignore_errors=True)
+                raise HTTPException(400, f"文件 {filename} 不是有效的 ZIP 压缩包")
+            finally:
+                zip_tmp.unlink(missing_ok=True)
+
+        elif filename.lower().endswith(".json"):
+            dest = tmp_path / Path(filename).name
+            dest.write_bytes(content)
+            json_count += 1
+        else:
+            logger.warning("Skipping unsupported file type: %s", filename)
+
+    if json_count == 0:
+        import shutil
+        shutil.rmtree(tmp_path, ignore_errors=True)
+        raise HTTPException(400, "未找到任何 JSON 文件（支持直接上传 .json 或包含 .json 的 .zip）")
+
+    # ── Create job & launch background thread ─────────────────────────────────
+    job_id = str(uuid.uuid4())
+    job = ImportJob(job_id=job_id, total_files=json_count)
+    with _import_jobs_lock:
+        _import_jobs[job_id] = job
+
     logger.info(
-        "import-topics (upload): namespace=%s  files=%d  workers=%d  user=%s  dry_run=%s",
-        ns_uuid, len(files), workers, user.employee_id, dry_run,
+        "import-topics (upload): namespace=%s  files=%d  workers=%d  user=%s  dry_run=%s  job=%s",
+        ns_uuid, json_count, workers, user.employee_id, dry_run, job_id,
     )
 
-    from forum_memory.scripts.import_topics import run_import
+    t = threading.Thread(
+        target=_run_import_thread,
+        args=(job_id, tmp_path, ns_uuid, workers, skip_extraction, dry_run),
+        daemon=True,
+        name=f"import-{job_id[:8]}",
+    )
+    t.start()
 
-    # ── Save uploaded files to a temp directory ───────────────────────────────
-    with tempfile.TemporaryDirectory(prefix="fm_import_") as tmpdir:
-        tmp_path = Path(tmpdir)
-        json_count = 0
+    return ImportJobResponse(
+        job_id=job_id,
+        status="pending",
+        total_files=json_count,
+        created_at=job.created_at,
+    )
 
-        for uf in files:
-            filename = uf.filename or "unknown"
-            content = uf.file.read()
 
-            if filename.lower().endswith(".zip"):
-                # Extract all JSON files from ZIP (ignore nested dirs)
-                zip_tmp = tmp_path / "upload.zip"
-                zip_tmp.write_bytes(content)
-                try:
-                    with zipfile.ZipFile(zip_tmp) as zf:
-                        for member in zf.namelist():
-                            if member.lower().endswith(".json") and not member.startswith("__"):
-                                dest_name = Path(member).name
-                                (tmp_path / dest_name).write_bytes(zf.read(member))
-                                json_count += 1
-                except zipfile.BadZipFile:
-                    raise HTTPException(400, f"文件 {filename} 不是有效的 ZIP 压缩包")
-                finally:
-                    zip_tmp.unlink(missing_ok=True)
+class ImportJobStatusResponse(BaseModel):
+    job_id: str
+    status: JobStatus
+    total_files: int
+    result: dict | None = None
+    error: str | None = None
+    created_at: str
+    finished_at: str | None = None
 
-            elif filename.lower().endswith(".json"):
-                dest = tmp_path / Path(filename).name
-                dest.write_bytes(content)
-                json_count += 1
-            else:
-                logger.warning("Skipping unsupported file type: %s", filename)
 
-        if json_count == 0:
-            raise HTTPException(400, "未找到任何 JSON 文件（支持直接上传 .json 或包含 .json 的 .zip）")
-
-        logger.info("Prepared %d JSON files in temp dir, starting import…", json_count)
-
-        try:
-            stats = run_import(
-                dir_path=tmp_path,
-                namespace_id=ns_uuid,
-                workers=workers,
-                skip_extraction=skip_extraction,
-                dry_run=dry_run,
-            )
-        except Exception as e:
-            logger.exception("import_topics (upload) failed")
-            raise HTTPException(500, f"导入失败: {e}")
-
-    return ImportTopicsResult(**stats)
+@router.get("/import-jobs/{job_id}", response_model=ImportJobStatusResponse)
+def get_import_job(
+    job_id: str,
+    _admin: User = Depends(require_admin),
+) -> ImportJobStatusResponse:
+    """查询批量导入任务的进度与结果。"""
+    with _import_jobs_lock:
+        job = _import_jobs.get(job_id)
+    if not job:
+        raise HTTPException(404, f"任务 {job_id} 不存在（可能服务已重启）")
+    return ImportJobStatusResponse(
+        job_id=job.job_id,
+        status=job.status,
+        total_files=job.total_files,
+        result=job.result if job.result else None,
+        error=job.error,
+        created_at=job.created_at,
+        finished_at=job.finished_at,
+    )
 
 
 # ─── Quality Alerts ──────────────────────────────────────────────────────────

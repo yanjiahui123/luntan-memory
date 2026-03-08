@@ -5,7 +5,7 @@ import type {
   Feedback, FeedbackSummary, FeedbackType,
   Moderator, DictionaryEntry,
   PaginatedResult, AuthLoginResponse, UploadResponse, ImportResult, QualityAlert,
-  MemorySearchResponse,
+  MemorySearchResponse, ImportJob, ImportJobDetail,
 } from '../types';
 
 const BASE = '/api/v1';
@@ -223,12 +223,10 @@ export const adminApi = {
   },
   dismissAlert: (memoryId: string) => post<null>(`/admin/quality-alerts/${memoryId}/dismiss`),
   /**
-   * 通过文件上传批量导入历史帖子。
-   * @param namespaceId  - 目标板块 UUID
-   * @param files        - JSON 文件或 ZIP 压缩包数组
-   * @param opts         - { workers, skipExtraction, dryRun }
+   * 通过文件上传批量导入历史帖子（异步，立即返回 job_id）。
+   * 用 importJobStatus(job_id) 轮询进度。
    */
-  importTopicsUpload: (namespaceId: string, files: File[], opts: ImportOptions = {}): Promise<ImportResult> => {
+  importTopicsUpload: (namespaceId: string, files: File[], opts: ImportOptions = {}): Promise<ImportJob> => {
     const form = new FormData();
     form.append('namespace_id', namespaceId);
     form.append('workers', String(opts.workers ?? 4));
@@ -239,15 +237,19 @@ export const adminApi = {
       method: 'POST',
       headers: authHeaders(),
       body: form,
-      signal: AbortSignal.timeout(300_000),  // 5 分钟，批量导入文件可能较大
+      signal: AbortSignal.timeout(120_000),  // 仅等待文件上传 + 校验（2分钟）
     }).then(async res => {
       if (!res.ok) {
         const err = await res.json().catch(() => ({ detail: res.statusText }));
         throw new Error((err as { detail?: string }).detail || 'Import failed');
       }
-      return res.json() as Promise<ImportResult>;
+      return res.json() as Promise<ImportJob>;
     });
   },
+
+  /** 查询异步导入任务状态 */
+  importJobStatus: (jobId: string): Promise<ImportJobDetail> =>
+    get<ImportJobDetail>(`/admin/import-jobs/${jobId}`),
 };
 
 // ── Uploads ──────────────────────────────────
