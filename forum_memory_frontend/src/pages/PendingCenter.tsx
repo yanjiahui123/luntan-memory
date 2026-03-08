@@ -3,17 +3,21 @@ import { Link, useParams } from 'react-router-dom';
 import { memoryApi, adminApi } from '../api/client';
 import { useAsync } from '../hooks/useAsync';
 import { Loading, ErrorMsg, EmptyState, Badge, AuthorityBadge, QualityDot } from '../components/UI';
+import type { Memory, QualityAlert } from '../types';
+import type { MemoryListParams } from '../api/client';
 
 const TABS = [
   { key: 'all', label: '全部' },
   { key: 'pending', label: '超时待确认' },
   { key: 'low_quality', label: '低质量' },
   { key: 'quality_alert', label: '质量告警' },
-];
+] as const;
+
+type TabKey = typeof TABS[number]['key'];
 
 export default function PendingCenter() {
-  const { boardId } = useParams();
-  const [tab, setTab] = useState('all');
+  const { boardId } = useParams<{ boardId?: string }>();
+  const [tab, setTab] = useState<TabKey>('all');
 
   return (
     <div>
@@ -35,20 +39,23 @@ export default function PendingCenter() {
   );
 }
 
-function MemoryTab({ tab, boardId }) {
+function MemoryTab({ tab, boardId }: { tab: Exclude<TabKey, 'quality_alert'>; boardId?: string }) {
   const nsFilter = boardId ? { namespace_id: boardId } : {};
-  const params = tab === 'pending' ? { ...nsFilter, pending_confirm: true, page: 1, size: 50 }
-    : tab === 'low_quality' ? { ...nsFilter, status: 'ACTIVE', page: 1, size: 50 }
-    : { ...nsFilter, pending_confirm: true, page: 1, size: 50 };
+  const params: MemoryListParams = tab === 'pending'
+    ? { ...nsFilter, pending_human_confirm: true, page: 1, size: 50 }
+    : tab === 'low_quality'
+    ? { ...nsFilter, lifecycle_status: 'ACTIVE', page: 1, size: 50 }
+    : { ...nsFilter, pending_human_confirm: true, page: 1, size: 50 };
 
-  const { data: items, loading, error, refetch } = useAsync(() => memoryApi.list(params), [tab, boardId]);
+  const { data, loading, error, refetch } = useAsync(() => memoryApi.list(params), [tab, boardId]);
+  const items = data?.items;
 
-  async function handlePromote(id) {
-    await memoryApi.changeAuthority(id, { authority: 'LOCKED', reason: '管理员从待处理中心确认' });
+  async function handlePromote(id: string) {
+    await memoryApi.changeAuthority(id, { authority: 'LOCKED' });
     refetch();
   }
 
-  async function handleDiscard(id) {
+  async function handleDiscard(id: string) {
     await memoryApi.delete(id);
     refetch();
   }
@@ -57,19 +64,23 @@ function MemoryTab({ tab, boardId }) {
   if (error) return <ErrorMsg message={error} onRetry={refetch} />;
   if (!items?.length) return <EmptyState icon="✅" message="没有待处理事项，一切正常！" />;
 
-  return items.map(m => (
-    <PendingItem key={m.id} memory={m} onPromote={() => handlePromote(m.id)} onDiscard={() => handleDiscard(m.id)} />
-  ));
+  return (
+    <>
+      {items.map(m => (
+        <PendingItem key={m.id} memory={m} onPromote={() => handlePromote(m.id)} onDiscard={() => handleDiscard(m.id)} />
+      ))}
+    </>
+  );
 }
 
-function QualityAlertTab({ boardId }) {
+function QualityAlertTab({ boardId }: { boardId?: string }) {
   const params = boardId ? { namespace_id: boardId } : {};
   const { data, loading, error, refetch } = useAsync(
     () => adminApi.qualityAlerts(params),
     [boardId],
   );
 
-  async function handleDismiss(id) {
+  async function handleDismiss(id: string) {
     await adminApi.dismissAlert(id);
     refetch();
   }
@@ -90,7 +101,7 @@ function QualityAlertTab({ boardId }) {
   );
 }
 
-function QualityAlertItem({ memory, onDismiss }) {
+function QualityAlertItem({ memory, onDismiss }: { memory: QualityAlert; onDismiss: () => void }) {
   return (
     <div className="card pending-item" style={{ borderLeftColor: 'var(--red)' }}>
       <div style={{ display: 'flex', gap: 6, marginBottom: 8, alignItems: 'center', flexWrap: 'wrap' }}>
@@ -103,9 +114,11 @@ function QualityAlertItem({ memory, onDismiss }) {
       <div style={{ fontSize: 12, color: 'var(--text-ter)', marginBottom: 10, display: 'flex', gap: 16, flexWrap: 'wrap' }}>
         <span>质量分: <QualityDot score={memory.quality_score} /> {memory.quality_score?.toFixed(2)}</span>
         <span style={{ color: 'var(--red)' }}>错误反馈: {memory.wrong_count}</span>
-        <span>过时反馈: {memory.outdated_count}</span>
-        <span>有用: {memory.useful_count}</span>
-        <span>引用: {memory.cite_count} 次 / 解决: {memory.resolved_citation_count} 次</span>
+        {memory.outdated_count !== undefined && <span>过时反馈: {memory.outdated_count}</span>}
+        {memory.useful_count !== undefined && <span>有用: {memory.useful_count}</span>}
+        {memory.cite_count !== undefined && memory.resolved_citation_count !== undefined && (
+          <span>引用: {memory.cite_count} 次 / 解决: {memory.resolved_citation_count} 次</span>
+        )}
       </div>
 
       <div className="pending-item__actions">
@@ -118,7 +131,7 @@ function QualityAlertItem({ memory, onDismiss }) {
   );
 }
 
-function PendingItem({ memory, onPromote, onDiscard }) {
+function PendingItem({ memory, onPromote, onDiscard }: { memory: Memory; onPromote: () => void; onDiscard: () => void }) {
   const isPending = memory.pending_human_confirm;
   const isLowQuality = memory.quality_score < 0.3;
   const borderColor = isPending ? 'var(--amber)' : isLowQuality ? 'var(--red)' : 'var(--accent)';
@@ -129,7 +142,7 @@ function PendingItem({ memory, onPromote, onDiscard }) {
         {isPending && <Badge type="amber">⏳ 超时待确认</Badge>}
         {isLowQuality && <Badge type="red">⚠️ 低质量</Badge>}
         <AuthorityBadge authority={memory.authority} />
-        {memory.tags?.map(t => <Badge key={t} type="gray">{t}</Badge>)}
+        {memory.tags?.map((t: string) => <Badge key={t} type="gray">{t}</Badge>)}
       </div>
 
       <div style={{ fontSize: 13, lineHeight: 1.7, marginBottom: 6 }}>{memory.content}</div>

@@ -1,11 +1,19 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 
-export function useAsync(asyncFn, deps = []) {
-  const [data, setData] = useState(null);
+export interface AsyncState<T> {
+  data: T | null;
+  loading: boolean;
+  error: string | null;
+  refetch: () => void;
+}
+
+export function useAsync<T>(asyncFn: () => Promise<T>, deps: unknown[] = []): AsyncState<T> {
+  const [data, setData] = useState<T | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+  const [error, setError] = useState<string | null>(null);
   const callIdRef = useRef(0);
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   const execute = useCallback(async () => {
     const callId = ++callIdRef.current;
     setLoading(true);
@@ -17,14 +25,14 @@ export function useAsync(asyncFn, deps = []) {
       }
     } catch (e) {
       if (callId === callIdRef.current) {
-        setError(e.message);
+        setError(e instanceof Error ? e.message : String(e));
       }
     } finally {
       if (callId === callIdRef.current) {
         setLoading(false);
       }
     }
-  }, deps);
+  }, deps); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { execute(); }, [execute]);
 

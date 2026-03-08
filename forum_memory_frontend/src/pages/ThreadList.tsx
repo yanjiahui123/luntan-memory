@@ -4,10 +4,11 @@ import { threadApi, namespaceApi } from '../api/client';
 import { useAsync } from '../hooks/useAsync';
 import { useUser } from '../contexts/UserContext';
 import { Loading, ErrorMsg, EmptyState, StatusBadge, Badge, TimeAgo, Pagination } from '../components/UI';
+import type { Thread, ThreadStatus } from '../types';
 
 const PAGE_SIZE = 20;
 
-const STATUSES = [
+const STATUSES: { value: ThreadStatus | ''; label: string }[] = [
   { value: '', label: '全部' },
   { value: 'OPEN', label: '进行中' },
   { value: 'RESOLVED', label: '已解决' },
@@ -15,12 +16,12 @@ const STATUSES = [
 ];
 
 export default function ThreadList() {
-  const { boardId } = useParams();
+  const { boardId } = useParams<{ boardId: string }>();
   const navigate = useNavigate();
-  const [status, setStatus] = useState('');
+  const [status, setStatus] = useState<ThreadStatus | ''>('');
   const [page, setPage] = useState(1);
 
-  const { data: board } = useAsync(() => namespaceApi.get(boardId), [boardId]);
+  const { data: board } = useAsync(() => namespaceApi.get(boardId!), [boardId]);
   const { data, loading, error, refetch } = useAsync(
     () => threadApi.list({ namespace_id: boardId, status: status || undefined, page, size: PAGE_SIZE }),
     [boardId, status, page]
@@ -28,7 +29,6 @@ export default function ThreadList() {
   const threads = data?.items;
   const totalCount = data?.total || 0;
   const { isSuperAdmin, isBoardAdmin, myNamespaces } = useUser();
-  // board_admin 只有管理该板块时才显示入口
   const canManageBoard = isSuperAdmin || (isBoardAdmin && myNamespaces?.some(ns => ns.id === boardId));
 
   return (
@@ -61,7 +61,6 @@ export default function ThreadList() {
         ))}
       </div>
 
-      {/* Thread list */}
       {loading ? <Loading /> : error ? <ErrorMsg message={error} onRetry={refetch} /> :
         !threads?.length ? <EmptyState icon="💬" message="还没有帖子" /> :
         <div className="card" style={{ padding: '0 16px' }}>
@@ -69,13 +68,12 @@ export default function ThreadList() {
         </div>
       }
 
-      {/* Pagination */}
       <Pagination page={page} total={totalCount} size={PAGE_SIZE} onChange={setPage} />
     </div>
   );
 }
 
-function ThreadItem({ thread }) {
+function ThreadItem({ thread }: { thread: Thread }) {
   return (
     <div className="thread-item">
       <div style={{ flex: 1 }}>

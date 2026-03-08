@@ -7,8 +7,9 @@ import { useAsync } from '../hooks/useAsync';
 import { useUser } from '../contexts/UserContext';
 import { Loading, ErrorMsg, StatusBadge, Badge, TimeAgo, ConfirmModal, KnowledgeTypeBadge, QualityDot, AuthorityBadge } from '../components/UI';
 import ImagePasteTextarea from '../components/ImagePasteTextarea';
+import type { Thread, Comment, Memory, FeedbackType, RagChunk } from '../types';
 
-function MarkdownContent({ content, style }) {
+function MarkdownContent({ content, style }: { content: string; style?: React.CSSProperties }) {
   if (!content) return null;
   return (
     <div className="md-body" style={style}>
@@ -18,35 +19,34 @@ function MarkdownContent({ content, style }) {
 }
 
 export default function ThreadDetail() {
-  const { threadId } = useParams();
+  const { threadId } = useParams<{ threadId: string }>();
   const navigate = useNavigate();
-  const { data: thread, loading, error, refetch } = useAsync(() => threadApi.get(threadId), [threadId]);
-  const { data: comments, refetch: refetchComments } = useAsync(() => threadApi.comments(threadId), [threadId]);
+  const { data: thread, loading, error, refetch } = useAsync(() => threadApi.get(threadId!), [threadId]);
+  const { data: comments, refetch: refetchComments } = useAsync(() => threadApi.comments(threadId!), [threadId]);
   const { currentUser, isSuperAdmin, isAdmin } = useUser();
   const isAuthor = !!(currentUser && thread?.author_id && currentUser.id === thread.author_id);
   const canDelete = isAuthor || isAdmin;
   const [replyText, setReplyText] = useState('');
-  const [resolveTarget, setResolveTarget] = useState(null);
+  const [resolveTarget, setResolveTarget] = useState<string | null>(null);
   const [aiLoading, setAiLoading] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-  const [pollStatus, setPollStatus] = useState('idle'); // 'idle' | 'polling' | 'done'
+  const [pollStatus, setPollStatus] = useState<'idle' | 'polling' | 'done'>('idle');
   const [dots, setDots] = useState('');
 
   async function handleReply() {
     if (!replyText.trim()) return;
-    await threadApi.addComment(threadId, replyText);
+    await threadApi.addComment(threadId!, replyText);
     setReplyText('');
     refetchComments();
   }
 
   async function handleResolve() {
-    await threadApi.resolve(threadId, resolveTarget);
+    await threadApi.resolve(threadId!, resolveTarget);
     setResolveTarget(null);
     refetch();
     refetchComments();
   }
 
-  // SSE: connect to backend stream to get notified when AI answer is ready
   useEffect(() => {
     if (thread?.status !== 'OPEN' || (thread?.comment_count ?? 0) > 0) return;
     setPollStatus('polling');
@@ -54,7 +54,7 @@ export default function ThreadDetail() {
 
     es.onmessage = (event) => {
       try {
-        const data = JSON.parse(event.data);
+        const data = JSON.parse(event.data as string) as { ready?: boolean; timeout?: boolean };
         if (data.ready) {
           refetchComments();
           setPollStatus('done');
@@ -64,8 +64,6 @@ export default function ThreadDetail() {
           es.close();
         }
       } catch (err) {
-        // `: heartbeat` SSE 注释行不含 data: 前缀，不会触发 onmessage，
-        // 所以此处 catch 只对真正格式异常的 JSON 生效，记录以便调试。
         console.warn('SSE message parse error:', err, 'data:', event.data);
       }
     };
@@ -76,9 +74,8 @@ export default function ThreadDetail() {
     };
 
     return () => { es.close(); setPollStatus('idle'); };
-  }, [thread?.id]);
+  }, [thread?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Animated dots for loading indicator
   useEffect(() => {
     if (pollStatus !== 'polling') return;
     const timer = setInterval(() => {
@@ -99,7 +96,6 @@ export default function ThreadDetail() {
         <span style={{ maxWidth: 300, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'inline-block', verticalAlign: 'middle' }}>{thread.title}</span>
       </div>
 
-      {/* Question */}
       <div className="card" style={{ padding: 20, marginBottom: 16 }}>
         <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
           <StatusBadge status={thread.status} />
@@ -125,7 +121,6 @@ export default function ThreadDetail() {
         </div>
       </div>
 
-      {/* AI Answer + Comments */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
         <h3 style={{ fontSize: 15, fontWeight: 600, margin: 0 }}>回答 ({comments?.length || 0})</h3>
         {thread.status === 'OPEN' && isAdmin && comments?.some(c => c.is_ai) && (
@@ -135,10 +130,10 @@ export default function ThreadDetail() {
             onClick={async () => {
               setAiLoading(true);
               try {
-                await threadApi.aiAnswer(threadId);
+                await threadApi.aiAnswer(threadId!);
                 refetchComments();
               } catch (err) {
-                alert('AI 回答生成失败: ' + err.message);
+                alert('AI 回答生成失败: ' + (err instanceof Error ? err.message : String(err)));
               } finally {
                 setAiLoading(false);
               }
@@ -149,26 +144,18 @@ export default function ThreadDetail() {
         )}
       </div>
 
-      {/* AI auto-answer waiting indicator */}
       {thread.status === 'OPEN' && (!comments || comments.length === 0) && (
         <div className="card" style={{ padding: 16, marginBottom: 12, textAlign: 'center', color: 'var(--text-sec)', fontSize: 13 }}>
           {pollStatus === 'polling' && (
             <>
-              <div style={{ marginBottom: 6, fontWeight: 500 }}>
-                AI 正在分析您的问题{dots}
-              </div>
+              <div style={{ marginBottom: 6, fontWeight: 500 }}>AI 正在分析您的问题{dots}</div>
               <div style={{ fontSize: 11, color: 'var(--text-ter)' }}>回答将在稍后自动出现，请稍候...</div>
             </>
           )}
           {pollStatus === 'done' && (
             <>
               <div style={{ marginBottom: 8 }}>AI 分析可能仍在进行中</div>
-              <button
-                className="btn-primary btn-sm"
-                onClick={refetchComments}
-              >
-                🔄 刷新查看
-              </button>
+              <button className="btn-primary btn-sm" onClick={refetchComments}>🔄 刷新查看</button>
             </>
           )}
           {pollStatus === 'idle' && (
@@ -180,7 +167,6 @@ export default function ThreadDetail() {
         <CommentCard key={c.id} comment={c} thread={thread} onResolve={() => setResolveTarget(c.id)} onDelete={refetchComments} isAdmin={isAdmin} />
       ))}
 
-      {/* Reply box */}
       {thread.status === 'OPEN' && (
         <div className="card" style={{ padding: 16, marginTop: 16 }}>
           <ImagePasteTextarea placeholder="写下你的回答... (支持粘贴图片和 Markdown)" value={replyText} onChange={setReplyText} style={{ marginBottom: 12 }} />
@@ -190,9 +176,8 @@ export default function ThreadDetail() {
         </div>
       )}
 
-      {/* Extracted memories for resolved threads */}
       {(thread.status === 'RESOLVED' || thread.status === 'TIMEOUT_CLOSED') && (
-        <ThreadMemories threadId={threadId} isAdmin={isAdmin} />
+        <ThreadMemories threadId={threadId!} isAdmin={isAdmin} />
       )}
 
       <ConfirmModal
@@ -212,7 +197,7 @@ export default function ThreadDetail() {
             : '确认删除此帖子？帖子将不再显示，从中提取的知识记忆也将一并删除。'
         }
         onConfirm={async () => {
-          await threadApi.delete(threadId);
+          await threadApi.delete(threadId!);
           setShowDeleteConfirm(false);
           navigate(`/boards/${thread.namespace_id}/threads`);
         }}
@@ -222,35 +207,36 @@ export default function ThreadDetail() {
   );
 }
 
-function ThreadMemories({ threadId, isAdmin }) {
+function ThreadMemories({ threadId, isAdmin }: { threadId: string; isAdmin: boolean }) {
   const { data, loading, refetch } = useAsync(
-    () => memoryApi.list({ source_id: threadId, size: 50 }),
+    () => memoryApi.list({ source_id: threadId, size: 50 } as Parameters<typeof memoryApi.list>[0]),
     [threadId]
   );
   const memories = data?.items || [];
-  const [editingId, setEditingId] = useState(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [editContent, setEditContent] = useState('');
-  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
 
   if (loading || memories.length === 0) return null;
 
-  async function handleSave(memoryId) {
+  async function handleSave(memoryId: string) {
     try {
       await memoryApi.update(memoryId, { content: editContent });
       setEditingId(null);
       refetch();
     } catch (err) {
-      alert('保存失败: ' + err.message);
+      alert('保存失败: ' + (err instanceof Error ? err.message : String(err)));
     }
   }
 
   async function handleDelete() {
+    if (!deleteTarget) return;
     try {
       await memoryApi.delete(deleteTarget);
       setDeleteTarget(null);
       refetch();
     } catch (err) {
-      alert('删除失败: ' + err.message);
+      alert('删除失败: ' + (err instanceof Error ? err.message : String(err)));
     }
   }
 
@@ -263,11 +249,7 @@ function ThreadMemories({ threadId, isAdmin }) {
         <div key={mem.id} className="card" style={{ padding: 14, marginBottom: 8 }}>
           {editingId === mem.id ? (
             <div>
-              <ImagePasteTextarea
-                value={editContent}
-                onChange={setEditContent}
-                style={{ marginBottom: 12, minHeight: 100 }}
-              />
+              <ImagePasteTextarea value={editContent} onChange={setEditContent} style={{ marginBottom: 12, minHeight: 100 }} />
               <div style={{ display: 'flex', gap: 8 }}>
                 <button className="btn-primary btn-sm" onClick={() => handleSave(mem.id)}>保存</button>
                 <button className="btn-secondary btn-sm" onClick={() => setEditingId(null)}>取消</button>
@@ -317,47 +299,52 @@ function ThreadMemories({ threadId, isAdmin }) {
   );
 }
 
-function CommentCard({ comment, thread, onResolve, onDelete, isAdmin }) {
-  const [feedbackGiven, setFeedbackGiven] = useState(null);
+interface CommentCardProps {
+  comment: Comment;
+  thread: Thread;
+  onResolve: () => void;
+  onDelete: () => void;
+  isAdmin: boolean;
+}
+
+function CommentCard({ comment, thread, onResolve, onDelete, isAdmin }: CommentCardProps) {
+  const [feedbackGiven, setFeedbackGiven] = useState<FeedbackType | null>(null);
   const [upvotes, setUpvotes] = useState(comment.upvote_count || 0);
   const [upvoted, setUpvoted] = useState(false);
-  const [citedMemories, setCitedMemories] = useState(null);
+  const [citedMemories, setCitedMemories] = useState<Memory[] | null>(null);
   const [showCitations, setShowCitations] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const isAi = comment.is_ai;
   const isBest = comment.is_best_answer;
-  const hasCitations = comment.cited_memory_ids?.length > 0;
+  const hasCitations = (comment.cited_memory_ids?.length ?? 0) > 0;
 
   async function handleDelete() {
     try {
       await threadApi.deleteComment(comment.thread_id, comment.id);
       setShowDeleteConfirm(false);
-      if (onDelete) onDelete();
+      onDelete();
     } catch (err) {
       console.error('Delete failed:', err);
     }
   }
 
-  // Load cited memory details for AI comments
   useEffect(() => {
     if (isAi && hasCitations) {
       memoryApi.batchGet(comment.cited_memory_ids)
         .then(setCitedMemories)
         .catch(err => console.warn('Failed to load cited memories:', err));
     }
-  }, [isAi, comment.cited_memory_ids]);
+  }, [isAi, comment.cited_memory_ids]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  async function handleFeedback(type) {
+  async function handleFeedback(type: FeedbackType) {
     if (!hasCitations) return;
     try {
       if (feedbackGiven === type) {
-        // Toggle off: withdraw feedback
         for (const mid of comment.cited_memory_ids) {
           await feedbackApi.withdraw(mid, { feedback_type: type });
         }
         setFeedbackGiven(null);
       } else {
-        // Submit new feedback
         for (const mid of comment.cited_memory_ids) {
           await feedbackApi.submit(mid, { feedback_type: type });
         }
@@ -370,13 +357,31 @@ function CommentCard({ comment, thread, onResolve, onDelete, isAdmin }) {
 
   async function handleUpvote() {
     try {
-      const result = await threadApi.upvoteComment(comment.thread_id, comment.id);
+      const result = await threadApi.upvoteComment(comment.thread_id, comment.id) as Comment & { voted?: boolean };
       setUpvotes(result.upvote_count);
-      setUpvoted(result.voted);
+      setUpvoted(result.voted ?? false);
     } catch (err) {
       console.error('Upvote failed:', err);
     }
   }
+
+  // Parse rag_context
+  let ragChunks: RagChunk[] = [];
+  let isLegacyText = false;
+  if (comment.rag_context) {
+    if (typeof comment.rag_context === 'string') {
+      try {
+        const parsed = JSON.parse(comment.rag_context) as unknown;
+        ragChunks = Array.isArray(parsed) ? (parsed as RagChunk[]) : [];
+      } catch {
+        isLegacyText = true;
+        ragChunks = [{ text: comment.rag_context, metadata: {} }];
+      }
+    } else if (Array.isArray(comment.rag_context)) {
+      ragChunks = comment.rag_context as RagChunk[];
+    }
+  }
+  const isUrl = (s: string) => /^https?:\/\//i.test(s);
 
   return (
     <div className={`card comment-box ${isAi ? 'comment-box--ai' : ''} ${isBest ? 'comment-box--best' : ''}`}>
@@ -395,7 +400,6 @@ function CommentCard({ comment, thread, onResolve, onDelete, isAdmin }) {
 
       <MarkdownContent content={comment.content} style={{ fontSize: 14 }} />
 
-      {/* Collapsible citation cards */}
       {isAi && (hasCitations || comment.rag_context) && (
         <div style={{ marginTop: 10 }}>
           <button
@@ -410,7 +414,6 @@ function CommentCard({ comment, thread, onResolve, onDelete, isAdmin }) {
 
           {showCitations && (
             <div style={{ marginTop: 8, padding: 12, background: 'var(--purple-light)', borderRadius: 'var(--radius)', border: '1px solid var(--border)' }}>
-              {/* Memory citation cards */}
               {citedMemories ? citedMemories.map((mem, i) => (
                 <div key={mem.id} style={{ padding: '8px 0', borderTop: i > 0 ? '1px solid var(--border)' : 'none' }}>
                   <div style={{ fontSize: 13, lineHeight: 1.6, color: 'var(--text)' }}>
@@ -432,66 +435,44 @@ function CommentCard({ comment, thread, onResolve, onDelete, isAdmin }) {
                 <div style={{ fontSize: 12, color: 'var(--text-ter)', padding: '4px 0' }}>加载中...</div>
               )}
 
-              {/* RAG knowledge base section */}
-              {comment.rag_context && (() => {
-                let chunks = [];
-                let isLegacyText = false;
-                try {
-                  const parsed = typeof comment.rag_context === 'string'
-                    ? JSON.parse(comment.rag_context)
-                    : comment.rag_context;
-                  chunks = Array.isArray(parsed) ? parsed : [];
-                } catch {
-                  // 旧格式：纯文本，包装成单条展示
-                  isLegacyText = true;
-                  chunks = [{ text: comment.rag_context, metadata: {} }];
-                }
-                if (chunks.length === 0) return null;
-                const isUrl = (s) => /^https?:\/\//i.test(s);
-                return (
-                  <div style={{
-                    marginTop: citedMemories?.length > 0 ? 10 : 0,
-                    paddingTop: citedMemories?.length > 0 ? 10 : 0,
-                    borderTop: citedMemories?.length > 0 ? '1px solid var(--border)' : 'none',
-                  }}>
-                    <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-sec)', marginBottom: 6 }}>
-                      📚 知识库参考{isLegacyText ? '' : `（${chunks.length} 条）`}
-                    </div>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                      {chunks.map((chunk, idx) => {
-                        const title = chunk?.metadata?.extended_metadata?.title || chunk?.metadata?.source || `片段 ${idx + 1}`;
-                        const source = chunk?.metadata?.source || '';
-                        const text = chunk?.text || '';
-                        return (
-                          <div key={idx} style={{
-                            padding: '8px 10px',
-                            background: 'var(--bg)',
-                            borderRadius: 'var(--radius)',
-                            border: '1px solid var(--border)',
-                          }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
-                              <span style={{ fontSize: 11, color: 'var(--text-ter)' }}>#{idx + 1}</span>
-                              {isUrl(source) ? (
-                                <a href={source} target="_blank" rel="noopener noreferrer"
-                                  style={{ fontSize: 12, fontWeight: 600, color: 'var(--accent)', textDecoration: 'none' }}
-                                  title={source}
-                                >
-                                  {title}↗
-                                </a>
-                              ) : (
-                                <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text)' }}>{title}</span>
-                              )}
-                            </div>
-                            <div style={{ fontSize: 12, lineHeight: 1.7, color: 'var(--text-sec)', whiteSpace: 'pre-wrap' }}>
-                              {text.length > 200 ? text.slice(0, 200) + '…' : text}
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
+              {ragChunks.length > 0 && (
+                <div style={{
+                  marginTop: (citedMemories?.length ?? 0) > 0 ? 10 : 0,
+                  paddingTop: (citedMemories?.length ?? 0) > 0 ? 10 : 0,
+                  borderTop: (citedMemories?.length ?? 0) > 0 ? '1px solid var(--border)' : 'none',
+                }}>
+                  <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-sec)', marginBottom: 6 }}>
+                    📚 知识库参考{isLegacyText ? '' : `（${ragChunks.length} 条）`}
                   </div>
-                );
-              })()}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    {ragChunks.map((chunk, idx) => {
+                      const title = chunk?.metadata?.extended_metadata?.title || chunk?.metadata?.source || `片段 ${idx + 1}`;
+                      const source = chunk?.metadata?.source || '';
+                      const text = chunk?.text || '';
+                      return (
+                        <div key={idx} style={{ padding: '8px 10px', background: 'var(--bg)', borderRadius: 'var(--radius)', border: '1px solid var(--border)' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                            <span style={{ fontSize: 11, color: 'var(--text-ter)' }}>#{idx + 1}</span>
+                            {isUrl(source) ? (
+                              <a href={source} target="_blank" rel="noopener noreferrer"
+                                style={{ fontSize: 12, fontWeight: 600, color: 'var(--accent)', textDecoration: 'none' }}
+                                title={source}
+                              >
+                                {title}↗
+                              </a>
+                            ) : (
+                              <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text)' }}>{title as string}</span>
+                            )}
+                          </div>
+                          <div style={{ fontSize: 12, lineHeight: 1.7, color: 'var(--text-sec)', whiteSpace: 'pre-wrap' }}>
+                            {text.length > 200 ? text.slice(0, 200) + '…' : text}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -503,16 +484,12 @@ function CommentCard({ comment, thread, onResolve, onDelete, isAdmin }) {
         </div>
       )}
       <div className="comment-actions" style={{ marginTop: thread.status === 'OPEN' && !isBest ? 6 : undefined }}>
-        <button
-          className={`btn-sm ${upvoted ? 'btn-primary' : 'btn-secondary'}`}
-          onClick={handleUpvote}
-        >
+        <button className={`btn-sm ${upvoted ? 'btn-primary' : 'btn-secondary'}`} onClick={handleUpvote}>
           👍 {upvotes}
         </button>
         {isAi && hasCitations && (
           <>
             <button className={`btn-sm ${feedbackGiven === 'useful' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => handleFeedback('useful')}>有用</button>
-            <button className={`btn-sm ${feedbackGiven === 'not_useful' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => handleFeedback('not_useful')}>没用</button>
             <button className={`btn-sm ${feedbackGiven === 'wrong' ? 'btn-danger' : 'btn-secondary'}`} onClick={() => handleFeedback('wrong')}>错误</button>
           </>
         )}

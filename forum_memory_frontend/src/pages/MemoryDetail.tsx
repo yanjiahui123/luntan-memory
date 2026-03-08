@@ -3,13 +3,14 @@ import { Link, useParams, useNavigate } from 'react-router-dom';
 import { memoryApi, feedbackApi } from '../api/client';
 import { useAsync } from '../hooks/useAsync';
 import { Loading, ErrorMsg, AuthorityBadge, LifecycleBadge, Badge, QualityDot, ConfirmModal, KnowledgeTypeBadge } from '../components/UI';
+import type { MemoryAuthority, MemoryLifecycle } from '../types';
 
 export default function MemoryDetail() {
-  const { memoryId } = useParams();
+  const { memoryId } = useParams<{ memoryId: string }>();
   const navigate = useNavigate();
-  const { data: memory, loading, error, refetch } = useAsync(() => memoryApi.get(memoryId), [memoryId]);
+  const { data: memory, loading, error, refetch } = useAsync(() => memoryApi.get(memoryId!), [memoryId]);
   const { data: fbSummary } = useAsync(
-    () => feedbackApi.summary(memoryId).catch(err => {
+    () => feedbackApi.summary(memoryId!).catch(err => {
       console.warn('Failed to load feedback summary:', err);
       return null;
     }),
@@ -20,18 +21,18 @@ export default function MemoryDetail() {
   const [showDelete, setShowDelete] = useState(false);
 
   async function handleSave() {
-    await memoryApi.update(memoryId, { content: editContent });
+    await memoryApi.update(memoryId!, { content: editContent });
     setEditing(false);
     refetch();
   }
 
-  async function handleAuthority(authority) {
-    await memoryApi.changeAuthority(memoryId, { authority, reason: '管理员手动变更' });
+  async function handleAuthority(authority: MemoryAuthority) {
+    await memoryApi.changeAuthority(memoryId!, { authority });
     refetch();
   }
 
   async function handleDelete() {
-    await memoryApi.delete(memoryId);
+    await memoryApi.delete(memoryId!);
     setShowDelete(false);
     navigate('/admin/memories');
   }
@@ -40,6 +41,8 @@ export default function MemoryDetail() {
   if (error) return <ErrorMsg message={error} />;
   if (!memory) return null;
 
+  const lifecycleStatus = (memory.status || memory.lifecycle_status) as MemoryLifecycle | undefined;
+
   return (
     <div>
       <div className="breadcrumb">
@@ -47,14 +50,12 @@ export default function MemoryDetail() {
       </div>
 
       <div className="detail-layout">
-        {/* Main */}
         <div>
-          {/* Status + actions */}
           <div className="card" style={{ padding: 16, marginBottom: 12 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 12, flexWrap: 'wrap', gap: 8 }}>
               <div style={{ display: 'flex', gap: 6 }}>
                 <AuthorityBadge authority={memory.authority} />
-                <LifecycleBadge status={memory.status} />
+                {lifecycleStatus && <LifecycleBadge status={lifecycleStatus} />}
                 {memory.pending_human_confirm && <Badge type="amber">⏳ 待确认</Badge>}
               </div>
               <div style={{ display: 'flex', gap: 8 }}>
@@ -63,7 +64,6 @@ export default function MemoryDetail() {
               </div>
             </div>
 
-            {/* Content */}
             {editing ? (
               <div>
                 <textarea value={editContent} onChange={e => setEditContent(e.target.value)} style={{ marginBottom: 12, minHeight: 120 }} />
@@ -78,7 +78,6 @@ export default function MemoryDetail() {
               </div>
             )}
 
-            {/* Tags */}
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 12 }}>
               {memory.tags?.map(t => <Badge key={t} type="gray">{t}</Badge>)}
               {memory.environment && <Badge type="gray">🌍 {memory.environment}</Badge>}
@@ -86,7 +85,6 @@ export default function MemoryDetail() {
             </div>
           </div>
 
-          {/* Metadata */}
           <div className="card" style={{ padding: 16 }}>
             <h3 style={{ fontSize: 14, fontWeight: 700, marginBottom: 12 }}>详细信息</h3>
             <InfoGrid items={[
@@ -100,9 +98,7 @@ export default function MemoryDetail() {
           </div>
         </div>
 
-        {/* Sidebar */}
         <div className="detail-sidebar">
-          {/* Quality */}
           <div className="card">
             <h3 style={{ fontSize: 13, fontWeight: 700, marginBottom: 10 }}>质量指标</h3>
             <div style={{ textAlign: 'center', marginBottom: 10 }}>
@@ -112,34 +108,27 @@ export default function MemoryDetail() {
               ['👍 有用', memory.useful_count],
               ['👎 没用', memory.not_useful_count],
               ['⚠️ 错误', memory.wrong_count],
-              ['📦 过时', memory.outdated_count],
               ['🔍 检索', `${memory.retrieve_count} 次`],
             ]} />
             {fbSummary && (
               <div style={{ marginTop: 8, fontSize: 12, color: 'var(--text-sec)' }}>
-                有用率: {(fbSummary.useful_ratio * 100).toFixed(0)}%
+                有用率: {((fbSummary.useful_ratio ?? 0) * 100).toFixed(0)}%
               </div>
             )}
           </div>
 
-          {/* Authority control */}
           <div className="card">
             <h3 style={{ fontSize: 13, fontWeight: 700, marginBottom: 10 }}>权威等级管理</h3>
             <div style={{ display: 'flex', gap: 8 }}>
-              <button
-                className={memory.authority === 'LOCKED' ? 'btn-primary btn-sm' : 'btn-secondary btn-sm'}
-                onClick={() => handleAuthority('LOCKED')} disabled={memory.authority === 'LOCKED'}>
+              <button className={memory.authority === 'LOCKED' ? 'btn-primary btn-sm' : 'btn-secondary btn-sm'} onClick={() => handleAuthority('LOCKED')} disabled={memory.authority === 'LOCKED'}>
                 🔒 LOCKED
               </button>
-              <button
-                className={memory.authority === 'NORMAL' ? 'btn-primary btn-sm' : 'btn-secondary btn-sm'}
-                onClick={() => handleAuthority('NORMAL')} disabled={memory.authority === 'NORMAL'}>
+              <button className={memory.authority === 'NORMAL' ? 'btn-primary btn-sm' : 'btn-secondary btn-sm'} onClick={() => handleAuthority('NORMAL')} disabled={memory.authority === 'NORMAL'}>
                 🤖 NORMAL
               </button>
             </div>
           </div>
 
-          {/* Source */}
           <div className="card">
             <h3 style={{ fontSize: 13, fontWeight: 700, marginBottom: 10 }}>来源溯源</h3>
             <div style={{ fontSize: 12, lineHeight: 2 }}>
@@ -159,13 +148,13 @@ export default function MemoryDetail() {
   );
 }
 
-function InfoGrid({ items }) {
+function InfoGrid({ items }: { items: [string, React.ReactNode][] }) {
   return (
     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px 12px', fontSize: 12 }}>
       {items.map(([label, value], i) => (
         <React.Fragment key={i}>
           <span style={{ color: 'var(--text-sec)' }}>{label}</span>
-          <span style={{ fontWeight: 500 }}>{value}</span>
+          <span style={{ fontWeight: 500 }}>{value ?? '—'}</span>
         </React.Fragment>
       ))}
     </div>

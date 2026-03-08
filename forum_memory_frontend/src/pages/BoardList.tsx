@@ -4,6 +4,7 @@ import { namespaceApi } from '../api/client';
 import { useAsync } from '../hooks/useAsync';
 import { useUser } from '../contexts/UserContext';
 import { Loading, ErrorMsg, EmptyState } from '../components/UI';
+import type { Namespace } from '../types';
 
 export default function BoardList() {
   const { data: boards, loading, error, refetch } = useAsync(() => namespaceApi.list());
@@ -40,7 +41,7 @@ export default function BoardList() {
   );
 }
 
-function BoardCard({ board }) {
+function BoardCard({ board }: { board: Namespace }) {
   return (
     <Link to={`/boards/${board.id}/threads`} style={{ textDecoration: 'none', color: 'inherit' }}>
       <div className="card" style={{ padding: 20, cursor: 'pointer' }}>
@@ -60,16 +61,21 @@ function BoardCard({ board }) {
   );
 }
 
-function CreateBoardModal({ onClose, onCreated }) {
+interface CreateBoardModalProps {
+  onClose: () => void;
+  onCreated: () => void;
+}
+
+function CreateBoardModal({ onClose, onCreated }: CreateBoardModalProps) {
   const [form, setForm] = useState({ display_name: '', description: '', access_mode: 'public' });
   const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState(null);
+  const [error, setError] = useState<string | null>(null);
 
-  function update(field, value) {
+  function update(field: string, value: string) {
     setForm(f => ({ ...f, [field]: value }));
   }
 
-  async function handleSubmit(e) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!form.display_name.trim()) return;
     setSubmitting(true);
@@ -79,10 +85,10 @@ function CreateBoardModal({ onClose, onCreated }) {
         display_name: form.display_name.trim(),
         description: form.description.trim() || null,
         access_mode: form.access_mode,
-      });
+      } as Partial<Namespace>);
       onCreated();
     } catch (err) {
-      setError(err.message);
+      setError(err instanceof Error ? err.message : String(err));
     } finally {
       setSubmitting(false);
     }

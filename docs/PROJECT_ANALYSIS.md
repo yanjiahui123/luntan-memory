@@ -229,7 +229,7 @@ function clearAll() {
 | L3 | `bulk_refresh_quality` commit 后 N+1 惰性加载 | ✅ 已修复（预查询所有 namespace_id→es_index_name 映射，单次 SQL 替代 N 次 `session.get`） |
 | L4 | Dagster sensor 无 cursor 管理 | ✅ 已实现（事件驱动 sensor 用 JSON cursor 记录已分发事件 ID；定时 sensor 用 ISO 时间戳 cursor） |
 | L5 | 无响应式设计 | ✅ 已实现（`@media` 断点 767px/1024px，可折叠 sidebar + hamburger 菜单，grid 自适应） |
-| L6 | 前端无 TypeScript | `.jsx → .tsx`，添加类型定义 |
+| L6 | 前端无 TypeScript | ✅ 已实现（全量迁移至 TypeScript：tsconfig.json、types/index.ts、client.ts、useAsync.ts、所有组件和页面 .tsx，严格模式通过 `tsc --noEmit`） |
 | L7 | AUDN 仅 KNN 召回 | ✅ 已实现（KNN ∪ 同 tags ∪ 同 knowledge_type 多维度召回 + 去重） |
 | L8 | Custom Provider `verify=False` | 改为可配置环境变量 `FM_CUSTOM_VERIFY_CERTS` |
 
@@ -293,6 +293,6 @@ function clearAll() {
 | **L3** | bulk_refresh commit 后 N+1 | ✅ 已修复（预查询 namespace 映射） |
 | **L4** | sensor 无 cursor 管理 | ✅ 已实现（JSON cursor + ISO 时间戳） |
 | **L5** | 无响应式设计 | ✅ 已实现（响应式断点 + 可折叠 sidebar） |
-| **L6** | 前端 TypeScript 迁移 | ⚪ 长期 |
+| **L6** | 前端 TypeScript 迁移 | ✅ 已完成 |
 | **L7** | AUDN 多维度召回 | ✅ 已实现（KNN ∪ tags ∪ knowledge_type） |
 | **L8** | Custom Provider verify=False | ⚪ 长期 |
