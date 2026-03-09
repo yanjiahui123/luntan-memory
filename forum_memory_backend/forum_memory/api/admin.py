@@ -19,6 +19,7 @@ from forum_memory.api.deps import check_board_permission, get_current_user, get_
 from forum_memory.models.enums import SystemRole, Authority
 from forum_memory.models.memory import Memory
 from forum_memory.models.namespace import Namespace
+from forum_memory.models.operation_log import OperationLog
 from forum_memory.models.user import User
 from forum_memory.schemas.admin import ImportTopicsRequest, ImportTopicsResult
 
@@ -330,3 +331,48 @@ def dismiss_quality_alert(
     session.commit()
     session.refresh(memory)
     return memory
+
+
+# ─── Audit Logs ───────────────────────────────────────────────────────────────
+
+class AuditLogItem(BaseModel):
+    id: UUID
+    memory_id: UUID
+    operation: str
+    operator_id: UUID | None
+    operator_type: str
+    reason: str | None
+    before_snapshot: dict | None
+    after_snapshot: dict | None
+    created_at: datetime
+    model_config = {"from_attributes": True}
+
+
+@router.get("/audit-logs")
+def list_audit_logs(
+    memory_id: UUID | None = Query(None),
+    operation: str | None = Query(None),
+    page: int = Query(1, ge=1),
+    size: int = Query(50, ge=1, le=200),
+    session: Session = Depends(get_db),
+    _admin: User = Depends(require_admin),
+):
+    """查询操作审计日志，支持按记忆ID和操作类型过滤。"""
+    from sqlmodel import func
+
+    stmt = select(OperationLog).order_by(OperationLog.created_at.desc())
+    count_stmt = select(func.count()).select_from(OperationLog)
+
+    if memory_id:
+        stmt = stmt.where(OperationLog.memory_id == memory_id)
+        count_stmt = count_stmt.where(OperationLog.memory_id == memory_id)
+    if operation:
+        stmt = stmt.where(OperationLog.operation == operation)
+        count_stmt = count_stmt.where(OperationLog.operation == operation)
+
+    total = session.exec(count_stmt).one()
+    items = list(session.exec(stmt.offset((page - 1) * size).limit(size)).all())
+
+    from fastapi.responses import JSONResponse
+    data = [AuditLogItem.model_validate(item).model_dump(mode="json") for item in items]
+    return JSONResponse(content=data, headers={"X-Total-Count": str(total)})

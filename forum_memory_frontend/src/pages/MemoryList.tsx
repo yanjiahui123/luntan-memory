@@ -1,8 +1,9 @@
-import React, { useEffect, useRef, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
+import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { memoryApi } from '../api/client';
 import { useAsync } from '../hooks/useAsync';
 import { useUser } from '../contexts/UserContext';
+import { useToast } from '../contexts/ToastContext';
 import {
   AuthorityBadge, Badge, EmptyState, ErrorMsg,
   KnowledgeTypeBadge, LifecycleBadge, Loading,
@@ -190,13 +191,46 @@ const EMPTY_FILTERS: FiltersState = {
 
 const PAGE_SIZE = 40;
 
+function useUrlFilters(boardId?: string): [FiltersState, (key: string, val: string) => void, (f: FiltersState) => void] {
+  const [params, setParams] = useSearchParams();
+  const readFilters = useCallback((): FiltersState => ({
+    namespace_id: params.get('namespace_id') || boardId || '',
+    authority: params.get('authority') || '',
+    status: params.get('status') || '',
+    pending_confirm: params.get('pending_confirm') || '',
+    knowledge_type: params.get('knowledge_type') || '',
+    tags: params.get('tags') || '',
+    q: params.get('q') || '',
+    page: parseInt(params.get('page') || '1', 10) || 1,
+  }), [params, boardId]);
+
+  const writeFilters = useCallback((f: FiltersState) => {
+    setParams(() => {
+      const next = new URLSearchParams();
+      Object.entries(f).forEach(([k, v]) => {
+        const strV = String(v);
+        const defaultV = k === 'page' ? '1' : (k === 'namespace_id' ? (boardId || '') : '');
+        if (strV && strV !== defaultV) next.set(k, strV);
+      });
+      return next;
+    }, { replace: true });
+  }, [boardId, setParams]);
+
+  const setFilter = useCallback((key: string, val: string) => {
+    const current = readFilters();
+    writeFilters({ ...current, [key]: val, page: 1 });
+  }, [readFilters, writeFilters]);
+
+  return [readFilters(), setFilter, writeFilters];
+}
+
 export default function MemoryList() {
   const { boardId } = useParams<{ boardId?: string }>();
   const { myNamespaces } = useUser();
-  const [filters, setFilters] = useState<FiltersState>({ ...EMPTY_FILTERS, namespace_id: boardId || '' });
+  const [filters, setFilter, setFilters] = useUrlFilters(boardId);
   const namespaces = myNamespaces || [];
   const [allTags, setAllTags] = useState<string[]>([]);
-  const [debouncedQ, setDebouncedQ] = useState('');
+  const [debouncedQ, setDebouncedQ] = useState(filters.q);
 
   useEffect(() => {
     memoryApi.tags(filters.namespace_id || undefined)
@@ -218,10 +252,6 @@ export default function MemoryList() {
   const memories = data?.items;
   const totalCount = data?.total || 0;
   const totalPages = Math.ceil(totalCount / PAGE_SIZE);
-
-  function setFilter(key: string, val: string) {
-    setFilters(f => ({ ...f, [key]: val, page: 1 }));
-  }
 
   function clearAll() {
     setFilters({ ...EMPTY_FILTERS, namespace_id: boardId || '' });
@@ -250,7 +280,7 @@ export default function MemoryList() {
 
           <input
             value={filters.q}
-            onChange={e => setFilters(f => ({ ...f, q: e.target.value }))}
+            onChange={e => setFilter('q', e.target.value)}
             placeholder="输入关键词过滤..."
             style={{ flex: '1 1 120px', minWidth: 80, border: 'none', outline: 'none', background: 'transparent', fontSize: 13, padding: '4px 0' }}
           />
@@ -263,15 +293,15 @@ export default function MemoryList() {
         error ? <ErrorMsg message={error} onRetry={refetch} /> :
         !memories?.length ? <EmptyState icon="🧠" message="没有匹配的记忆" /> :
         <div className="card" style={{ padding: '0 16px' }}>
-          {memories.map(m => <MemoryRow key={m.id} memory={m} keyword={keyword} />)}
+          {memories.map(m => <MemoryRow key={m.id} memory={m} keyword={keyword} onRestored={refetch} />)}
         </div>
       }
 
       {totalCount > 0 && (
         <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 12, marginTop: 16 }}>
-          <button className="btn-sm btn-secondary" disabled={filters.page <= 1} onClick={() => setFilters(f => ({ ...f, page: f.page - 1 }))}>← 上一页</button>
+          <button className="btn-sm btn-secondary" disabled={filters.page <= 1} onClick={() => setFilters({ ...filters, page: filters.page - 1 })}>← 上一页</button>
           <span style={{ fontSize: 13, color: 'var(--text-sec)' }}>第 {filters.page} 页 / 共 {totalPages} 页（{totalCount} 条）</span>
-          <button className="btn-sm btn-secondary" disabled={filters.page >= totalPages} onClick={() => setFilters(f => ({ ...f, page: f.page + 1 }))}>下一页 →</button>
+          <button className="btn-sm btn-secondary" disabled={filters.page >= totalPages} onClick={() => setFilters({ ...filters, page: filters.page + 1 })}>下一页 →</button>
         </div>
       )}
     </div>
@@ -295,8 +325,27 @@ function highlight(text: string, kw: string): React.ReactNode {
   );
 }
 
-function MemoryRow({ memory, keyword }: { memory: Memory; keyword: string }) {
+function MemoryRow({ memory, keyword, onRestored }: { memory: Memory; keyword: string; onRestored: () => void }) {
+  const { addToast } = useToast();
+  const [restoring, setRestoring] = useState(false);
+  const lifecycleStatus = (memory.status || memory.lifecycle_status) as string | undefined;
+  const canRestore = lifecycleStatus === 'COLD' || lifecycleStatus === 'ARCHIVED';
   const preview = memory.content.length > 160 ? memory.content.slice(0, 160) + '…' : memory.content;
+
+  async function handleRestore(e: React.MouseEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    setRestoring(true);
+    try {
+      await memoryApi.restore(memory.id);
+      addToast('success', '记忆已恢复');
+      onRestored();
+    } catch (err: any) {
+      addToast('error', err.message || '恢复失败');
+    } finally {
+      setRestoring(false);
+    }
+  }
 
   return (
     <div className="memory-row">
@@ -310,6 +359,16 @@ function MemoryRow({ memory, keyword }: { memory: Memory; keyword: string }) {
           {memory.knowledge_type && <KnowledgeTypeBadge type={memory.knowledge_type} />}
           {memory.tags?.map(t => <Badge key={t} type="gray">{t}</Badge>)}
           {memory.pending_human_confirm && <Badge type="amber">⏳ 待确认</Badge>}
+          {canRestore && (
+            <button
+              className="btn-sm btn-secondary"
+              style={{ fontSize: 11, padding: '1px 8px' }}
+              onClick={handleRestore}
+              disabled={restoring}
+            >
+              {restoring ? '恢复中...' : '♻️ 恢复'}
+            </button>
+          )}
         </div>
       </div>
       <div style={{ textAlign: 'right', fontSize: 12, whiteSpace: 'nowrap', minWidth: 56, marginLeft: 12 }}>

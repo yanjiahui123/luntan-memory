@@ -1,10 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Link, useParams, useNavigate } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { threadApi, feedbackApi, memoryApi } from '../api/client';
 import { useAsync } from '../hooks/useAsync';
 import { useUser } from '../contexts/UserContext';
+import { useToast } from '../contexts/ToastContext';
 import { Loading, ErrorMsg, StatusBadge, Badge, TimeAgo, ConfirmModal, KnowledgeTypeBadge, QualityDot, AuthorityBadge } from '../components/UI';
 import ImagePasteTextarea from '../components/ImagePasteTextarea';
 import type { Thread, Comment, Memory, FeedbackType, RagChunk } from '../types';
@@ -24,6 +25,7 @@ export default function ThreadDetail() {
   const { data: thread, loading, error, refetch } = useAsync(() => threadApi.get(threadId!), [threadId]);
   const { data: comments, refetch: refetchComments } = useAsync(() => threadApi.comments(threadId!), [threadId]);
   const { currentUser, isSuperAdmin, isAdmin } = useUser();
+  const { addToast } = useToast();
   const isAuthor = !!(currentUser && thread?.author_id && currentUser.id === thread.author_id);
   const canDelete = isAuthor || isAdmin;
   const [replyText, setReplyText] = useState('');
@@ -50,30 +52,48 @@ export default function ThreadDetail() {
   useEffect(() => {
     if (thread?.status !== 'OPEN' || (thread?.comment_count ?? 0) > 0) return;
     setPollStatus('polling');
-    const es = new EventSource(`/api/v1/threads/${threadId}/ai-answer/stream`);
 
-    es.onmessage = (event) => {
-      try {
-        const data = JSON.parse(event.data as string) as { ready?: boolean; timeout?: boolean };
-        if (data.ready) {
-          refetchComments();
-          setPollStatus('done');
-          es.close();
-        } else if (data.timeout) {
-          setPollStatus('done');
-          es.close();
+    let es: EventSource | null = null;
+    let retryCount = 0;
+    const MAX_RETRIES = 5;
+    let retryTimer: ReturnType<typeof setTimeout> | null = null;
+
+    function connect() {
+      es = new EventSource(`/api/v1/threads/${threadId}/ai-answer/stream`);
+      es.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data as string) as { ready?: boolean; timeout?: boolean };
+          if (data.ready) {
+            refetchComments();
+            setPollStatus('done');
+            es?.close();
+          } else if (data.timeout) {
+            setPollStatus('done');
+            es?.close();
+          }
+        } catch (err) {
+          console.warn('SSE parse error:', err);
         }
-      } catch (err) {
-        console.warn('SSE message parse error:', err, 'data:', event.data);
-      }
-    };
+      };
+      es.onerror = () => {
+        es?.close();
+        if (retryCount < MAX_RETRIES) {
+          const delay = Math.min(1000 * Math.pow(2, retryCount), 16000);
+          retryCount++;
+          retryTimer = setTimeout(connect, delay);
+        } else {
+          setPollStatus('done');
+        }
+      };
+      es.onopen = () => { retryCount = 0; };
+    }
+    connect();
 
-    es.onerror = () => {
-      setPollStatus('done');
-      es.close();
+    return () => {
+      es?.close();
+      if (retryTimer) clearTimeout(retryTimer);
+      setPollStatus('idle');
     };
-
-    return () => { es.close(); setPollStatus('idle'); };
   }, [thread?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
@@ -133,7 +153,7 @@ export default function ThreadDetail() {
                 await threadApi.aiAnswer(threadId!);
                 refetchComments();
               } catch (err) {
-                alert('AI 回答生成失败: ' + (err instanceof Error ? err.message : String(err)));
+                addToast('error', 'AI 回答生成失败: ' + (err instanceof Error ? err.message : String(err)));
               } finally {
                 setAiLoading(false);
               }
@@ -208,6 +228,7 @@ export default function ThreadDetail() {
 }
 
 function ThreadMemories({ threadId, isAdmin }: { threadId: string; isAdmin: boolean }) {
+  const { addToast } = useToast();
   const { data, loading, refetch } = useAsync(
     () => memoryApi.list({ source_id: threadId, size: 50 } as Parameters<typeof memoryApi.list>[0]),
     [threadId]
@@ -217,7 +238,16 @@ function ThreadMemories({ threadId, isAdmin }: { threadId: string; isAdmin: bool
   const [editContent, setEditContent] = useState('');
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
 
-  if (loading || memories.length === 0) return null;
+  if (loading) return (
+    <div style={{ marginTop: 24, textAlign: 'center', color: 'var(--text-sec)', fontSize: 13 }}>
+      <Badge type="blue">⏳ 正在检查知识提取状态...</Badge>
+    </div>
+  );
+  if (memories.length === 0) return (
+    <div style={{ marginTop: 24, textAlign: 'center' }}>
+      <Badge type="amber">📝 知识提取中或未产生记忆</Badge>
+    </div>
+  );
 
   async function handleSave(memoryId: string) {
     try {
@@ -225,7 +255,7 @@ function ThreadMemories({ threadId, isAdmin }: { threadId: string; isAdmin: bool
       setEditingId(null);
       refetch();
     } catch (err) {
-      alert('保存失败: ' + (err instanceof Error ? err.message : String(err)));
+      addToast('error', '保存失败: ' + (err instanceof Error ? err.message : String(err)));
     }
   }
 
@@ -236,7 +266,7 @@ function ThreadMemories({ threadId, isAdmin }: { threadId: string; isAdmin: bool
       setDeleteTarget(null);
       refetch();
     } catch (err) {
-      alert('删除失败: ' + (err instanceof Error ? err.message : String(err)));
+      addToast('error', '删除失败: ' + (err instanceof Error ? err.message : String(err)));
     }
   }
 
@@ -308,6 +338,7 @@ interface CommentCardProps {
 }
 
 function CommentCard({ comment, thread, onResolve, onDelete, isAdmin }: CommentCardProps) {
+  const { addToast } = useToast();
   const [feedbackGiven, setFeedbackGiven] = useState<FeedbackType | null>(null);
   const [upvotes, setUpvotes] = useState(comment.upvote_count || 0);
   const [upvoted, setUpvoted] = useState(false);
@@ -332,7 +363,10 @@ function CommentCard({ comment, thread, onResolve, onDelete, isAdmin }: CommentC
     if (isAi && hasCitations) {
       memoryApi.batchGet(comment.cited_memory_ids)
         .then(setCitedMemories)
-        .catch(err => console.warn('Failed to load cited memories:', err));
+        .catch(err => {
+          console.warn('Failed to load cited memories:', err);
+          addToast('warning', '引用记忆加载失败');
+        });
     }
   }, [isAi, comment.cited_memory_ids]); // eslint-disable-line react-hooks/exhaustive-deps
 

@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Link, useParams, useNavigate } from 'react-router-dom';
 import { memoryApi, feedbackApi } from '../api/client';
 import { useAsync } from '../hooks/useAsync';
+import { useToast } from '../contexts/ToastContext';
 import { Loading, ErrorMsg, AuthorityBadge, LifecycleBadge, Badge, QualityDot, ConfirmModal, KnowledgeTypeBadge } from '../components/UI';
 import type { MemoryAuthority, MemoryLifecycle } from '../types';
 
@@ -16,9 +17,11 @@ export default function MemoryDetail() {
     }),
     [memoryId],
   );
+  const { addToast } = useToast();
   const [editing, setEditing] = useState(false);
   const [editContent, setEditContent] = useState('');
   const [showDelete, setShowDelete] = useState(false);
+  const [restoring, setRestoring] = useState(false);
 
   async function handleSave() {
     await memoryApi.update(memoryId!, { content: editContent });
@@ -29,6 +32,19 @@ export default function MemoryDetail() {
   async function handleAuthority(authority: MemoryAuthority) {
     await memoryApi.changeAuthority(memoryId!, { authority });
     refetch();
+  }
+
+  async function handleRestore() {
+    setRestoring(true);
+    try {
+      await memoryApi.restore(memoryId!);
+      addToast('success', '记忆已恢复为 ACTIVE 状态');
+      refetch();
+    } catch (err: any) {
+      addToast('error', err.message || '恢复失败');
+    } finally {
+      setRestoring(false);
+    }
   }
 
   async function handleDelete() {
@@ -59,6 +75,11 @@ export default function MemoryDetail() {
                 {memory.pending_human_confirm && <Badge type="amber">⏳ 待确认</Badge>}
               </div>
               <div style={{ display: 'flex', gap: 8 }}>
+                {(lifecycleStatus === 'COLD' || lifecycleStatus === 'ARCHIVED') && (
+                  <button className="btn-primary btn-sm" onClick={handleRestore} disabled={restoring}>
+                    {restoring ? '恢复中...' : '♻️ 恢复'}
+                  </button>
+                )}
                 <button className="btn-secondary btn-sm" onClick={() => { setEditing(true); setEditContent(memory.content); }}>✏️ 编辑</button>
                 <button className="btn-danger btn-sm" onClick={() => setShowDelete(true)}>🗑 删除</button>
               </div>

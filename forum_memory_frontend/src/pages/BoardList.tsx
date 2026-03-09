@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { namespaceApi } from '../api/client';
 import { useAsync } from '../hooks/useAsync';
 import { useUser } from '../contexts/UserContext';
-import { Loading, ErrorMsg, EmptyState } from '../components/UI';
+import { Loading, ErrorMsg, EmptyState, AccessModeBadge } from '../components/UI';
 import type { Namespace } from '../types';
 
 export default function BoardList() {
@@ -45,7 +45,10 @@ function BoardCard({ board }: { board: Namespace }) {
   return (
     <Link to={`/boards/${board.id}/threads`} style={{ textDecoration: 'none', color: 'inherit' }}>
       <div className="card" style={{ padding: 20, cursor: 'pointer' }}>
-        <h3 style={{ fontSize: 16, marginBottom: 4 }}>{board.display_name}</h3>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+          <h3 style={{ fontSize: 16, marginBottom: 4 }}>{board.display_name}</h3>
+          <AccessModeBadge mode={board.access_mode} />
+        </div>
         <p style={{ fontSize: 13, color: 'var(--text-sec)', marginBottom: 12 }}>{board.description || '暂无描述'}</p>
         <div style={{ display: 'flex', gap: 16, fontSize: 12, color: 'var(--text-ter)', alignItems: 'center' }}>
           <span style={{ color: board.is_active ? 'var(--green)' : 'var(--red)' }}>

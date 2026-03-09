@@ -17,6 +17,8 @@ const GLOBAL_ADMIN_NAV: NavItem[] = [
   { path: '/admin', label: '仪表盘', icon: '📊' },
   { path: '/admin/memories', label: '记忆管理', icon: '🧠' },
   { path: '/admin/pending', label: '待处理中心', icon: '📋' },
+  { path: '/admin/audit', label: '审计日志', icon: '📜' },
+  { path: '/admin/users', label: '用户管理', icon: '👥' },
   { path: '/admin/settings', label: '板块配置', icon: '⚙️' },
 ];
 
@@ -79,11 +81,17 @@ export default function Layout() {
   const roleLabel = isSuperAdmin ? '超级管理员' : currentUser?.role === 'board_admin' ? '板块管理员' : '普通用户';
   const roleColor = isAdmin ? 'var(--green)' : 'var(--text-ter)';
 
+  // 动态论坛导航（包含"我的帖子"）
+  const forumNav: NavItem[] = [...FORUM_NAV];
+  if (currentUser) {
+    forumNav.push({ path: `/my-posts`, label: '我的帖子', icon: '📝' });
+  }
+
   // 选择侧边栏导航
   let nav: NavItem[];
   let sidebarTitle: string;
   if (!isAdminPage) {
-    nav = FORUM_NAV;
+    nav = forumNav;
     sidebarTitle = '导航';
   } else if (activeBoardId) {
     nav = boardAdminNav(activeBoardId);

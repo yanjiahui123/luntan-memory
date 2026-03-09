@@ -34,6 +34,28 @@ export function LifecycleBadge({ status }: { status: MemoryLifecycle }) {
   return <Badge type={map[status] ?? 'gray'}>{status}</Badge>;
 }
 
+export function PriorityBadge({ priority }: { priority: string | null | undefined }) {
+  if (!priority) return null;
+  const cfg: Record<string, { type: string; label: string }> = {
+    P0: { type: 'red', label: 'P0 紧急' },
+    P1: { type: 'amber', label: 'P1 高' },
+    P2: { type: 'blue', label: 'P2 中' },
+    P3: { type: 'gray', label: 'P3 低' },
+  };
+  const c = cfg[priority] ?? { type: 'gray', label: priority };
+  return <Badge type={c.type}>{c.label}</Badge>;
+}
+
+export function AccessModeBadge({ mode }: { mode: string | null | undefined }) {
+  if (!mode || mode === 'public') return null;
+  const cfg: Record<string, { type: string; label: string }> = {
+    restricted: { type: 'amber', label: '🔒 受限' },
+    private: { type: 'red', label: '🔐 私有' },
+  };
+  const c = cfg[mode] ?? { type: 'gray', label: mode };
+  return <Badge type={c.type}>{c.label}</Badge>;
+}
+
 // ── State indicators ───────────────────────────────────────────────────────
 
 export function Loading() {

@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { memoryApi, adminApi } from '../api/client';
 import { useAsync } from '../hooks/useAsync';
+import { useUrlState } from '../hooks/useUrlState';
 import { Loading, ErrorMsg, EmptyState, Badge, AuthorityBadge, QualityDot } from '../components/UI';
 import type { Memory, QualityAlert } from '../types';
 import type { MemoryListParams } from '../api/client';
@@ -17,7 +18,7 @@ type TabKey = typeof TABS[number]['key'];
 
 export default function PendingCenter() {
   const { boardId } = useParams<{ boardId?: string }>();
-  const [tab, setTab] = useState<TabKey>('all');
+  const [tab, setTab] = useUrlState('tab', 'all') as [string, (v: string) => void];
 
   return (
     <div>

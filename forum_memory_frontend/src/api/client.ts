@@ -131,6 +131,8 @@ export const namespaceApi = {
 export interface ThreadListParams {
   namespace_id?: string;
   status?: ThreadStatus;
+  author_id?: string;
+  priority?: string;
   q?: string;
   page?: number;
   size?: number;
@@ -141,6 +143,8 @@ export const threadApi = {
     const q = new URLSearchParams();
     if (params.namespace_id) q.set('namespace_id', params.namespace_id);
     if (params.status) q.set('status', params.status);
+    if (params.author_id) q.set('author_id', params.author_id);
+    if (params.priority) q.set('priority', params.priority);
     if (params.q) q.set('q', params.q);
     q.set('page', String(params.page ?? 1));
     q.set('size', String(params.size ?? 20));
@@ -180,6 +184,7 @@ export const memoryApi = {
   create: (data: Partial<Memory>) => post<Memory>('/memories', data),
   update: (id: string, data: Partial<Memory>) => put<Memory>(`/memories/${id}`, data),
   delete: (id: string) => del<null>(`/memories/${id}`),
+  restore: (id: string) => put<Memory>(`/memories/${id}/restore`),
   changeAuthority: (id: string, data: { authority: MemoryAuthority }) => put<Memory>(`/memories/${id}/authority`, data),
   search: (data: { query: string; namespace_id?: string; top_k?: number }) => post<MemorySearchResponse>('/memories/search', data),
   extract: (threadId: string) => post<null>(`/memories/extract/${threadId}`),
@@ -222,6 +227,11 @@ export const adminApi = {
     return get<PaginatedResult<QualityAlert>>(`/admin/quality-alerts?${q}`);
   },
   dismissAlert: (memoryId: string) => post<null>(`/admin/quality-alerts/${memoryId}/dismiss`),
+  auditLogs: (params: { memory_id?: string; operation?: string; page?: number; size?: number } = {}) => {
+    const q = new URLSearchParams();
+    Object.entries(params).forEach(([k, v]) => { if (v != null && v !== '') q.set(k, String(v)); });
+    return requestPaginated<import('../types').OperationLog>(`/admin/audit-logs?${q}`);
+  },
   /**
    * 通过文件上传批量导入历史帖子（异步，立即返回 job_id）。
    * 用 importJobStatus(job_id) 轮询进度。

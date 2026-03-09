@@ -5,7 +5,9 @@ export type UserRole = 'super_admin' | 'board_admin' | 'user';
 export interface User {
   id: string;
   employee_id: string;
+  username?: string;
   display_name: string;
+  email?: string | null;
   role: UserRole;
   is_active: boolean;
   created_at: string;
@@ -74,6 +76,8 @@ export interface Thread {
   comment_count: number;
   view_count?: number;
   tags?: string[];
+  priority?: string;
+  resolved_type?: string;
   environment?: string;
   created_at: string;
   updated_at: string;
@@ -185,6 +189,20 @@ export interface Moderator {
 export interface DictionaryEntry {
   slang: string;
   canonical: string;
+}
+
+// ── Operation log ──────────────────────────────────────────────────────────
+
+export interface OperationLog {
+  id: string;
+  memory_id: string;
+  operation: string;
+  operator_id: string | null;
+  operator_type: string;
+  reason: string | null;
+  before_snapshot: Record<string, unknown> | null;
+  after_snapshot: Record<string, unknown> | null;
+  created_at: string;
 }
 
 // ── API response shapes ────────────────────────────────────────────────────

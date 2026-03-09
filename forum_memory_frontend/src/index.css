@@ -295,6 +295,26 @@ textarea { resize: vertical; min-height: 120px; }
 .empty-state { text-align: center; padding: 48px 24px; color: var(--text-ter); }
 .empty-state__icon { font-size: 40px; margin-bottom: 12px; }
 
+/* ── Toast ─────────────────────────────────────── */
+.toast-container {
+  position: fixed; top: 60px; right: 20px; z-index: 1100;
+  display: flex; flex-direction: column; gap: 8px;
+  max-width: 380px; pointer-events: none;
+}
+.toast {
+  padding: 10px 16px; border-radius: var(--radius);
+  font-size: 13px; font-weight: 500;
+  box-shadow: var(--shadow-md);
+  animation: toastIn 0.3s ease-out;
+  display: flex; align-items: center; gap: 8px;
+  pointer-events: auto;
+}
+.toast--success { background: var(--green-light); color: var(--green); border: 1px solid var(--green); }
+.toast--error { background: var(--red-light); color: var(--red); border: 1px solid var(--red); }
+.toast--warning { background: var(--amber-light); color: var(--amber); border: 1px solid var(--amber); }
+.toast--info { background: var(--accent-light); color: var(--accent); border: 1px solid var(--accent); }
+@keyframes toastIn { from { opacity: 0; transform: translateX(40px); } to { opacity: 1; transform: translateX(0); } }
+
 /* ── Animations ────────────────────────────────── */
 @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
 .fade-in { animation: fadeIn 0.3s ease-out; }
