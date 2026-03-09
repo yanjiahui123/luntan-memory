@@ -25,20 +25,20 @@ SEED_USERS = [
         "role": SystemRole.SUPER_ADMIN,
     },
     # 以下为示例普通用户，可按需增删
-    # {
-    #     "employee_id": "00000001",
-    #     "username": "zhangsan",
-    #     "display_name": "张三",
-    #     "email": "zhangsan@company.com",
-    #     "role": SystemRole.USER,
-    # },
-    # {
-    #     "employee_id": "00000002",
-    #     "username": "lisi",
-    #     "display_name": "李四",
-    #     "email": "lisi@company.com",
-    #     "role": SystemRole.USER,
-    # },
+    {
+        "employee_id": "00000001",
+        "username": "zhangsan",
+        "display_name": "张三",
+        "email": "zhangsan@company.com",
+        "role": SystemRole.USER,
+    },
+    {
+        "employee_id": "00000002",
+        "username": "lisi",
+        "display_name": "李四",
+        "email": "lisi@company.com",
+        "role": SystemRole.USER,
+    },
 ]
 
 

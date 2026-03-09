@@ -108,4 +108,9 @@ def _add_health_check(app: FastAPI) -> None:
             return {"status": "error", "database": str(e)}
 
 
+# 模块级 app 实例：供 ASGI 服务器使用（uvicorn forum_memory.main:app）
 app = create_app()
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="127.0.0.1", port=8000)

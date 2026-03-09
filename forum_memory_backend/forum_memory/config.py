@@ -12,7 +12,8 @@ class Settings(BaseSettings):
     debug: bool = False
 
     # Database — sync driver (psycopg2)
-    database_url: str = "postgresql://postgres:postgres@localhost:5432/forum_memory"
+    # 必须通过环境变量 FM_DATABASE_URL 或 .env 文件设置
+    database_url: str = ""
     database_echo: bool = False
 
     # Elasticsearch
@@ -73,6 +74,14 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def _validate_settings(self):
+        # Database URL is required
+        if not self.database_url:
+            raise ValueError(
+                "FM_DATABASE_URL is required. "
+                "Set it in .env file or as environment variable, e.g.: "
+                "FM_DATABASE_URL=postgresql://user:password@host:5432/dbname"
+            )
+
         # LLM provider-specific validation
         if self.llm_provider == "openai" and not self.llm_api_key:
             raise ValueError("FM_LLM_API_KEY is required when llm_provider is 'openai'")
