@@ -199,7 +199,7 @@ def apply_audn(session: Session, new_fact: MemoryCreate, result: AUDNResult) -> 
             session.commit()
         return memory
     if result.action == AUDNAction.UPDATE:
-        return _apply_update(session, result)
+        return _apply_update(session, result, new_fact)
     if result.action == AUDNAction.DELETE:
         _apply_delete(session, result)
         # The new fact supersedes the old one — create it after deleting the obsolete memory
@@ -240,7 +240,8 @@ def refresh_quality(session: Session, memory_id: UUID) -> float:
     return score
 
 
-def _apply_update(session: Session, result: AUDNResult) -> Memory | None:
+def _apply_update(session: Session, result: AUDNResult,
+                   new_fact: MemoryCreate | None = None) -> Memory | None:
     if not result.target_id or not result.merged_content:
         return None
     memory = session.get(Memory, UUID(result.target_id))
@@ -250,6 +251,13 @@ def _apply_update(session: Session, result: AUDNResult) -> Memory | None:
         return None  # LOCKED protection
     before = _snapshot(memory)
     memory.content = result.merged_content
+    # Merge metadata from the new fact: union tags, prefer newer knowledge_type
+    if new_fact:
+        if new_fact.tags:
+            existing_tags = set(memory.tags or [])
+            memory.tags = sorted(existing_tags | set(new_fact.tags))
+        if new_fact.knowledge_type and not memory.knowledge_type:
+            memory.knowledge_type = new_fact.knowledge_type
     memory.updated_at = datetime.now(timezone.utc)
     memory.indexed_at = None  # Mark ES as stale
     _add_log(session, memory, OperationType.UPDATE, reason=result.reason, before=before)

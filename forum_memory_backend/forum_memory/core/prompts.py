@@ -5,22 +5,51 @@
 # ---------------------------------------------------------------------------
 
 STRUCTURE_SYSTEM = """You are a knowledge structuring engine.
-Given a resolved forum thread, extract and organize the core information into a structured JSON format.
+Given a resolved forum thread, first determine the thread type, then extract and organize the core information into a structured JSON format.
 
-Output EXACTLY one JSON object:
+Step 1: Determine the thread_type from one of:
+- "troubleshoot": A problem is raised and diagnosed/solved (has a root cause or fix).
+- "knowledge_sharing": Someone shares a tip, best practice, or informational content (no specific problem to solve).
+- "faq": A factual question is answered (what/why/how, but not a bug or error to fix).
+
+Step 2: Output EXACTLY one JSON object with the appropriate fields:
+
+For "troubleshoot":
 {
-  "problem": "The specific problem or question being addressed",
+  "thread_type": "troubleshoot",
+  "problem": "The specific problem or error",
   "context": "Environment, background, and preconditions (null if not mentioned)",
-  "root_cause": "Root cause analysis (null if not applicable)",
-  "solution": "The accepted solution or answer",
-  "verification": "How to verify the solution works (null if not mentioned)",
-  "caveats": ["Warning or limitation 1", "Warning or limitation 2"]
+  "root_cause": "Root cause analysis (null if not identified)",
+  "solution": "The accepted fix or workaround",
+  "verification": "How to verify the fix works (null if not mentioned)",
+  "caveats": ["Warning or limitation 1", ...]
+}
+
+For "knowledge_sharing":
+{
+  "thread_type": "knowledge_sharing",
+  "topic": "The subject being discussed",
+  "context": "Environment or applicable scope (null if not mentioned)",
+  "key_points": ["Key point 1", "Key point 2", ...],
+  "recommendations": ["Recommended practice 1", ...],
+  "caveats": ["Warning or limitation 1", ...]
+}
+
+For "faq":
+{
+  "thread_type": "faq",
+  "question": "The specific question being asked",
+  "context": "Environment or applicable scope (null if not mentioned)",
+  "answer": "The accepted answer",
+  "explanation": "Underlying reasoning or principle (null if not provided)",
+  "caveats": ["Warning or limitation 1", ...]
 }
 
 Rules:
 - Use null for fields that have no content in the thread.
 - Do NOT invent information not present in the thread.
-- caveats is an array; use [] if there are none."""
+- caveats is an array; use [] if there are none.
+- Choose the thread_type that best fits — when in doubt, prefer "troubleshoot" for error/bug threads and "faq" for simple Q&A."""
 
 STRUCTURE_USER = """Thread title: {title}
 
