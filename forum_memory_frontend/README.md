@@ -130,7 +130,9 @@ npm run build
 | `src/types/index.ts` | 所有领域模型类型（User, Namespace, Thread, Memory 等） |
 | `src/api/client.ts` | API 客户端，所有接口都带泛型返回类型 |
 | `src/hooks/useAsync.ts` | 通用数据加载 Hook，`useAsync<T>()` |
+| `src/hooks/useUrlState.ts` | URL 查询参数双向同步 Hook |
 | `src/contexts/UserContext.tsx` | 当前用户状态 Context |
+| `src/contexts/ToastContext.tsx` | 全局 Toast 通知 Context |
 | `src/components/` | 共享组件（全部 `.tsx`） |
 | `src/pages/` | 页面组件（全部 `.tsx`） |
 
@@ -151,13 +153,17 @@ npm run build
 | `/boards/:id/new` | 发帖 | 创建新问题，支持相似帖子提示 |
 | `/threads/:id` | 帖子详情 | **核心页面**：问答 + AI 回复 + 采纳关闭 |
 | `/search?q=xxx&ns=boardId` | 搜索结果 | 记忆语义搜索，需指定板块 |
+| `/my-posts` | 我的帖子 | 当前用户发布的帖子列表 |
 | `/admin` | 管理仪表盘 | 数据概览 + 快速操作 |
 | `/admin/memories` | 记忆列表 | 多维筛选 + 记忆浏览 |
 | `/admin/memories/:id` | 记忆详情 | 编辑 + 权威变更 + 质量指标 |
 | `/admin/pending` | 待处理中心 | 超时确认 / 低质量处理 / 质量告警 |
 | `/admin/settings` | 板块配置 | 基本信息 + 黑话字典 + 知识库 + 管理员 |
 | `/admin/import` | 批量导入 | 历史帖子 JSON/ZIP 导入 |
+| `/admin/users` | 用户管理 | 用户列表 + 创建/删除 |
+| `/admin/audit` | 审计日志 | 操作日志查询 |
 | `/admin/boards/:id` | 板块级仪表盘 | 板块管理员专属后台 |
+| `/admin/boards/:id/*` | 板块级子路由 | 板块级的记忆/待处理/配置/导入页面 |
 
 ---
 
@@ -179,9 +185,11 @@ forum_memory_frontend/
     ├── api/
     │   └── client.ts       # 泛型 API 请求封装
     ├── hooks/
-    │   └── useAsync.ts     # 通用数据加载 Hook（泛型）
+    │   ├── useAsync.ts     # 通用数据加载 Hook（泛型）
+    │   └── useUrlState.ts  # URL 查询参数双向同步 Hook
     ├── contexts/
-    │   └── UserContext.tsx # 用户状态 Context
+    │   ├── UserContext.tsx  # 用户状态 Context
+    │   └── ToastContext.tsx # 全局 Toast 通知 Context
     ├── components/
     │   ├── Layout.tsx      # 全局布局（顶栏 + 侧栏 + 内容区）
     │   ├── UI.tsx          # 共享 UI 组件（Badge, Loading, Modal 等）
@@ -194,12 +202,15 @@ forum_memory_frontend/
         ├── ThreadDetail.tsx
         ├── NewThread.tsx
         ├── SearchResults.tsx
+        ├── MyPosts.tsx
         ├── AdminDashboard.tsx
         ├── MemoryList.tsx
         ├── MemoryDetail.tsx
         ├── PendingCenter.tsx
         ├── BoardConfig.tsx
-        └── ImportTopics.tsx
+        ├── ImportTopics.tsx
+        ├── UserManagement.tsx
+        └── AuditLog.tsx
 ```
 
 ## API 代理（开发模式）
