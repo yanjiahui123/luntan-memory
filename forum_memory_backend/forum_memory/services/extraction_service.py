@@ -146,17 +146,25 @@ def _execute_pipeline(session: Session, thread: Thread, record: ExtractionRecord
     """Compress → extract → AUDN → persist."""
     llm = get_provider()
     discussion = _build_discussion(session, thread.id)
-    compressed = _maybe_compress(llm, thread.title, discussion)
+    compressed = _maybe_compress(llm, thread.title, thread.content, discussion)
     facts = _extract_facts(llm, thread.title, thread.content, compressed)
 
     authority = default_authority(thread.resolved_type)
     pending = needs_human_confirm(thread.resolved_type)
     memory_ids = []
+    # Track memories created in this batch so later facts can see earlier ones
+    # during AUDN dedup (ES may not have indexed them yet due to near-realtime delay)
+    batch_created: list[dict] = []
 
     for fact in facts:
-        mid = _process_one_fact(session, llm, thread, fact, authority, pending)
+        mid = _process_one_fact(session, llm, thread, fact, authority, pending, batch_created)
         if mid:
             memory_ids.append(mid)
+            batch_created.append({
+                "id": str(mid),
+                "content": fact["content"],
+                "authority": authority.value if authority else "NORMAL",
+            })
 
     return memory_ids
 
@@ -172,10 +180,10 @@ def _build_discussion(session: Session, thread_id: UUID) -> str:
     return "\n\n".join(parts)
 
 
-def _maybe_compress(llm, title: str, discussion: str) -> str:
+def _maybe_compress(llm, title: str, question: str, discussion: str) -> str:
     if len(discussion) < 3000:
         return discussion
-    msgs = build_compress_messages(title, discussion)
+    msgs = build_compress_messages(title, question, discussion)
     return llm.complete(msgs)
 
 
@@ -227,11 +235,18 @@ def _stage_gate(llm, atoms: list[dict]) -> list[dict]:
     return facts
 
 
-def _process_one_fact(session, llm, thread, fact, authority, pending) -> UUID | None:
+def _process_one_fact(session, llm, thread, fact, authority, pending,
+                      batch_created: list[dict] | None = None) -> UUID | None:
     similar = find_similar(
         session, thread.namespace_id, fact["content"], top_k=15,
         tags=fact.get("tags"), knowledge_type=fact.get("knowledge_type"),
     )
+    # Append memories created earlier in this batch (not yet visible in ES)
+    if batch_created:
+        seen_ids = {m["id"] for m in similar}
+        for bc in batch_created:
+            if bc["id"] not in seen_ids:
+                similar.append(bc)
     msgs = build_audn_messages(fact["content"], similar)
     raw = llm.complete(msgs)
     result = parse_audn_response(raw)

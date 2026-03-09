@@ -140,9 +140,13 @@ Decide the action:"""
 
 COMPRESS_SYSTEM = """Summarize the following forum discussion into a concise thread suitable for knowledge extraction.
 Keep: the original question, key diagnostic steps, and the accepted solution.
-Remove: greetings, tangents, duplicated info."""
+Remove: greetings, tangents, duplicated info.
+IMPORTANT: The original question must be preserved in full — it defines the scope of the discussion."""
 
 COMPRESS_USER = """Thread title: {title}
+
+Original question:
+{question}
 
 Full discussion:
 {discussion}

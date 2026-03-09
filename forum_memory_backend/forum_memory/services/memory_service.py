@@ -177,13 +177,33 @@ def change_authority(session: Session, memory_id: UUID, authority: str, reason: 
 
 
 def apply_audn(session: Session, new_fact: MemoryCreate, result: AUDNResult) -> Memory | None:
-    """Apply an AUDN decision to the memory store."""
+    """Apply an AUDN decision to the memory store.
+
+    For DELETE: removes the obsolete memory, then creates the new fact (REPLACE semantics).
+    Returns the newly created/updated memory, or None for NONE.
+    """
     if result.action == AUDNAction.ADD:
-        return create_memory(session, new_fact)
+        # Flag for human review if the new fact conflicts with a LOCKED memory
+        if result.conflict_with_locked:
+            new_fact.pending_human_confirm = True
+            logger.warning(
+                "New fact conflicts with LOCKED memory %s — flagging for human review. Reason: %s",
+                result.conflict_with_locked, result.reason,
+            )
+        memory = create_memory(session, new_fact)
+        if result.conflict_with_locked and memory:
+            _add_log(
+                session, memory, OperationType.ADD,
+                reason=f"conflict_with_locked={result.conflict_with_locked}: {result.reason}",
+            )
+            session.commit()
+        return memory
     if result.action == AUDNAction.UPDATE:
         return _apply_update(session, result)
     if result.action == AUDNAction.DELETE:
-        return _apply_delete(session, result)
+        _apply_delete(session, result)
+        # The new fact supersedes the old one — create it after deleting the obsolete memory
+        return create_memory(session, new_fact)
     return None  # NONE
 
 
@@ -243,12 +263,13 @@ def _apply_update(session: Session, result: AUDNResult) -> Memory | None:
     return memory
 
 
-def _apply_delete(session: Session, result: AUDNResult) -> Memory | None:
+def _apply_delete(session: Session, result: AUDNResult) -> None:
+    """Soft-delete the target memory. Called as part of REPLACE (DELETE + ADD)."""
     if not result.target_id:
-        return None
+        return
     memory = session.get(Memory, UUID(result.target_id))
     if not memory or memory.authority == Authority.LOCKED:
-        return None
+        return
     index_name = _resolve_es_index(session, memory.namespace_id)
     memory.status = MemoryStatus.DELETED
     memory.updated_at = datetime.now(timezone.utc)
@@ -256,7 +277,6 @@ def _apply_delete(session: Session, result: AUDNResult) -> Memory | None:
     _add_log(session, memory, OperationType.DELETE, reason=result.reason)
     session.commit()
     es_service.delete_memory_doc(UUID(result.target_id), index_name=index_name)
-    return memory
 
 
 def restore_memory(session: Session, memory_id: UUID) -> Memory | None:

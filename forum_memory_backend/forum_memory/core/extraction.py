@@ -24,11 +24,11 @@ logger = logging.getLogger(__name__)
 # Compression
 # ---------------------------------------------------------------------------
 
-def build_compress_messages(title: str, discussion: str) -> list[dict]:
+def build_compress_messages(title: str, question: str, discussion: str) -> list[dict]:
     """Build messages for the compression LLM call."""
     return [
         {"role": "system", "content": COMPRESS_SYSTEM},
-        {"role": "user", "content": COMPRESS_USER.format(title=title, discussion=discussion)},
+        {"role": "user", "content": COMPRESS_USER.format(title=title, question=question, discussion=discussion)},
     ]
 
 
