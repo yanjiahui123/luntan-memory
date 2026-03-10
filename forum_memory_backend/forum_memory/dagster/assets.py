@@ -35,18 +35,24 @@ def run_extraction_op(config: ExtractConfig):
     event_id = UUID(config.event_id)
 
     with Session(engine) as session:
+        succeeded = False
         try:
             memory_ids = run_extraction(session, thread_id)
             logger.info(
                 "Extraction completed: %d memories from thread %s",
                 len(memory_ids), thread_id,
             )
+            succeeded = True
         except ValueError as e:
+            # ValueError = expected skip (already extracted, not resolved, etc.)
             logger.warning("Extraction skipped for thread %s: %s", thread_id, e)
+            succeeded = True  # Not a transient failure, mark as processed
         except Exception:
-            logger.exception("Extraction failed for thread %s", thread_id)
-        finally:
-            # Always mark the domain event as processed
+            logger.exception("Extraction failed for thread %s — event will be retried", thread_id)
+
+        # Only mark event processed on success or expected skip;
+        # transient failures leave the event unprocessed for retry
+        if succeeded:
             event = session.get(DomainEvent, event_id)
             if event:
                 event.processed = True

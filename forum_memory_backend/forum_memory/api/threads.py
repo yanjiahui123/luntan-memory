@@ -72,7 +72,11 @@ def create_thread(request: Request, data: ThreadCreate, session: Session = Depen
 
 
 @router.post("/{thread_id}/resolve", response_model=ThreadRead)
-def resolve_thread(thread_id: UUID, data: ThreadResolve, session: Session = Depends(get_db)):
+def resolve_thread(thread_id: UUID, data: ThreadResolve, session: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    thread = thread_service.get_thread(session, thread_id)
+    if not thread:
+        raise HTTPException(404, "Thread not found")
+    check_namespace_write_access(thread.namespace_id, session, user)
     try:
         return thread_service.resolve_thread(session, thread_id, data.best_answer_id)
     except ValueError as e:
@@ -80,7 +84,11 @@ def resolve_thread(thread_id: UUID, data: ThreadResolve, session: Session = Depe
 
 
 @router.post("/{thread_id}/timeout-close", response_model=ThreadRead)
-def timeout_close(thread_id: UUID, session: Session = Depends(get_db)):
+def timeout_close(thread_id: UUID, session: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    thread = thread_service.get_thread(session, thread_id)
+    if not thread:
+        raise HTTPException(404, "Thread not found")
+    check_board_permission(thread.namespace_id, session, user)
     try:
         return thread_service.timeout_close_thread(session, thread_id)
     except ValueError as e:
@@ -112,7 +120,11 @@ def add_comment(thread_id: UUID, data: CommentCreate, session: Session = Depends
 
 
 @router.post("/{thread_id}/ai-answer", response_model=CommentRead, status_code=201)
-def ai_answer(thread_id: UUID, session: Session = Depends(get_db)):
+def ai_answer(thread_id: UUID, session: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    thread = thread_service.get_thread(session, thread_id)
+    if not thread:
+        raise HTTPException(404, "Thread not found")
+    check_namespace_write_access(thread.namespace_id, session, user)
     try:
         return thread_service.generate_ai_answer(session, thread_id)
     except ValueError as e:
@@ -122,26 +134,32 @@ def ai_answer(thread_id: UUID, session: Session = Depends(get_db)):
 
 
 @router.get("/{thread_id}/ai-answer/stream")
-def stream_ai_answer(thread_id: UUID):
+def stream_ai_answer(thread_id: UUID, session: Session = Depends(get_db), user: User = Depends(get_current_user)):
     """SSE endpoint: push a ready signal when the AI answer appears.
 
-    Polls DB every 2 seconds for up to 120 seconds.
+    Polls DB every 2 seconds for up to 60 seconds (reduced from 120s to limit worker blocking).
     Emits:
       data: {"ready": true}    — AI comment exists, frontend should refetch
       data: {"timeout": true}  — gave up, frontend may retry manually
       : heartbeat              — keep-alive comment while waiting
     """
+    # Validate thread exists and user has access before starting long-lived stream
+    thread = thread_service.get_thread(session, thread_id)
+    if not thread:
+        raise HTTPException(404, "Thread not found")
+    check_namespace_read_access(thread.namespace_id, session, user)
+
     from forum_memory.database import engine
     from forum_memory.models.thread import Comment
 
     def _generate():
-        for _ in range(60):  # 60 × 2s = 120s max
-            with Session(engine) as session:
+        for _ in range(30):  # 30 × 2s = 60s max (reduced from 120s)
+            with Session(engine) as bg_session:
                 stmt = select(Comment).where(
                     Comment.thread_id == thread_id,
                     Comment.is_ai == True,  # noqa: E712
                 )
-                if session.exec(stmt).first():
+                if bg_session.exec(stmt).first():
                     yield f"data: {json.dumps({'ready': True})}\n\n"
                     return
             time.sleep(2)

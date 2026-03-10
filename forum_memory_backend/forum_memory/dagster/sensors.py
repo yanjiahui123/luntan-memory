@@ -93,8 +93,14 @@ def thread_resolved_sensor(context: SensorEvaluationContext):
             new_dispatched = True
 
         if new_dispatched:
-            # Keep dispatched set bounded: only retain IDs still unprocessed
-            context.update_cursor(json.dumps({"dispatched": list(dispatched_ids)}))
+            # Prune dispatched set: remove IDs for events already processed
+            still_unprocessed = {str(e.id) for e in session.exec(
+                select(DomainEvent).where(
+                    DomainEvent.id.in_([__import__('uuid').UUID(d) for d in dispatched_ids]),
+                    DomainEvent.processed == False,  # noqa: E712
+                )
+            ).all()}
+            context.update_cursor(json.dumps({"dispatched": list(still_unprocessed)}))
 
 
 # ── Scheduled: thread timeout (every hour) ───────────────

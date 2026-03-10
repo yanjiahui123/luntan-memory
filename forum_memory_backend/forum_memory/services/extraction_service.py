@@ -100,10 +100,19 @@ def _already_extracted(session: Session, thread_id: UUID) -> bool:
 
 
 def _cleanup_failed_record(session: Session, thread_id: UUID) -> None:
-    """Remove FAILED extraction records to allow retry."""
+    """Remove FAILED and stale IN_PROGRESS extraction records to allow retry.
+
+    IN_PROGRESS records older than 30 minutes are considered stale (process crashed).
+    """
+    from datetime import timedelta
+    stale_cutoff = datetime.now() - timedelta(minutes=30)
     stmt = select(ExtractionRecord).where(
         ExtractionRecord.thread_id == thread_id,
-        ExtractionRecord.status == ExtractionStatus.FAILED,
+        (ExtractionRecord.status == ExtractionStatus.FAILED) |
+        (
+            (ExtractionRecord.status == ExtractionStatus.IN_PROGRESS) &
+            (ExtractionRecord.created_at < stale_cutoff)
+        ),
     )
     for rec in session.exec(stmt).all():
         session.delete(rec)

@@ -248,7 +248,16 @@ def _apply_update(session: Session, result: AUDNResult,
     if not memory:
         return None
     if memory.authority == Authority.LOCKED:
-        return None  # LOCKED protection
+        # LOCKED memory cannot be updated; create new fact as independent entry
+        # flagged for human review instead of silently dropping it
+        if new_fact:
+            new_fact.pending_human_confirm = True
+            logger.warning(
+                "AUDN wanted to UPDATE LOCKED memory %s — creating new fact for human review. Reason: %s",
+                result.target_id, result.reason,
+            )
+            return create_memory(session, new_fact)
+        return None
     before = _snapshot(memory)
     memory.content = result.merged_content
     # Merge metadata from the new fact: union tags, prefer newer knowledge_type
@@ -276,7 +285,19 @@ def _apply_delete(session: Session, result: AUDNResult) -> None:
     if not result.target_id:
         return
     memory = session.get(Memory, UUID(result.target_id))
-    if not memory or memory.authority == Authority.LOCKED:
+    if not memory:
+        return
+    if memory.authority == Authority.LOCKED:
+        # Cannot delete LOCKED memory; flag it for human review
+        # (the caller will still create the new fact, which may contradict this one)
+        memory.pending_human_confirm = True
+        _add_log(session, memory, OperationType.UPDATE,
+                 reason=f"AUDN wanted DELETE but memory is LOCKED: {result.reason}")
+        session.commit()
+        logger.warning(
+            "AUDN wanted to DELETE LOCKED memory %s — flagged for human review. Reason: %s",
+            result.target_id, result.reason,
+        )
         return
     index_name = _resolve_es_index(session, memory.namespace_id)
     memory.status = MemoryStatus.DELETED
@@ -572,12 +593,14 @@ def _apply_filters(stmt, ns_id, authority, status, pending, knowledge_type=None,
     if knowledge_type:
         stmt = stmt.where(Memory.knowledge_type == knowledge_type)
     if tags:
-        # Filter memories that contain the specified tag
-        from sqlalchemy import cast, String
+        # Filter memories using PostgreSQL JSONB @> operator for exact tag matching
+        from sqlalchemy import text as sa_text, literal_column
         for tag in tags.split(","):
             tag = tag.strip()
             if tag:
-                stmt = stmt.where(Memory.tags.cast(String).contains(tag))
+                # Use JSONB @> operator: tags @> '["tag_value"]'::jsonb
+                import json
+                stmt = stmt.where(literal_column("memories.tags").op("@>")(sa_text(f"'{json.dumps([tag])}'::jsonb")))
     if q:
         stmt = stmt.where(Memory.content.ilike(f"%{q}%"))
     if source_id:

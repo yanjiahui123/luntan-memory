@@ -179,15 +179,16 @@ def _recall(session: Session, ns_id: UUID, query: str, limit: int) -> list[Memor
     except Exception:
         logger.exception("ES recall failed, falling back to SQL")
 
-    # Fallback: SQL LIKE
+    # Fallback: SQL LIKE with OR logic for better recall
+    from sqlalchemy import or_
     stmt = (
         select(Memory)
         .where(Memory.namespace_id == ns_id, Memory.status == MemoryStatus.ACTIVE)
         .limit(limit)
     )
-    keywords = query.split()
-    for kw in keywords[:3]:
-        stmt = stmt.where(Memory.content.contains(kw))
+    keywords = query.split()[:5]
+    if keywords:
+        stmt = stmt.where(or_(*(Memory.content.contains(kw) for kw in keywords)))
     return list(session.exec(stmt).all())
 
 
@@ -236,10 +237,9 @@ def _text_overlap(a: str, b: str) -> float:
 def _build_hits(session: Session, memories: list[Memory], env: str | None) -> list[MemorySearchHit]:
     now = datetime.now(timezone.utc)
     hits = []
+    memory_ids = []
     for m in memories:
-        # Update retrieval stats
-        m.retrieve_count += 1
-        m.last_retrieved_at = now
+        memory_ids.append(m.id)
         env_match = _check_env(m.environment, env)
         warning = None if env_match else "环境不匹配，请确认适用性"
         hit = MemorySearchHit(
@@ -249,7 +249,17 @@ def _build_hits(session: Session, memories: list[Memory], env: str | None) -> li
             env_warning=warning,
         )
         hits.append(hit)
-    if memories:
+    # Batch update retrieval stats using SQL expression to avoid lost-update under concurrency
+    if memory_ids:
+        from sqlalchemy import update as sa_update
+        session.execute(
+            sa_update(Memory)
+            .where(Memory.id.in_(memory_ids))
+            .values(
+                retrieve_count=Memory.retrieve_count + 1,
+                last_retrieved_at=now,
+            )
+        )
         session.commit()
     return hits
 

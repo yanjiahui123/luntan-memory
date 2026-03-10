@@ -170,7 +170,8 @@ Decide the action:"""
 COMPRESS_SYSTEM = """Summarize the following forum discussion into a concise thread suitable for knowledge extraction.
 Keep: the original question, key diagnostic steps, and the accepted solution.
 Remove: greetings, tangents, duplicated info.
-IMPORTANT: The original question must be preserved in full — it defines the scope of the discussion."""
+IMPORTANT: The original question must be preserved in full — it defines the scope of the discussion.
+IMPORTANT: Code blocks, commands, error messages, and configuration snippets MUST be preserved verbatim — do not paraphrase or truncate them. They are critical for technical knowledge extraction."""
 
 COMPRESS_USER = """Thread title: {title}
 

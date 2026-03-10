@@ -33,6 +33,7 @@ def list_memories(
     page: int = Query(1, ge=1),
     size: int = Query(20, ge=1, le=100),
     session: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
 ):
     items = memory_service.list_memories(
         session, namespace_id, authority, status, pending_confirm,
@@ -69,7 +70,8 @@ def get_memory(memory_id: UUID, session: Session = Depends(get_db)):
 
 
 @router.post("", response_model=MemoryRead, status_code=201)
-def create_memory(data: MemoryCreate, session: Session = Depends(get_db)):
+def create_memory(data: MemoryCreate, session: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    check_board_permission(data.namespace_id, session, user)
     return memory_service.create_memory(session, data)
 
 
@@ -130,7 +132,12 @@ def search(request: Request, data: MemorySearchRequest, session: Session = Depen
 
 @router.post("/extract/{thread_id}")
 @limiter.limit("5/minute")
-def extract(request: Request, thread_id: UUID, session: Session = Depends(get_db)):
+def extract(request: Request, thread_id: UUID, session: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    from forum_memory.models.thread import Thread
+    thread = session.get(Thread, thread_id)
+    if not thread:
+        raise HTTPException(404, "Thread not found")
+    check_board_permission(thread.namespace_id, session, user)
     try:
         ids = extraction_service.run_extraction(session, thread_id)
         return {"memory_ids_created": [str(i) for i in ids]}

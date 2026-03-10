@@ -36,6 +36,24 @@ def _default_index_name() -> str:
     return f"{get_settings().es_index_prefix}_memories"
 
 
+def _detect_analyzer(es: Elasticsearch, settings_cfg) -> str:
+    """Detect best available analyzer: prefer ik_max_word for Chinese, fall back to standard."""
+    preferred = getattr(settings_cfg, "es_content_analyzer", "ik_max_word")
+    if preferred == "standard":
+        return "standard"
+    try:
+        # Test if the analyzer plugin is installed
+        es.indices.analyze(body={"analyzer": preferred, "text": "测试"})
+        logger.info("Using ES analyzer: %s", preferred)
+        return preferred
+    except Exception:
+        logger.warning(
+            "ES analyzer '%s' not available (IK plugin not installed?), falling back to 'standard'",
+            preferred,
+        )
+        return "standard"
+
+
 def ensure_index_by_name(name: str) -> None:
     """Create an ES index with correct mapping if it doesn't exist."""
     es = get_es_client()
@@ -45,6 +63,7 @@ def ensure_index_by_name(name: str) -> None:
         return
 
     settings_cfg = get_settings()
+    content_analyzer = _detect_analyzer(es, settings_cfg)
     body = {
         "settings": {
             "number_of_shards": 1,
@@ -54,7 +73,7 @@ def ensure_index_by_name(name: str) -> None:
             "properties": {
                 "memory_id":      {"type": "keyword"},
                 "namespace_id":   {"type": "keyword"},
-                "content":        {"type": "text", "analyzer": "standard"},
+                "content":        {"type": "text", "analyzer": content_analyzer},
                 "embedding":      {
                     "type": "dense_vector",
                     "dims": settings_cfg.embedding_dimension,
@@ -195,12 +214,13 @@ def hybrid_search(
         resp = es.search(**search_kwargs, rank={"rrf": {"window_size": limit, "rank_constant": 60}})
         return _parse_hits(resp)
     except Exception as rrf_err:
-        if "rrf" in str(rrf_err).lower():
-            logger.info("RRF not available, falling back to plain hybrid search")
-        else:
+        if "rrf" not in str(rrf_err).lower() and "rank" not in str(rrf_err).lower():
+            # Genuine search error (not RRF-related), no point retrying without RRF
             logger.exception("ES hybrid search failed")
             return []
+        logger.info("RRF not available, falling back to plain hybrid search")
 
+    # Fallback: plain BM25 + KNN without RRF fusion
     try:
         resp = es.search(**search_kwargs)
         return _parse_hits(resp)

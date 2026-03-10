@@ -29,6 +29,8 @@ export default function ThreadDetail() {
   const isAuthor = !!(currentUser && thread?.author_id && currentUser.id === thread.author_id);
   const canDelete = isAuthor || isAdmin;
   const [replyText, setReplyText] = useState('');
+  const [replying, setReplying] = useState(false);
+  const [resolving, setResolving] = useState(false);
   const [resolveTarget, setResolveTarget] = useState<string | null>(null);
   const [aiLoading, setAiLoading] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -36,17 +38,32 @@ export default function ThreadDetail() {
   const [dots, setDots] = useState('');
 
   async function handleReply() {
-    if (!replyText.trim()) return;
-    await threadApi.addComment(threadId!, replyText);
-    setReplyText('');
-    refetchComments();
+    if (!replyText.trim() || replying) return;
+    setReplying(true);
+    try {
+      await threadApi.addComment(threadId!, replyText);
+      setReplyText('');
+      refetchComments();
+    } catch (err) {
+      addToast('error', '回复失败: ' + (err instanceof Error ? err.message : String(err)));
+    } finally {
+      setReplying(false);
+    }
   }
 
   async function handleResolve() {
-    await threadApi.resolve(threadId!, resolveTarget);
-    setResolveTarget(null);
-    refetch();
-    refetchComments();
+    if (resolving) return;
+    setResolving(true);
+    try {
+      await threadApi.resolve(threadId!, resolveTarget);
+      setResolveTarget(null);
+      refetch();
+      refetchComments();
+    } catch (err) {
+      addToast('error', '采纳失败: ' + (err instanceof Error ? err.message : String(err)));
+    } finally {
+      setResolving(false);
+    }
   }
 
   useEffect(() => {
@@ -85,7 +102,7 @@ export default function ThreadDetail() {
           setPollStatus('done');
         }
       };
-      es.onopen = () => { retryCount = 0; };
+      // Don't reset retryCount on open — connection flapping would bypass backoff
     }
     connect();
 
@@ -191,7 +208,7 @@ export default function ThreadDetail() {
         <div className="card" style={{ padding: 16, marginTop: 16 }}>
           <ImagePasteTextarea placeholder="写下你的回答... (支持粘贴图片和 Markdown)" value={replyText} onChange={setReplyText} style={{ marginBottom: 12 }} />
           <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-            <button className="btn-primary" onClick={handleReply} disabled={!replyText.trim()}>发送回复</button>
+            <button className="btn-primary" onClick={handleReply} disabled={!replyText.trim() || replying}>{replying ? '发送中...' : '发送回复'}</button>
           </div>
         </div>
       )}
@@ -359,16 +376,19 @@ function CommentCard({ comment, thread, onResolve, onDelete, isAdmin }: CommentC
     }
   }
 
-  useEffect(() => {
-    if (isAi && hasCitations) {
-      memoryApi.batchGet(comment.cited_memory_ids)
-        .then(setCitedMemories)
-        .catch(err => {
-          console.warn('Failed to load cited memories:', err);
-          addToast('warning', '引用记忆加载失败');
-        });
-    }
-  }, [isAi, comment.cited_memory_ids]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Lazy-load citations only on first expand (not on mount)
+  const citationsLoaded = useRef(false);
+  function loadCitationsIfNeeded() {
+    if (citationsLoaded.current || !isAi || !hasCitations) return;
+    citationsLoaded.current = true;
+    memoryApi.batchGet(comment.cited_memory_ids)
+      .then(setCitedMemories)
+      .catch(err => {
+        console.warn('Failed to load cited memories:', err);
+        addToast('warning', '引用记忆加载失败');
+        citationsLoaded.current = false; // Allow retry on next click
+      });
+  }
 
   async function handleFeedback(type: FeedbackType) {
     if (!hasCitations) return;
@@ -438,7 +458,7 @@ function CommentCard({ comment, thread, onResolve, onDelete, isAdmin }: CommentC
         <div style={{ marginTop: 10 }}>
           <button
             className="btn-sm btn-secondary"
-            onClick={() => setShowCitations(!showCitations)}
+            onClick={() => { if (!showCitations) loadCitationsIfNeeded(); setShowCitations(!showCitations); }}
             style={{ fontSize: 12, display: 'flex', alignItems: 'center', gap: 4 }}
           >
             📎 引用了 {comment.cited_memory_ids?.length || 0} 条知识记忆

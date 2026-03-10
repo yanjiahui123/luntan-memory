@@ -209,7 +209,7 @@ def delete_thread(session: Session, thread_id: UUID, deleted_by_admin: bool = Fa
             index_name = ns.es_index_name if ns else None
             for m in memories:
                 m.status = MemoryStatus.DELETED
-                es_service.delete_memory_doc(m.id, index_name)
+                m.indexed_at = None  # Mark ES as stale for repair sensor fallback
             logger.info(
                 "Author deleted thread %s: %d memories cascade-deleted",
                 thread_id, len(memories),
@@ -217,6 +217,16 @@ def delete_thread(session: Session, thread_id: UUID, deleted_by_admin: bool = Fa
 
     session.commit()
     session.refresh(thread)
+
+    # Remove from ES after successful DB commit to avoid DB/ES inconsistency
+    if memories and not deleted_by_admin:
+        from forum_memory.services import es_service
+        from forum_memory.models.namespace import Namespace
+        ns = session.get(Namespace, thread.namespace_id)
+        index_name = ns.es_index_name if ns else None
+        for m in memories:
+            es_service.delete_memory_doc(m.id, index_name)
+
     return thread
 
 
@@ -294,6 +304,11 @@ def delete_comment(session: Session, comment_id: UUID, user_id: UUID, is_board_a
     thread = session.get(Thread, comment.thread_id)
     if not thread:
         raise ValueError("Thread not found")
+    # Clear best_answer_id if we're deleting the best answer to prevent dangling reference
+    if thread.best_answer_id == comment_id:
+        thread.best_answer_id = None
+        logger.warning("Deleted comment %s was best_answer for thread %s — cleared reference", comment_id, thread.id)
+    # TODO: Consider adding Comment.deleted_at for soft-delete + audit trail (requires migration)
     session.delete(comment)
     thread.comment_count = max(0, thread.comment_count - 1)
     session.commit()
@@ -378,6 +393,17 @@ def generate_ai_answer(session: Session, thread_id: UUID) -> Comment:
     )
     session.add(comment)
     _increment_comment_count(session, thread_id)
+
+    # Increment cite_count for all cited memories (used in quality score formula)
+    if cited_ids:
+        from sqlalchemy import update as sa_update
+        from forum_memory.models.memory import Memory
+        session.execute(
+            sa_update(Memory)
+            .where(Memory.id.in_(cited_ids))
+            .values(cite_count=Memory.cite_count + 1)
+        )
+
     session.commit()
     session.refresh(comment)
     return comment
