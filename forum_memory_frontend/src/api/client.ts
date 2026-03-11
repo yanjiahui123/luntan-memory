@@ -45,6 +45,15 @@ function authHeaders(): Record<string, string> {
   return { 'X-Employee-Id': getEmployeeId() };
 }
 
+/** Handle 401 responses: clear stale token and redirect to login */
+function handleUnauthorized(): void {
+  clearToken();
+  // Avoid redirect loops: only redirect if not already on login-related page
+  if (!window.location.pathname.startsWith('/login')) {
+    window.location.href = '/boards';
+  }
+}
+
 interface RequestOptions extends RequestInit {
   headers?: Record<string, string>;
   signal?: AbortSignal;
@@ -63,6 +72,9 @@ async function request<T>(url: string, options: RequestOptions = {}): Promise<T>
     ...restOptions,
   });
   if (!res.ok) {
+    if (res.status === 401) {
+      handleUnauthorized();
+    }
     const err = await res.json().catch(() => ({ detail: res.statusText }));
     throw new Error((err as { detail?: string }).detail || 'Request failed');
   }
@@ -84,6 +96,9 @@ async function requestPaginated<T>(url: string, options: RequestOptions = {}): P
     ...restOptions,
   });
   if (!res.ok) {
+    if (res.status === 401) {
+      handleUnauthorized();
+    }
     const err = await res.json().catch(() => ({ detail: res.statusText }));
     throw new Error((err as { detail?: string }).detail || 'Request failed');
   }

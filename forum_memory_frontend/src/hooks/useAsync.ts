@@ -7,34 +7,44 @@ export interface AsyncState<T> {
   refetch: () => void;
 }
 
-export function useAsync<T>(asyncFn: () => Promise<T>, deps: unknown[] = []): AsyncState<T> {
+export function useAsync<T>(asyncFn: (signal: AbortSignal) => Promise<T>, deps: unknown[] = []): AsyncState<T> {
   const [data, setData] = useState<T | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const callIdRef = useRef(0);
+  const abortRef = useRef<AbortController | null>(null);
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  const execute = useCallback(async () => {
-    const callId = ++callIdRef.current;
+  const execute = useCallback(() => {
+    // Abort any previous in-flight request
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
+
     setLoading(true);
     setError(null);
-    try {
-      const result = await asyncFn();
-      if (callId === callIdRef.current) {
-        setData(result);
-      }
-    } catch (e) {
-      if (callId === callIdRef.current) {
-        setError(e instanceof Error ? e.message : String(e));
-      }
-    } finally {
-      if (callId === callIdRef.current) {
-        setLoading(false);
-      }
-    }
+
+    asyncFn(controller.signal)
+      .then(result => {
+        if (!controller.signal.aborted) {
+          setData(result);
+        }
+      })
+      .catch(e => {
+        if (!controller.signal.aborted) {
+          setError(e instanceof Error ? e.message : String(e));
+        }
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) {
+          setLoading(false);
+        }
+      });
   }, deps); // eslint-disable-line react-hooks/exhaustive-deps
 
-  useEffect(() => { execute(); }, [execute]);
+  useEffect(() => {
+    execute();
+    return () => { abortRef.current?.abort(); };
+  }, [execute]);
 
   return { data, loading, error, refetch: execute };
 }

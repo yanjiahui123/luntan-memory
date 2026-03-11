@@ -10,7 +10,7 @@
 
 - **后端**: FastAPI (同步) + SQLModel + PostgreSQL
 - **前端**: React (Vite)
-- **搜索**: Elasticsearch 8.9 (每板块独立索引，混合搜索 BM25+KNN+RRF)
+- **搜索**: Elasticsearch 8.9 (每板块独立索引，混合搜索 BM25+KNN)
 - **编排**: Dagster (sensor 轮询事件，graph 流水线可视化)
 - **LLM**: OpenAI / 自定义 HTTP Provider
 

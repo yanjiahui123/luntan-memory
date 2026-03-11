@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link, useLocation, useNavigate, Outlet } from 'react-router-dom';
 import { userApi, setEmployeeId } from '../api/client';
 import { useUser } from '../contexts/UserContext';
@@ -46,6 +46,14 @@ export default function Layout() {
   const boardForumMatch = location.pathname.match(/^\/boards\/([^/]+)/);
   const currentBoardId = boardForumMatch ? boardForumMatch[1] : null;
 
+  // 记住最后访问的板块，以便从 /threads/:id 等非板块页面搜索时也能传递板块上下文
+  useEffect(() => {
+    if (currentBoardId) {
+      sessionStorage.setItem('lastBoardId', currentBoardId);
+    }
+  }, [currentBoardId]);
+  const effectiveBoardId = currentBoardId || sessionStorage.getItem('lastBoardId');
+
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [showSwitchUser, setShowSwitchUser] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -55,7 +63,7 @@ export default function Layout() {
   function handleSearch(e: React.FormEvent) {
     e.preventDefault();
     if (!searchQ.trim()) return;
-    navigate(`/search?q=${encodeURIComponent(searchQ.trim())}${currentBoardId ? `&ns=${currentBoardId}` : ''}`);
+    navigate(`/search?q=${encodeURIComponent(searchQ.trim())}${effectiveBoardId ? `&ns=${effectiveBoardId}` : ''}`);
     setSearchQ('');
   }
 
@@ -121,7 +129,7 @@ export default function Layout() {
         <form onSubmit={handleSearch} style={{ flex: 1, maxWidth: 400, margin: '0 16px' }}>
           <input
             className="topbar__search"
-            placeholder={currentBoardId ? '搜索当前板块...' : '搜索知识...'}
+            placeholder={effectiveBoardId ? '搜索当前板块...' : '搜索知识...'}
             value={searchQ}
             onChange={e => setSearchQ(e.target.value)}
           />
