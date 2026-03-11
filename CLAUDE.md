@@ -30,3 +30,23 @@
 - `forum_memory_backend/forum_memory/dagster/` — Dagster 编排 (assets, sensors, definitions)
 - `forum_memory_backend/forum_memory/services/` — 业务逻辑层
 - `forum_memory_backend/forum_memory/scripts/` — 运维脚本 (reindex, backfill)
+
+## 多仓库同步
+
+本项目同时维护 3 个 Git 仓库，代码变更后需同步推送：
+
+| 仓库 | SSH 地址 | 分支 | 内容 |
+|------|---------|------|------|
+| **主仓（全量）** | `git@github.com:yanjiahui123/luntan-memory.git` | master | 前后端 + docs |
+| **后端服务** | `git@github.com:yanjiahui123/memory_service.git` | main | `forum_memory_backend/` → 仓库根 + `docs/` |
+| **前端站点** | `git@github.com:yanjiahui123/memory_website.git` | main | `forum_memory_frontend/` → 仓库根（不含 node_modules/dist） |
+
+### 同步流程
+
+1. 在主仓完成开发、提交、push master
+2. 同步后端：将 `forum_memory_backend/*` 和 `docs/` 复制到 `memory_service` 仓库根目录，提交并 push
+3. 同步前端：将 `forum_memory_frontend/*`（排除 node_modules/dist）复制到 `memory_website` 仓库根目录，提交并 push
+
+### 同步用临时目录
+
+克隆地址在 `D:\pythonProject\_repo_sync\{memory_service,memory_website}`，使用 SSH 协议（HTTPS 被代理阻断）。
