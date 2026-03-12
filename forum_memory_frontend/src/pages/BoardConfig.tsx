@@ -305,7 +305,7 @@ function ModeratorsTab({ boardId }: { boardId: string }) {
       await namespaceApi.removeModerator(boardId, userId);
       refetch();
     } catch (err) {
-      alert(err instanceof Error ? err.message : String(err));
+      setErrMsg(err instanceof Error ? err.message : String(err));
     }
   }
 

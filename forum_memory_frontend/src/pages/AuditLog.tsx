@@ -83,13 +83,16 @@ export default function AuditLog() {
         )}
       </div>
 
-      {loading ? <Loading /> :
-        error ? <ErrorMsg message={error} onRetry={refetch} /> :
-        !logs?.length ? <EmptyState icon="📋" message="没有审计日志" /> :
-        <div className="card" style={{ padding: '0 16px' }}>
-          {logs.map(log => <AuditLogRow key={log.id} log={log} onFilterMemory={(id) => { setMemoryId(id); setPage(1); }} />)}
-        </div>
-      }
+      {(() => {
+        if (loading) return <Loading />;
+        if (error) return <ErrorMsg message={error} onRetry={refetch} />;
+        if (!logs?.length) return <EmptyState icon="📋" message="没有审计日志" />;
+        return (
+          <div className="card" style={{ padding: '0 16px' }}>
+            {logs.map(log => <AuditLogRow key={log.id} log={log} onFilterMemory={(id) => { setMemoryId(id); setPage(1); }} />)}
+          </div>
+        );
+      })()}
 
       <Pagination page={page} total={totalCount} size={PAGE_SIZE} onChange={setPage} />
     </div>

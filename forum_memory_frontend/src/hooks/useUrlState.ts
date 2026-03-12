@@ -11,9 +11,10 @@ export function useUrlState(key: string, defaultValue: string | number): [string
   const [params, setParams] = useSearchParams();
   const raw = params.get(key);
   const isNumber = typeof defaultValue === 'number';
-  const value = raw != null
-    ? (isNumber ? (parseInt(raw, 10) || defaultValue) : raw)
-    : defaultValue;
+  let value: string | number = defaultValue;
+  if (raw != null) {
+    value = isNumber ? (parseInt(raw, 10) || defaultValue) : raw;
+  }
 
   const setValue = useCallback((val: string | number) => {
     setParams(prev => {

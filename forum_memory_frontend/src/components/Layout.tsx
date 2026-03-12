@@ -67,7 +67,9 @@ export default function Layout() {
   const displayName = currentUser?.display_name || '未登录';
   const initial = displayName[0] || '?';
 
-  const roleLabel = isSuperAdmin ? '超级管理员' : currentUser?.role === 'board_admin' ? '板块管理员' : '普通用户';
+  let roleLabel = '普通用户';
+  if (isSuperAdmin) roleLabel = '超级管理员';
+  else if (currentUser?.role === 'board_admin') roleLabel = '板块管理员';
   const roleColor = isAdmin ? 'var(--green)' : 'var(--text-ter)';
 
   // 动态论坛导航（包含"我的帖子"）

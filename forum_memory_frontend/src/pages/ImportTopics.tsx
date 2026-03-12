@@ -410,7 +410,7 @@ export default function ImportTopics() {
             onClick={handleImport}
             disabled={uploading || isRunning || !namespaceId || files.length === 0}
           >
-            {uploading ? '上传中…' : dryRun ? '🔍 演练预览' : '🚀 开始导入'}
+            {(() => { if (uploading) return '上传中…'; if (dryRun) return '🔍 演练预览'; return '🚀 开始导入'; })()}
           </button>
           {uploading && (
             <span style={{ fontSize: 12, color: 'var(--text-sec)' }}>

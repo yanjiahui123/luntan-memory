@@ -223,7 +223,9 @@ export function TimeAgo({ date }: { date: string | null | undefined }) {
 }
 
 export function QualityDot({ score }: { score: number }) {
-  const color = score > 0.8 ? 'var(--green)' : score > 0.5 ? 'var(--text)' : 'var(--red)';
+  let color = 'var(--red)';
+  if (score > 0.8) color = 'var(--green)';
+  else if (score > 0.5) color = 'var(--text)';
   return <span style={{ color, fontWeight: 700 }}>{score.toFixed(2)}</span>;
 }
 

@@ -54,13 +54,16 @@ export default function MyPosts() {
         ))}
       </div>
 
-      {loading ? <Loading /> :
-        error ? <ErrorMsg message={error} onRetry={refetch} /> :
-        !threads?.length ? <EmptyState icon="📝" message="您还没有发过帖子" /> :
-        <div className="card" style={{ padding: '0 16px' }}>
-          {threads.map(t => <MyPostItem key={t.id} thread={t} />)}
-        </div>
-      }
+      {(() => {
+        if (loading) return <Loading />;
+        if (error) return <ErrorMsg message={error} onRetry={refetch} />;
+        if (!threads?.length) return <EmptyState icon="📝" message="您还没有发过帖子" />;
+        return (
+          <div className="card" style={{ padding: '0 16px' }}>
+            {threads.map(t => <MyPostItem key={t.id} thread={t} />)}
+          </div>
+        );
+      })()}
 
       <Pagination page={page} total={totalCount} size={PAGE_SIZE} onChange={setPage} />
     </div>

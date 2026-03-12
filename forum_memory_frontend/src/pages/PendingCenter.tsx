@@ -135,7 +135,9 @@ function QualityAlertItem({ memory, onDismiss }: { memory: QualityAlert; onDismi
 function PendingItem({ memory, onPromote, onDiscard }: { memory: Memory; onPromote: () => void; onDiscard: () => void }) {
   const isPending = memory.pending_human_confirm;
   const isLowQuality = memory.quality_score < 0.3;
-  const borderColor = isPending ? 'var(--amber)' : isLowQuality ? 'var(--red)' : 'var(--accent)';
+  let borderColor = 'var(--accent)';
+  if (isPending) borderColor = 'var(--amber)';
+  else if (isLowQuality) borderColor = 'var(--red)';
 
   return (
     <div className="card pending-item" style={{ borderLeftColor: borderColor }}>

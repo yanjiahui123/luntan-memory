@@ -62,12 +62,16 @@ export default function ThreadList() {
         ))}
       </div>
 
-      {loading ? <Loading /> : error ? <ErrorMsg message={error} onRetry={refetch} /> :
-        !threads?.length ? <EmptyState icon="💬" message="还没有帖子" /> :
-        <div className="card" style={{ padding: '0 16px' }}>
-          {threads.map(t => <ThreadItem key={t.id} thread={t} />)}
-        </div>
-      }
+      {(() => {
+        if (loading) return <Loading />;
+        if (error) return <ErrorMsg message={error} onRetry={refetch} />;
+        if (!threads?.length) return <EmptyState icon="💬" message="还没有帖子" />;
+        return (
+          <div className="card" style={{ padding: '0 16px' }}>
+            {threads.map(t => <ThreadItem key={t.id} thread={t} />)}
+          </div>
+        );
+      })()}
 
       <Pagination page={page} total={totalCount} size={PAGE_SIZE} onChange={setPage} />
     </div>
