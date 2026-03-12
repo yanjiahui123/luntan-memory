@@ -1,11 +1,14 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { memoryApi, adminApi } from '../api/client';
 import { useAsync } from '../hooks/useAsync';
 import { useUrlState } from '../hooks/useUrlState';
-import { Loading, ErrorMsg, EmptyState, Badge, AuthorityBadge, QualityDot } from '../components/UI';
+import { useToast } from '../contexts/ToastContext';
+import { Loading, ErrorMsg, EmptyState, Badge, AuthorityBadge, QualityDot, Pagination } from '../components/UI';
 import type { Memory, QualityAlert } from '../types';
 import type { MemoryListParams } from '../api/client';
+
+const PAGE_SIZE = 20;
 
 const TABS = [
   { key: 'all', label: '全部' },
@@ -41,44 +44,150 @@ export default function PendingCenter() {
 }
 
 function MemoryTab({ tab, boardId }: { tab: Exclude<TabKey, 'quality_alert'>; boardId?: string }) {
-  const nsFilter = boardId ? { namespace_id: boardId } : {};
-  const params: MemoryListParams = tab === 'pending'
-    ? { ...nsFilter, pending_human_confirm: true, page: 1, size: 50 }
-    : tab === 'low_quality'
-    ? { ...nsFilter, lifecycle_status: 'ACTIVE', page: 1, size: 50 }
-    : { ...nsFilter, pending_human_confirm: true, page: 1, size: 50 };
+  const { addToast } = useToast();
+  const [page, setPage] = useUrlState('page', 1);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [batchLoading, setBatchLoading] = useState(false);
 
-  const { data, loading, error, refetch } = useAsync(() => memoryApi.list(params), [tab, boardId]);
+  const nsFilter = boardId ? { namespace_id: boardId } : {};
+  const base = { ...nsFilter, page, size: PAGE_SIZE };
+  const params: MemoryListParams = tab === 'low_quality'
+    ? { ...base, lifecycle_status: 'ACTIVE' }
+    : { ...base, pending_human_confirm: true };
+
+  const { data, loading, error, refetch } = useAsync(() => memoryApi.list(params), [tab, boardId, page]);
   const items = data?.items;
+  const totalCount = data?.total || 0;
+
+  function toggleSelect(id: string) {
+    setSelected(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }
+
+  function toggleSelectAll() {
+    if (!items) return;
+    const allIds = items.map(m => m.id);
+    const allSelected = allIds.every(id => selected.has(id));
+    if (allSelected) {
+      setSelected(prev => {
+        const next = new Set(prev);
+        allIds.forEach(id => next.delete(id));
+        return next;
+      });
+    } else {
+      setSelected(prev => {
+        const next = new Set(prev);
+        allIds.forEach(id => next.add(id));
+        return next;
+      });
+    }
+  }
 
   async function handlePromote(id: string) {
     await memoryApi.changeAuthority(id, { authority: 'LOCKED' });
+    setSelected(prev => { const n = new Set(prev); n.delete(id); return n; });
     refetch();
   }
 
   async function handleDiscard(id: string) {
     await memoryApi.delete(id);
+    setSelected(prev => { const n = new Set(prev); n.delete(id); return n; });
     refetch();
+  }
+
+  async function handleBatchPromote() {
+    if (selected.size === 0) return;
+    setBatchLoading(true);
+    try {
+      const ids = [...selected];
+      await Promise.allSettled(ids.map(id => memoryApi.changeAuthority(id, { authority: 'LOCKED' })));
+      addToast('success', `已批量确认 ${ids.length} 条记忆`);
+      setSelected(new Set());
+      refetch();
+    } catch {
+      addToast('error', '批量确认失败');
+    } finally {
+      setBatchLoading(false);
+    }
+  }
+
+  async function handleBatchDiscard() {
+    if (selected.size === 0) return;
+    setBatchLoading(true);
+    try {
+      const ids = [...selected];
+      await Promise.allSettled(ids.map(id => memoryApi.delete(id)));
+      addToast('success', `已批量丢弃 ${ids.length} 条记忆`);
+      setSelected(new Set());
+      refetch();
+    } catch {
+      addToast('error', '批量丢弃失败');
+    } finally {
+      setBatchLoading(false);
+    }
   }
 
   if (loading) return <Loading />;
   if (error) return <ErrorMsg message={error} onRetry={refetch} />;
   if (!items?.length) return <EmptyState icon="✅" message="没有待处理事项，一切正常！" />;
 
+  const allSelected = items.every(m => selected.has(m.id));
+  const someSelected = items.some(m => selected.has(m.id));
+
   return (
     <>
+      {/* Batch action bar */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12, padding: '8px 12px', background: 'var(--surface)', borderRadius: 'var(--radius)', border: '1px solid var(--border)' }}>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, cursor: 'pointer', userSelect: 'none' }}>
+          <input
+            type="checkbox"
+            checked={allSelected}
+            ref={el => { if (el) el.indeterminate = someSelected && !allSelected; }}
+            onChange={toggleSelectAll}
+          />
+          全选
+        </label>
+
+        {selected.size > 0 && (
+          <>
+            <span style={{ fontSize: 12, color: 'var(--text-sec)' }}>已选 {selected.size} 项</span>
+            <button className="btn-success btn-sm" onClick={handleBatchPromote} disabled={batchLoading}>
+              {batchLoading ? '处理中...' : `批量确认入库 (${selected.size})`}
+            </button>
+            <button className="btn-danger btn-sm" onClick={handleBatchDiscard} disabled={batchLoading}>
+              {batchLoading ? '处理中...' : `批量丢弃 (${selected.size})`}
+            </button>
+          </>
+        )}
+      </div>
+
       {items.map(m => (
-        <PendingItem key={m.id} memory={m} onPromote={() => handlePromote(m.id)} onDiscard={() => handleDiscard(m.id)} />
+        <PendingItem
+          key={m.id}
+          memory={m}
+          checked={selected.has(m.id)}
+          onToggle={() => toggleSelect(m.id)}
+          onPromote={() => handlePromote(m.id)}
+          onDiscard={() => handleDiscard(m.id)}
+        />
       ))}
+
+      <Pagination page={page} total={totalCount} size={PAGE_SIZE} onChange={setPage} />
     </>
   );
 }
 
 function QualityAlertTab({ boardId }: { boardId?: string }) {
-  const params = boardId ? { namespace_id: boardId } : {};
+  const [page, setPage] = useUrlState('page', 1);
+  const params = boardId
+    ? { namespace_id: boardId, page, size: PAGE_SIZE }
+    : { page, size: PAGE_SIZE };
   const { data, loading, error, refetch } = useAsync(
     () => adminApi.qualityAlerts(params),
-    [boardId],
+    [boardId, page],
   );
 
   async function handleDismiss(id: string) {
@@ -98,6 +207,7 @@ function QualityAlertTab({ boardId }: { boardId?: string }) {
       {data.items.map(m => (
         <QualityAlertItem key={m.id} memory={m} onDismiss={() => handleDismiss(m.id)} />
       ))}
+      <Pagination page={page} total={data.total} size={PAGE_SIZE} onChange={setPage} />
     </div>
   );
 }
@@ -132,7 +242,13 @@ function QualityAlertItem({ memory, onDismiss }: { memory: QualityAlert; onDismi
   );
 }
 
-function PendingItem({ memory, onPromote, onDiscard }: { memory: Memory; onPromote: () => void; onDiscard: () => void }) {
+function PendingItem({ memory, checked, onToggle, onPromote, onDiscard }: {
+  memory: Memory;
+  checked: boolean;
+  onToggle: () => void;
+  onPromote: () => void;
+  onDiscard: () => void;
+}) {
   const isPending = memory.pending_human_confirm;
   const isLowQuality = memory.quality_score < 0.3;
   let borderColor = 'var(--accent)';
@@ -141,25 +257,35 @@ function PendingItem({ memory, onPromote, onDiscard }: { memory: Memory; onPromo
 
   return (
     <div className="card pending-item" style={{ borderLeftColor: borderColor }}>
-      <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
-        {isPending && <Badge type="amber">⏳ 超时待确认</Badge>}
-        {isLowQuality && <Badge type="red">⚠️ 低质量</Badge>}
-        <AuthorityBadge authority={memory.authority} />
-        {memory.tags?.map((t: string) => <Badge key={t} type="gray">{t}</Badge>)}
-      </div>
+      <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+        <input
+          type="checkbox"
+          checked={checked}
+          onChange={onToggle}
+          style={{ marginTop: 3, flexShrink: 0, cursor: 'pointer' }}
+        />
+        <div style={{ flex: 1 }}>
+          <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
+            {isPending && <Badge type="amber">⏳ 超时待确认</Badge>}
+            {isLowQuality && <Badge type="red">⚠️ 低质量</Badge>}
+            <AuthorityBadge authority={memory.authority} />
+            {memory.tags?.map((t: string) => <Badge key={t} type="gray">{t}</Badge>)}
+          </div>
 
-      <div style={{ fontSize: 13, lineHeight: 1.7, marginBottom: 6 }}>{memory.content}</div>
+          <div style={{ fontSize: 13, lineHeight: 1.7, marginBottom: 6 }}>{memory.content}</div>
 
-      <div style={{ fontSize: 12, color: 'var(--text-ter)', marginBottom: 8 }}>
-        质量分: <QualityDot score={memory.quality_score} /> · 来源: {memory.resolved_type} · {memory.source_role}
-      </div>
+          <div style={{ fontSize: 12, color: 'var(--text-ter)', marginBottom: 8 }}>
+            质量分: <QualityDot score={memory.quality_score} /> · 来源: {memory.resolved_type} · {memory.source_role}
+          </div>
 
-      <div className="pending-item__actions">
-        <button className="btn-success btn-sm" onClick={onPromote}>✓ 确认入库 (晋升 LOCKED)</button>
-        <button className="btn-danger btn-sm" onClick={onDiscard}>丢弃</button>
-        <Link to={`/admin/memories/${memory.id}`}>
-          <button className="btn-secondary btn-sm">查看详情</button>
-        </Link>
+          <div className="pending-item__actions">
+            <button className="btn-success btn-sm" onClick={onPromote}>✓ 确认入库 (晋升 LOCKED)</button>
+            <button className="btn-danger btn-sm" onClick={onDiscard}>丢弃</button>
+            <Link to={`/admin/memories/${memory.id}`}>
+              <button className="btn-secondary btn-sm">查看详情</button>
+            </Link>
+          </div>
+        </div>
       </div>
     </div>
   );
