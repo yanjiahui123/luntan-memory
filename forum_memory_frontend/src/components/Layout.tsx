@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useLocation, useNavigate, Outlet } from 'react-router-dom';
-import { userApi, setEmployeeId } from '../api/client';
 import { useUser } from '../contexts/UserContext';
 
 interface NavItem {
@@ -55,9 +54,7 @@ export default function Layout() {
   const effectiveBoardId = currentBoardId || sessionStorage.getItem('lastBoardId');
 
   const [showUserMenu, setShowUserMenu] = useState(false);
-  const [showSwitchUser, setShowSwitchUser] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [inputId, setInputId] = useState('');
   const [searchQ, setSearchQ] = useState('');
 
   function handleSearch(e: React.FormEvent) {
@@ -65,22 +62,6 @@ export default function Layout() {
     if (!searchQ.trim()) return;
     navigate(`/search?q=${encodeURIComponent(searchQ.trim())}${effectiveBoardId ? `&ns=${effectiveBoardId}` : ''}`);
     setSearchQ('');
-  }
-
-  function handleSwitchUser() {
-    if (!inputId.trim()) return;
-    setEmployeeId(inputId.trim());
-    setShowUserMenu(false);
-    userApi.me()
-      .then(u => {
-        const hasAdminRole = u.role === 'super_admin' || u.role === 'board_admin';
-        if (!hasAdminRole && location.pathname.startsWith('/admin')) {
-          window.location.href = '/boards';
-        } else {
-          window.location.reload();
-        }
-      })
-      .catch(() => { alert('工号不存在或未注册'); });
   }
 
   const displayName = currentUser?.display_name || '未登录';
@@ -156,7 +137,7 @@ export default function Layout() {
               {/* 点击遮罩关闭 */}
               <div
                 style={{ position: 'fixed', inset: 0, zIndex: 199 }}
-                onClick={() => { setShowUserMenu(false); setShowSwitchUser(false); }}
+                onClick={() => setShowUserMenu(false)}
               />
               <div style={{
                 position: 'absolute', top: 40, right: 0, width: 220,
@@ -164,34 +145,17 @@ export default function Layout() {
                 borderRadius: 'var(--radius-lg)', boxShadow: 'var(--shadow-lg)',
                 padding: 14, zIndex: 200,
               }}>
-                {currentUser && (
-                  <div style={{ marginBottom: 10 }}>
+                {currentUser ? (
+                  <div>
                     <div style={{ fontWeight: 700, fontSize: 14 }}>{displayName}</div>
                     <div style={{ fontSize: 12, color: 'var(--text-sec)', marginTop: 2 }}>工号 {currentUser.employee_id}</div>
+                    {currentUser.email && (
+                      <div style={{ fontSize: 12, color: 'var(--text-sec)', marginTop: 2 }}>{currentUser.email}</div>
+                    )}
                     <div style={{ fontSize: 11, color: roleColor, marginTop: 2 }}>{roleLabel}</div>
                   </div>
-                )}
-                {!showSwitchUser ? (
-                  <button
-                    onClick={() => setShowSwitchUser(true)}
-                    style={{ fontSize: 12, color: 'var(--text-ter)', background: 'none', border: 'none', padding: 0, cursor: 'pointer', marginTop: 4 }}
-                  >
-                    切换用户...
-                  </button>
                 ) : (
-                  <div style={{ marginTop: 8, paddingTop: 8, borderTop: '1px solid var(--border)' }}>
-                    <div style={{ display: 'flex', gap: 6 }}>
-                      <input
-                        placeholder="输入工号"
-                        value={inputId}
-                        onChange={e => setInputId(e.target.value)}
-                        onKeyDown={e => e.key === 'Enter' && handleSwitchUser()}
-                        style={{ flex: 1, fontSize: 13, padding: '5px 8px' }}
-                        autoFocus
-                      />
-                      <button className="btn-primary btn-sm" onClick={handleSwitchUser}>切换</button>
-                    </div>
-                  </div>
+                  <div style={{ fontSize: 13, color: 'var(--text-sec)' }}>未登录，请通过 SSO 登录</div>
                 )}
               </div>
             </>

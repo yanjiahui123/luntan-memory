@@ -10,19 +10,6 @@ import type {
 
 const BASE = '/api/v1';
 
-/**
- * 获取当前工号。
- * 优先从 localStorage 读取，没有则默认 '00000000'（超级管理员）。
- */
-function getEmployeeId(): string {
-  return localStorage.getItem('employeeId') || '00000000';
-}
-
-/** 设置当前工号 */
-export function setEmployeeId(id: string): void {
-  localStorage.setItem('employeeId', id);
-}
-
 /** JWT token management */
 export function getToken(): string {
   return localStorage.getItem('jwt_token') || '';
@@ -36,16 +23,20 @@ export function clearToken(): void {
   localStorage.removeItem('jwt_token');
 }
 
-/** Build auth headers: prefer JWT Bearer token, fallback to X-Employee-Id */
+/**
+ * Build auth headers.
+ * JWT Bearer token (if available), otherwise empty — SSO cookies are
+ * sent automatically by the browser via credentials: 'include'.
+ */
 function authHeaders(): Record<string, string> {
   const token = getToken();
   if (token) {
     return { Authorization: `Bearer ${token}` };
   }
-  return { 'X-Employee-Id': getEmployeeId() };
+  return {};
 }
 
-/** Handle 401 responses: clear stale token and redirect to login */
+/** Handle 401 responses: clear stale token and redirect */
 function handleUnauthorized(): void {
   clearToken();
   // Avoid redirect loops: only redirect if not already on login-related page
@@ -64,6 +55,7 @@ async function request<T>(url: string, options: RequestOptions = {}): Promise<T>
   const signal = callerSignal ?? AbortSignal.timeout(30_000);
   const res = await fetch(`${BASE}${url}`, {
     signal,
+    credentials: 'include',
     headers: {
       'Content-Type': 'application/json',
       ...authHeaders(),
@@ -88,6 +80,7 @@ async function requestPaginated<T>(url: string, options: RequestOptions = {}): P
   const signal = callerSignal ?? AbortSignal.timeout(30_000);
   const res = await fetch(`${BASE}${url}`, {
     signal,
+    credentials: 'include',
     headers: {
       'Content-Type': 'application/json',
       ...authHeaders(),
@@ -260,6 +253,7 @@ export const adminApi = {
     files.forEach(f => form.append('files', f));
     return fetch(`${BASE}/admin/import-topics/upload`, {
       method: 'POST',
+      credentials: 'include',
       headers: authHeaders(),
       body: form,
       signal: AbortSignal.timeout(120_000),  // 仅等待文件上传 + 校验（2分钟）
@@ -284,6 +278,7 @@ export const uploadApi = {
     form.append('file', file);
     return fetch(`${BASE}/uploads`, {
       method: 'POST',
+      credentials: 'include',
       headers: authHeaders(),
       body: form,
       signal: AbortSignal.timeout(60_000),  // 60 秒，单文件上传
