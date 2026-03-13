@@ -50,3 +50,73 @@
 ### 同步用临时目录
 
 克隆地址在 `D:\pythonProject\_repo_sync\{memory_service,memory_website}`，使用 SSH 协议（HTTPS 被代理阻断）。
+
+## 编码规范（门禁检查）
+
+以下规则在编写和修改代码时必须遵守，违反会被门禁拦截。
+
+### Python 后端
+
+1. **异常链**：`except` 块中 `raise HTTPException(...)` 必须带 `from e`，保留原始异常上下文。
+   ```python
+   # ✗ 错误
+   except ValueError:
+       raise HTTPException(400, "msg")
+   # ✓ 正确
+   except ValueError as e:
+       raise HTTPException(400, "msg") from e
+   ```
+
+2. **布尔列比较**：SQLAlchemy 布尔列禁止 `== True` / `== False`，使用 `.is_(True)` / `.is_(False)`。
+   ```python
+   # ✗ 触发 E712
+   .where(User.is_active == True)
+   # ✓ 正确
+   .where(User.is_active.is_(True))
+   ```
+
+3. **None 比较**：SQLAlchemy 列禁止 `== None` / `!= None`，使用 `.is_(None)` / `.isnot(None)`。
+   ```python
+   # ✗ 触发 E711
+   .where(Memory.indexed_at == None)
+   # ✓ 正确
+   .where(Memory.indexed_at.is_(None))
+   ```
+
+4. **函数体长度 ≤50 行**：超过则提取辅助函数，每个函数只做一件事。
+
+5. **嵌套深度 ≤4 层**：`if/for/try/with` 每增加一层计为 +1。超过时通过提取函数、early return、guard clause 降低层级。
+
+6. **函数参数 ≤10 个**：参数过多时用 Pydantic `BaseModel` 封装。FastAPI 端点可使用 `Depends()` 注入参数模型。
+   ```python
+   # ✗ 参数过多
+   def list_memories(ns_id, authority, status, pending, type, tags, q, source, page, size, session, user): ...
+   # ✓ 封装为 MemoryFilter + Depends()
+   def list_memories(response, filters: MemoryFilter = Depends(), page, size, session, user): ...
+   ```
+
+7. **标识符遮蔽**：禁止局部变量/参数与外层或内置名称同名（如 `app`、`id`、`type`、`list`）。
+
+8. **推导式/生成器保持简单**：推导式内只做简单映射或过滤。复杂查询 + 转换应拆为独立步骤。
+   ```python
+   # ✗ 推导式内嵌查询
+   return {str(e.id) for e in session.exec(select(...).where(...)).all()}
+   # ✓ 拆解
+   events = session.exec(stmt).all()
+   return {str(e.id) for e in events}
+   ```
+
+9. **字典格式化**：字典字面量冒号后只留 1 个空格，不做对齐空格。
+
+10. **冗余导入**：模块顶部已 import 的符号，函数体内不要重复 import。
+
+### TypeScript / React 前端
+
+1. **禁止嵌套三元表达式**：多条件分支改用变量提取、`if/else`、或对象映射。
+   ```tsx
+   // ✗ 嵌套三元
+   const params = a ? x : b ? y : z;
+   // ✓ 提取公共部分 + 单层三元
+   const base = { ...common };
+   const params = condition ? { ...base, extra } : { ...base, other };
+   ```
