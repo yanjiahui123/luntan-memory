@@ -5,6 +5,7 @@
 - **减少用户使用负担**：AI 应主动服务用户，而非需要手动触发。发帖后 AI 自动分析并回复，知识提取自动完成，用户只需关注内容本身。
 - **软删除优先**：帖子和板块采用软删除（状态标记），保留数据完整性和可恢复性。
 - **事件驱动**：通过 DomainEvent 表 + Dagster sensor 轮询实现异步编排，避免同步阻塞。
+- **来源无关**：知识提取管线（压缩 → 结构化 → 原子化 → 质量门控 → AUDN 去重）与具体来源解耦。论坛帖子、工单、问答等不同来源通过 SourceAdapter 接入，管线代码零改动。
 
 ## 技术栈
 
@@ -21,15 +22,53 @@
 - ES 索引命名规则：`{es_index_prefix}_{namespace_name}`
 - 帖子生命周期：OPEN → RESOLVED / TIMEOUT_CLOSED / DELETED
 - 记忆生命周期：ACTIVE → COLD (180天) → ARCHIVED (365天)
-- 提取流水线 5 步：加载讨论 → 压缩 → 提取知识点 → AUDN判定 → 完成
+- 提取流水线 7 步（Dagster graph）：加载来源 → 压缩 → 结构化 → 原子化 → 质量门控 → AUDN去重 → 完成
+
+## Source Adapter 架构
+
+知识提取管线与具体来源类型解耦，通过 **SourceAdapter 适配器模式** 实现多源接入。
+
+### 核心抽象
+
+```
+SourceAdapter (ABC)           SourceContext (dataclass, frozen)
+├── source_type() → str       ├── source_type, source_id, namespace_id
+├── event_types() → tuple     ├── title, question, discussion
+├── load_context() → ctx      ├── authority, pending_human_confirm
+└── lock_for_re_extract()     └── environment, source_role, resolved_type
+```
+
+### 数据流
+
+```
+DomainEvent → source_extraction_sensor
+            → adapter_for_event(event_type) 路由到对应适配器
+            → adapter.load_context() 产出 SourceContext
+            → 提取管线消费 SourceContext（来源无关）
+            → Memory 记录 source_type + source_id 溯源
+```
+
+### 接入新来源（3 步）
+
+1. **实现适配器**：继承 `SourceAdapter`，实现 4 个方法
+2. **注册适配器**：在 `adapters/__init__.py` 中 `register_adapter(MyAdapter())`
+3. **发布事件**：业务代码发布 `DomainEvent(event_type="xxx.closed")`
+
+提取管线、Dagster sensor、Memory 模型均无需修改。
+
+### ExtractionRecord
+
+幂等性守卫使用 `(source_type, source_id)` 组合唯一约束替代原来的 `thread_id` FK，支持任意来源类型。
 
 ## 关键目录
 
 - `forum_memory_backend/forum_memory/` — 后端主代码
 - `forum_memory_frontend/src/` — 前端主代码
+- `forum_memory_backend/forum_memory/core/` — 核心抽象（SourceAdapter、SourceContext、注册表、AUDN、质量评分、提示词）
+- `forum_memory_backend/forum_memory/adapters/` — 来源适配器（ThreadSourceAdapter 等）
 - `forum_memory_backend/forum_memory/dagster/` — Dagster 编排 (assets, sensors, definitions)
 - `forum_memory_backend/forum_memory/services/` — 业务逻辑层
-- `forum_memory_backend/forum_memory/scripts/` — 运维脚本 (reindex, backfill)
+- `forum_memory_backend/forum_memory/scripts/` — 运维脚本 (reindex, backfill, 迁移)
 
 ## 多仓库同步
 
