@@ -5,7 +5,7 @@ import type {
   Feedback, FeedbackSummary, FeedbackType,
   Moderator, DictionaryEntry,
   PaginatedResult, AuthLoginResponse, UploadResponse, ImportResult, QualityAlert,
-  MemorySearchResponse, ImportJob, ImportJobDetail,
+  MemorySearchResponse, ImportJob, ImportJobDetail, MemoryRelation,
 } from '../types';
 
 const BASE = '/api/v1';
@@ -213,6 +213,14 @@ export const feedbackApi = {
   summary: (memoryId: string) => get<FeedbackSummary>(`/memories/${memoryId}/feedback/summary`),
 };
 
+// ── Relations ─────────────────────────────────
+export const relationApi = {
+  list: (memoryId: string) => get<MemoryRelation[]>(`/memories/${memoryId}/relations`),
+  create: (memoryId: string, data: { target_memory_id: string; relation_type: string; confidence?: number }) =>
+    post<MemoryRelation>(`/memories/${memoryId}/relations`, data),
+  delete: (relationId: string) => del<null>(`/memories/relations/${relationId}`),
+};
+
 // ── Admin ─────────────────────────────────────
 export interface AdminListParams {
   namespace_id?: string;
@@ -235,6 +243,13 @@ export const adminApi = {
     return get<PaginatedResult<QualityAlert>>(`/admin/quality-alerts?${q}`);
   },
   dismissAlert: (memoryId: string) => post<null>(`/admin/quality-alerts/${memoryId}/dismiss`),
+  contradictions: (params: AdminListParams = {}) => {
+    const q = new URLSearchParams();
+    if (params.namespace_id) q.set('namespace_id', params.namespace_id);
+    q.set('page', String(params.page ?? 1));
+    q.set('size', String(params.size ?? 20));
+    return get<PaginatedResult<MemoryRelation>>(`/admin/contradictions?${q}`);
+  },
   auditLogs: (params: { memory_id?: string; operation?: string; page?: number; size?: number } = {}) => {
     const q = new URLSearchParams();
     Object.entries(params).forEach(([k, v]) => { if (v != null && v !== '') q.set(k, String(v)); });

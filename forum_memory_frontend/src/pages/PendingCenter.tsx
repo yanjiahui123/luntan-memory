@@ -5,7 +5,7 @@ import { useAsync } from '../hooks/useAsync';
 import { useUrlState } from '../hooks/useUrlState';
 import { useToast } from '../contexts/ToastContext';
 import { Loading, ErrorMsg, EmptyState, Badge, AuthorityBadge, QualityDot, Pagination } from '../components/UI';
-import type { Memory, QualityAlert } from '../types';
+import type { Memory, QualityAlert, MemoryRelation } from '../types';
 import type { MemoryListParams } from '../api/client';
 
 const PAGE_SIZE = 20;
@@ -15,6 +15,7 @@ const TABS = [
   { key: 'pending', label: '超时待确认' },
   { key: 'low_quality', label: '低质量' },
   { key: 'quality_alert', label: '质量告警' },
+  { key: 'contradictions', label: '矛盾对' },
 ] as const;
 
 type TabKey = typeof TABS[number]['key'];
@@ -35,12 +36,15 @@ export default function PendingCenter() {
         ))}
       </div>
 
-      {tab === 'quality_alert'
-        ? <QualityAlertTab boardId={boardId} />
-        : <MemoryTab tab={tab} boardId={boardId} />
-      }
+      <TabContent tab={tab} boardId={boardId} />
     </div>
   );
+}
+
+function TabContent({ tab, boardId }: { tab: string; boardId?: string }) {
+  if (tab === 'quality_alert') return <QualityAlertTab boardId={boardId} />;
+  if (tab === 'contradictions') return <ContradictionsTab boardId={boardId} />;
+  return <MemoryTab tab={tab} boardId={boardId} />;
 }
 
 function MemoryTab({ tab, boardId }: { tab: Exclude<TabKey, 'quality_alert'>; boardId?: string }) {
@@ -237,6 +241,79 @@ function QualityAlertItem({ memory, onDismiss }: { memory: QualityAlert; onDismi
         <Link to={`/admin/memories/${memory.id}`}>
           <button className="btn-secondary btn-sm">查看详情</button>
         </Link>
+      </div>
+    </div>
+  );
+}
+
+function ContradictionsTab({ boardId }: { boardId?: string }) {
+  const [page, setPage] = useUrlState('page', 1);
+  const params = boardId
+    ? { namespace_id: boardId, page, size: PAGE_SIZE }
+    : { page, size: PAGE_SIZE };
+  const { data, loading, error, refetch } = useAsync(
+    () => adminApi.contradictions(params),
+    [boardId, page],
+  );
+
+  // Batch-fetch memory contents for all relations
+  const relItems = data?.items || [];
+  const memoryIds = [...new Set(relItems.flatMap(r => [r.source_memory_id, r.target_memory_id]))];
+  const { data: memories } = useAsync(
+    () => memoryIds.length ? memoryApi.batchGet(memoryIds) : Promise.resolve([]),
+    [JSON.stringify(memoryIds)],
+  );
+  const memMap = new Map((memories || []).map(m => [m.id, m]));
+
+  if (loading) return <Loading />;
+  if (error) return <ErrorMsg message={error} onRetry={refetch} />;
+  if (!relItems.length) return <EmptyState icon="✅" message="暂无矛盾记忆对" />;
+
+  return (
+    <div>
+      <div style={{ marginBottom: 12, fontSize: 13, color: 'var(--text-sec)' }}>
+        共 {data?.total || 0} 对矛盾记忆需要人工裁决。
+      </div>
+      {relItems.map(rel => (
+        <ContradictionPair key={rel.id} relation={rel} memMap={memMap} />
+      ))}
+      <Pagination page={page} total={data?.total || 0} size={PAGE_SIZE} onChange={setPage} />
+    </div>
+  );
+}
+
+function ContradictionPair({ relation, memMap }: { relation: MemoryRelation; memMap: Map<string, Memory> }) {
+  const source = memMap.get(relation.source_memory_id);
+  const target = memMap.get(relation.target_memory_id);
+
+  return (
+    <div className="card" style={{ padding: 14, marginBottom: 10, borderLeft: '3px solid var(--red, #e53e3e)' }}>
+      <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
+        <Badge type="red">矛盾</Badge>
+        <span style={{ fontSize: 12, color: 'var(--text-ter)' }}>
+          置信度 {relation.confidence.toFixed(2)} · 来源: {relation.origin}
+        </span>
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr auto 1fr', gap: 12, alignItems: 'start' }}>
+        <div style={{ fontSize: 13, lineHeight: 1.7, padding: 10, background: 'var(--surface)', borderRadius: 'var(--radius)' }}>
+          <div style={{ fontSize: 11, color: 'var(--text-ter)', marginBottom: 4 }}>记忆 A (新)</div>
+          {source ? source.content : <span style={{ color: 'var(--text-ter)' }}>加载中...</span>}
+          {source && (
+            <div style={{ marginTop: 6 }}>
+              <Link to={`/admin/memories/${source.id}`} style={{ fontSize: 12 }}>查看详情 →</Link>
+            </div>
+          )}
+        </div>
+        <div style={{ fontSize: 20, color: 'var(--red, #e53e3e)', alignSelf: 'center' }}>⇔</div>
+        <div style={{ fontSize: 13, lineHeight: 1.7, padding: 10, background: 'var(--surface)', borderRadius: 'var(--radius)' }}>
+          <div style={{ fontSize: 11, color: 'var(--text-ter)', marginBottom: 4 }}>记忆 B (已有)</div>
+          {target ? target.content : <span style={{ color: 'var(--text-ter)' }}>加载中...</span>}
+          {target && (
+            <div style={{ marginTop: 6 }}>
+              <Link to={`/admin/memories/${target.id}`} style={{ fontSize: 12 }}>查看详情 →</Link>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

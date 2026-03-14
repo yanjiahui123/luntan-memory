@@ -4,7 +4,7 @@ import { memoryApi } from '../api/client';
 import { useAsync } from '../hooks/useAsync';
 import { useUser } from '../contexts/UserContext';
 import { Loading, EmptyState, ErrorMsg, AuthorityBadge, Badge, KnowledgeTypeBadge } from '../components/UI';
-import type { MemorySearchHit } from '../types';
+import type { MemorySearchHit, RelatedMemoryHint } from '../types';
 
 const PAGE_SIZE = 10;
 const CONTENT_TRUNCATE = 200;
@@ -141,11 +141,36 @@ function SearchHit({ hit, query, isAdmin }: { hit: MemorySearchHit; query: strin
       {!hit.env_match && hit.env_warning && (
         <div style={{ fontSize: 12, color: 'var(--amber)', marginTop: 6 }}>{hit.env_warning}</div>
       )}
+      {hit.related && hit.related.length > 0 && (
+        <div style={{ marginTop: 8, paddingTop: 8, borderTop: '1px dashed var(--border)' }}>
+          {hit.related.map((rel, ri) => (
+            <RelationHint key={ri} relation={rel} />
+          ))}
+        </div>
+      )}
       {isAdmin && (
         <div style={{ marginTop: 8 }}>
           <Link to={`/admin/memories/${m.id}`} style={{ fontSize: 12 }}>查看完整记忆 →</Link>
         </div>
       )}
+    </div>
+  );
+}
+
+
+const RELATION_COLORS: Record<string, string> = {
+  SUPPLEMENTS: 'var(--accent)',
+  CONTRADICTS: 'var(--red, #e53e3e)',
+  SUPERSEDES: 'var(--amber, #d69e2e)',
+  CAUSED_BY: 'var(--text-sec)',
+};
+
+function RelationHint({ relation }: { relation: RelatedMemoryHint }) {
+  const color = RELATION_COLORS[relation.relation_type] || 'var(--text-sec)';
+  return (
+    <div style={{ fontSize: 12, color, marginBottom: 4, paddingLeft: 12 }}>
+      <span style={{ fontWeight: 600 }}>↳ {relation.label}:</span>{' '}
+      <span style={{ color: 'var(--text-sec)' }}>{relation.content_preview}</span>
     </div>
   );
 }

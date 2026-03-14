@@ -148,11 +148,31 @@ export interface Memory {
   updated_at: string;
 }
 
+export type RelationType = 'SUPPLEMENTS' | 'CONTRADICTS' | 'SUPERSEDES' | 'CAUSED_BY';
+
+export interface RelatedMemoryHint {
+  relation_type: RelationType;
+  label: string;
+  memory_id: string;
+  content_preview: string;
+}
+
+export interface MemoryRelation {
+  id: string;
+  source_memory_id: string;
+  target_memory_id: string;
+  relation_type: RelationType;
+  confidence: number;
+  origin: string;
+  created_at: string;
+}
+
 export interface MemorySearchHit {
   memory: Memory;
   score: number;
   env_match?: boolean;
   env_warning?: string;
+  related?: RelatedMemoryHint[];
 }
 
 export interface MemorySearchResponse {
