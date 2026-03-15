@@ -247,6 +247,7 @@ function QualityAlertItem({ memory, onDismiss }: { memory: QualityAlert; onDismi
 }
 
 function ContradictionsTab({ boardId }: { boardId?: string }) {
+  const { addToast } = useToast();
   const [page, setPage] = useUrlState('page', 1);
   const params = boardId
     ? { namespace_id: boardId, page, size: PAGE_SIZE }
@@ -265,6 +266,17 @@ function ContradictionsTab({ boardId }: { boardId?: string }) {
   );
   const memMap = new Map((memories || []).map(m => [m.id, m]));
 
+  async function handleResolve(relationId: string, action: string, reason: string) {
+    try {
+      await adminApi.resolveContradiction(relationId, { action, reason });
+      addToast('success', '矛盾已裁决');
+      refetch();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : '裁决失败';
+      addToast('error', msg);
+    }
+  }
+
   if (loading) return <Loading />;
   if (error) return <ErrorMsg message={error} onRetry={refetch} />;
   if (!relItems.length) return <EmptyState icon="✅" message="暂无矛盾记忆对" />;
@@ -275,16 +287,33 @@ function ContradictionsTab({ boardId }: { boardId?: string }) {
         共 {data?.total || 0} 对矛盾记忆需要人工裁决。
       </div>
       {relItems.map(rel => (
-        <ContradictionPair key={rel.id} relation={rel} memMap={memMap} />
+        <ContradictionPair key={rel.id} relation={rel} memMap={memMap} onResolve={handleResolve} />
       ))}
       <Pagination page={page} total={data?.total || 0} size={PAGE_SIZE} onChange={setPage} />
     </div>
   );
 }
 
-function ContradictionPair({ relation, memMap }: { relation: MemoryRelation; memMap: Map<string, Memory> }) {
+function ContradictionPair({
+  relation, memMap, onResolve,
+}: {
+  relation: MemoryRelation;
+  memMap: Map<string, Memory>;
+  onResolve: (relationId: string, action: string, reason: string) => Promise<void>;
+}) {
+  const [reason, setReason] = useState('');
+  const [resolving, setResolving] = useState(false);
   const source = memMap.get(relation.source_memory_id);
   const target = memMap.get(relation.target_memory_id);
+
+  async function handleAction(action: string) {
+    setResolving(true);
+    try {
+      await onResolve(relation.id, action, reason);
+    } finally {
+      setResolving(false);
+    }
+  }
 
   return (
     <div className="card" style={{ padding: 14, marginBottom: 10, borderLeft: '3px solid var(--red, #e53e3e)' }}>
@@ -295,26 +324,45 @@ function ContradictionPair({ relation, memMap }: { relation: MemoryRelation; mem
         </span>
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr auto 1fr', gap: 12, alignItems: 'start' }}>
-        <div style={{ fontSize: 13, lineHeight: 1.7, padding: 10, background: 'var(--surface)', borderRadius: 'var(--radius)' }}>
-          <div style={{ fontSize: 11, color: 'var(--text-ter)', marginBottom: 4 }}>记忆 A (新)</div>
-          {source ? source.content : <span style={{ color: 'var(--text-ter)' }}>加载中...</span>}
-          {source && (
-            <div style={{ marginTop: 6 }}>
-              <Link to={`/admin/memories/${source.id}`} style={{ fontSize: 12 }}>查看详情 →</Link>
-            </div>
-          )}
-        </div>
+        <MemorySide label="记忆 A (新)" memory={source} />
         <div style={{ fontSize: 20, color: 'var(--red, #e53e3e)', alignSelf: 'center' }}>⇔</div>
-        <div style={{ fontSize: 13, lineHeight: 1.7, padding: 10, background: 'var(--surface)', borderRadius: 'var(--radius)' }}>
-          <div style={{ fontSize: 11, color: 'var(--text-ter)', marginBottom: 4 }}>记忆 B (已有)</div>
-          {target ? target.content : <span style={{ color: 'var(--text-ter)' }}>加载中...</span>}
-          {target && (
-            <div style={{ marginTop: 6 }}>
-              <Link to={`/admin/memories/${target.id}`} style={{ fontSize: 12 }}>查看详情 →</Link>
-            </div>
-          )}
+        <MemorySide label="记忆 B (已有)" memory={target} />
+      </div>
+      <div style={{ marginTop: 12, paddingTop: 10, borderTop: '1px solid var(--border, #e2e8f0)' }}>
+        <input
+          type="text"
+          placeholder="裁决理由（可选）"
+          value={reason}
+          onChange={e => setReason(e.target.value)}
+          disabled={resolving}
+          style={{ width: '100%', marginBottom: 8, padding: '6px 10px', fontSize: 13, border: '1px solid var(--border, #e2e8f0)', borderRadius: 'var(--radius, 4px)' }}
+        />
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button className="btn-success btn-sm" disabled={resolving} onClick={() => handleAction('keep_source')}>
+            采纳 A (新)
+          </button>
+          <button className="btn-primary btn-sm" disabled={resolving} onClick={() => handleAction('keep_target')}>
+            采纳 B (已有)
+          </button>
+          <button className="btn-secondary btn-sm" disabled={resolving} onClick={() => handleAction('keep_both')}>
+            保留两者
+          </button>
         </div>
       </div>
+    </div>
+  );
+}
+
+function MemorySide({ label, memory }: { label: string; memory: Memory | undefined }) {
+  return (
+    <div style={{ fontSize: 13, lineHeight: 1.7, padding: 10, background: 'var(--surface)', borderRadius: 'var(--radius)' }}>
+      <div style={{ fontSize: 11, color: 'var(--text-ter)', marginBottom: 4 }}>{label}</div>
+      {memory ? memory.content : <span style={{ color: 'var(--text-ter)' }}>加载中...</span>}
+      {memory && (
+        <div style={{ marginTop: 6 }}>
+          <Link to={`/admin/memories/${memory.id}`} style={{ fontSize: 12 }}>查看详情 →</Link>
+        </div>
+      )}
     </div>
   );
 }

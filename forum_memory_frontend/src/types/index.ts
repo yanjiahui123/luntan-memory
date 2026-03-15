@@ -155,6 +155,8 @@ export interface RelatedMemoryHint {
   label: string;
   memory_id: string;
   content_preview: string;
+  confidence?: number;
+  authority?: string;
 }
 
 export interface MemoryRelation {

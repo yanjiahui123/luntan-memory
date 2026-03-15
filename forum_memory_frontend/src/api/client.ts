@@ -250,6 +250,10 @@ export const adminApi = {
     q.set('size', String(params.size ?? 20));
     return get<PaginatedResult<MemoryRelation>>(`/admin/contradictions?${q}`);
   },
+  resolveContradiction: (relationId: string, data: { action: string; reason?: string }) =>
+    post<{ resolved: boolean; action: string; detail: string }>(
+      `/admin/contradictions/${relationId}/resolve`, data,
+    ),
   auditLogs: (params: { memory_id?: string; operation?: string; page?: number; size?: number } = {}) => {
     const q = new URLSearchParams();
     Object.entries(params).forEach(([k, v]) => { if (v != null && v !== '') q.set(k, String(v)); });
