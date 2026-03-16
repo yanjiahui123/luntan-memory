@@ -358,7 +358,18 @@ def _format_relation_hint(rel) -> str:
     return f"  \u21b3 [{rel.label}] {rel.content_preview}"
 
 
-def _query_rag_context(ns_config: dict, question: str, enabled: bool) -> tuple[str, str | None]:
+def _get_employee_id(session: Session, author_id: UUID | None) -> str:
+    """Look up the employee_id for a user; fall back to 'forum_memory'."""
+    if not author_id:
+        return "forum_memory"
+    from forum_memory.models.user import User
+    user = session.get(User, author_id)
+    if user and user.employee_id:
+        return user.employee_id
+    return "forum_memory"
+
+
+def _query_rag_context(ns_config: dict, question: str, enabled: bool, uid: str = "forum_memory") -> tuple[str, str | None]:
     """Query RAG knowledge base. Returns (rag_prompt, rag_chunks_json)."""
     if not enabled:
         return "(knowledge base search disabled)", None
@@ -366,7 +377,7 @@ def _query_rag_context(ns_config: dict, question: str, enabled: bool) -> tuple[s
     kb_sn_list = ns_config.get("kb_sn_list", [])
     if not kb_sn_list:
         return "(no knowledge base configured)", None
-    rag_prompt_text, rag_chunks_json = query_rag(kb_sn_list, question)
+    rag_prompt_text, rag_chunks_json = query_rag(kb_sn_list, question, uid=uid)
     if rag_prompt_text:
         return rag_prompt_text, rag_chunks_json
     return "(no knowledge base configured)", None
@@ -384,11 +395,13 @@ def generate_ai_answer(session: Session, thread_id: UUID) -> Comment:
     namespace = session.get(Namespace, thread.namespace_id)
     ns_config = (namespace.config or {}) if namespace else {}
 
+    author_uid = _get_employee_id(session, thread.author_id)
+
     memories_text, cited_ids = _search_related_memories(
         session, question, thread.namespace_id, ns_config.get("enable_memory_search", True),
     )
     rag_context_prompt, stored_rag_context = _query_rag_context(
-        ns_config, question, ns_config.get("enable_rag_search", True),
+        ns_config, question, ns_config.get("enable_rag_search", True), uid=author_uid,
     )
 
     answer = get_provider().complete([
