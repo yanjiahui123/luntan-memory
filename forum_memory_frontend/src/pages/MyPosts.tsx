@@ -18,7 +18,7 @@ const STATUSES: { value: ThreadStatus | ''; label: string }[] = [
 
 export default function MyPosts() {
   const { currentUser } = useUser();
-  const [status, setStatus] = useUrlState('status', '') as [string, (v: string) => void];
+  const [status, setStatus] = useUrlState('status', '', ['page']) as [string, (v: string) => void];
   const [page, setPage] = useUrlState('page', 1);
 
   const { data, loading, error, refetch } = useAsync(
@@ -47,7 +47,7 @@ export default function MyPosts() {
           <button
             key={s.value}
             className={`filter-pill ${status === s.value ? 'filter-pill--active' : ''}`}
-            onClick={() => { setStatus(s.value as string); setPage(1); }}
+            onClick={() => setStatus(s.value as string)}
           >
             {s.label}
           </button>

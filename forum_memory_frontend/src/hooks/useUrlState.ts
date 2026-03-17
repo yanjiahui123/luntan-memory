@@ -4,10 +4,15 @@ import { useCallback } from 'react';
 /**
  * Sync a single URL search param with React state.
  * Removes the param when the value equals the default.
+ *
+ * @param resetKeys — other URL params to delete in the same update
+ *   (e.g. pass ['page'] so switching a filter automatically resets pagination).
+ *   This avoids the React Router batching issue where two separate
+ *   setSearchParams calls in the same tick overwrite each other.
  */
-export function useUrlState(key: string, defaultValue: string): [string, (val: string) => void];
-export function useUrlState(key: string, defaultValue: number): [number, (val: number) => void];
-export function useUrlState(key: string, defaultValue: string | number): [string | number, (val: string | number) => void] {
+export function useUrlState(key: string, defaultValue: string, resetKeys?: string[]): [string, (val: string) => void];
+export function useUrlState(key: string, defaultValue: number, resetKeys?: string[]): [number, (val: number) => void];
+export function useUrlState(key: string, defaultValue: string | number, resetKeys: string[] = []): [string | number, (val: string | number) => void] {
   const [params, setParams] = useSearchParams();
   const raw = params.get(key);
   const isNumber = typeof defaultValue === 'number';
@@ -15,6 +20,9 @@ export function useUrlState(key: string, defaultValue: string | number): [string
   if (raw != null) {
     value = isNumber ? (parseInt(raw, 10) || defaultValue) : raw;
   }
+
+  // Stable serialization for dependency tracking
+  const resetKeysKey = resetKeys.join(',');
 
   const setValue = useCallback((val: string | number) => {
     setParams(prev => {
@@ -25,9 +33,13 @@ export function useUrlState(key: string, defaultValue: string | number): [string
       } else {
         next.set(key, strVal);
       }
+      // Reset dependent keys in the same URL update
+      for (const rk of resetKeys) {
+        next.delete(rk);
+      }
       return next;
     }, { replace: true });
-  }, [key, defaultValue, setParams]);
+  }, [key, defaultValue, setParams, resetKeysKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return [value, setValue];
 }
