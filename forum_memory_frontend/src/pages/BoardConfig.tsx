@@ -8,7 +8,7 @@ import type { Namespace } from '../types';
 
 export default function BoardConfig() {
   const { boardId: routeBoardId } = useParams<{ boardId?: string }>();
-  const { myNamespaces: boards, loading: userLoading, isSuperAdmin } = useUser();
+  const { myNamespaces: boards, loading: userLoading, isSuperAdmin, isAdmin } = useUser();
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
   const boardId = routeBoardId || selectedId || boards?.[0]?.id;
@@ -29,12 +29,12 @@ export default function BoardConfig() {
         </div>
       )}
 
-      {boardId && <BoardConfigPanel boardId={boardId} isSuperAdmin={isSuperAdmin} />}
+      {boardId && <BoardConfigPanel boardId={boardId} isSuperAdmin={isSuperAdmin} isAdmin={isAdmin} />}
     </div>
   );
 }
 
-function BoardConfigPanel({ boardId, isSuperAdmin }: { boardId: string; isSuperAdmin: boolean }) {
+function BoardConfigPanel({ boardId, isSuperAdmin, isAdmin }: { boardId: string; isSuperAdmin: boolean; isAdmin: boolean }) {
   const { data: board, loading, refetch } = useAsync(() => namespaceApi.get(boardId), [boardId]);
   const [tab, setTab] = useState('info');
 
@@ -45,7 +45,7 @@ function BoardConfigPanel({ boardId, isSuperAdmin }: { boardId: string; isSuperA
     { key: 'dict', label: '黑话字典' },
     { key: 'kb', label: '知识库配置' },
   ];
-  if (isSuperAdmin) tabs.push({ key: 'moderators', label: '板块管理员' });
+  if (isAdmin) tabs.push({ key: 'moderators', label: '板块管理员' });
 
   return (
     <div>
@@ -60,7 +60,7 @@ function BoardConfigPanel({ boardId, isSuperAdmin }: { boardId: string; isSuperA
       {tab === 'info' && <InfoTab board={board} onUpdate={refetch} />}
       {tab === 'dict' && <DictTab board={board} onUpdate={refetch} />}
       {tab === 'kb' && <KBConfigTab board={board} onUpdate={refetch} />}
-      {tab === 'moderators' && isSuperAdmin && <ModeratorsTab boardId={boardId} />}
+      {tab === 'moderators' && isAdmin && <ModeratorsTab boardId={boardId} />}
     </div>
   );
 }

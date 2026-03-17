@@ -11,20 +11,29 @@ export default function AdminGuard() {
 
   if (!isAdmin) return <Navigate to="/boards" replace />;
 
-  // board_admin 访问全局 /admin（不带 boardId）时，重定向到其第一个管理板块
-  const isGlobalAdminPath = location.pathname === '/admin' ||
-    location.pathname.startsWith('/admin/memories') ||
-    location.pathname === '/admin/pending' ||
-    location.pathname === '/admin/settings' ||
-    location.pathname === '/admin/import';
-
-  if (isBoardAdmin && isGlobalAdminPath) {
-    if (myNamespaces && myNamespaces.length > 0) {
-      const suffix = location.pathname.replace('/admin', '') || '';
-      return <Navigate to={`/admin/boards/${myNamespaces[0].id}${suffix}`} replace />;
+  if (isBoardAdmin) {
+    // 超管专属页面：重定向回仪表盘
+    const superAdminOnly = ['/admin/audit', '/admin/users'];
+    if (superAdminOnly.some(p => location.pathname.startsWith(p))) {
+      return <Navigate to="/admin" replace />;
     }
-    // 没有管理任何板块，返回论坛首页
-    return <Navigate to="/boards" replace />;
+
+    // 板块级功能路由（不带 boardId）：重定向到第一个管理板块
+    const boardScoped = ['/admin/memories', '/admin/pending', '/admin/settings', '/admin/import'];
+    const needsRedirect = boardScoped.some(p => location.pathname.startsWith(p));
+
+    if (needsRedirect) {
+      if (myNamespaces && myNamespaces.length > 0) {
+        const suffix = location.pathname.replace('/admin', '') || '';
+        return <Navigate to={`/admin/boards/${myNamespaces[0].id}${suffix}`} replace />;
+      }
+      return <Navigate to="/boards" replace />;
+    }
+
+    // /admin 仪表盘：允许访问（显示多板块概览）
+    if (location.pathname === '/admin' && (!myNamespaces || myNamespaces.length === 0)) {
+      return <Navigate to="/boards" replace />;
+    }
   }
 
   return <Outlet />;

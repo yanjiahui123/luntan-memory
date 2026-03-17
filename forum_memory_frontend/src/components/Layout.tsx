@@ -21,6 +21,10 @@ const GLOBAL_ADMIN_NAV: NavItem[] = [
   { path: '/admin/settings', label: '板块配置', icon: '⚙️' },
 ];
 
+const BOARD_ADMIN_GLOBAL_NAV: NavItem[] = [
+  { path: '/admin', label: '仪表盘', icon: '📊' },
+];
+
 function boardAdminNav(boardId: string): NavItem[] {
   return [
     { path: `/admin/boards/${boardId}`, label: '仪表盘', icon: '📊' },
@@ -34,7 +38,7 @@ function boardAdminNav(boardId: string): NavItem[] {
 export default function Layout() {
   const location = useLocation();
   const navigate = useNavigate();
-  const { currentUser, isSuperAdmin, isAdmin } = useUser();
+  const { currentUser, isSuperAdmin, isBoardAdmin, isAdmin, myNamespaces } = useUser();
   const isAdminPage = location.pathname.startsWith('/admin');
 
   // 检测是否在板块级管理后台 /admin/boards/:boardId/*
@@ -87,6 +91,9 @@ export default function Layout() {
   } else if (activeBoardId) {
     nav = boardAdminNav(activeBoardId);
     sidebarTitle = '板块管理';
+  } else if (isBoardAdmin) {
+    nav = BOARD_ADMIN_GLOBAL_NAV;
+    sidebarTitle = '管理菜单';
   } else {
     nav = GLOBAL_ADMIN_NAV;
     sidebarTitle = '管理菜单';
@@ -185,9 +192,24 @@ export default function Layout() {
         ))}
         {isAdminPage && (
           <>
-            {isSuperAdmin && activeBoardId && (
+            {isBoardAdmin && !activeBoardId && myNamespaces && myNamespaces.length > 0 && (
+              <>
+                <div className="sidebar__section" style={{ marginTop: 12 }}>我管理的板块</div>
+                {myNamespaces.map(ns => (
+                  <Link
+                    key={ns.id}
+                    to={`/admin/boards/${ns.id}`}
+                    className="sidebar__item"
+                    onClick={() => setSidebarOpen(false)}
+                  >
+                    {ns.display_name}
+                  </Link>
+                ))}
+              </>
+            )}
+            {isAdmin && activeBoardId && (
               <Link to="/admin" className="sidebar__item" style={{ marginTop: 8, color: 'var(--text-ter)', fontSize: 12 }} onClick={() => setSidebarOpen(false)}>
-                ← 全局仪表盘
+                ← 管理仪表盘
               </Link>
             )}
             <Link to="/boards" className="sidebar__item" style={{ marginTop: 8, color: 'var(--text-ter)', fontSize: 12 }} onClick={() => setSidebarOpen(false)}>
