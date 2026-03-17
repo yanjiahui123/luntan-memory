@@ -4,7 +4,7 @@
 
 - **减少用户使用负担**：AI 应主动服务用户，而非需要手动触发。发帖后 AI 自动分析并回复，知识提取自动完成，用户只需关注内容本身。
 - **软删除优先**：帖子和板块采用软删除（状态标记），保留数据完整性和可恢复性。
-- **事件驱动**：通过 DomainEvent 表 + Dagster sensor 轮询实现异步编排，避免同步阻塞。
+- **事件驱动**：通过 DomainEvent 表 + APScheduler 轮询实现异步编排，避免同步阻塞。
 - **来源无关**：知识提取管线（压缩 → 结构化 → 原子化 → 质量门控 → AUDN 去重）与具体来源解耦。论坛帖子、工单、问答等不同来源通过 SourceAdapter 接入，管线代码零改动。
 
 ## 技术栈
@@ -12,17 +12,17 @@
 - **后端**: FastAPI (同步) + SQLModel + PostgreSQL
 - **前端**: React (Vite)
 - **搜索**: Elasticsearch 8.9 (每板块独立索引，混合搜索 BM25+KNN)
-- **编排**: Dagster (sensor 轮询事件，graph 流水线可视化)
+- **编排**: APScheduler (内置调度器，随 FastAPI 进程启动)
 - **LLM**: OpenAI / 自定义 HTTP Provider
 
 ## 架构约定
 
-- Python 代码全部同步（无 async/await），Dagster 负责异步调度
+- Python 代码全部同步（无 async/await），APScheduler 负责后台调度
 - 每个板块(Namespace)对应一个独立 ES 索引，`Namespace.es_index_name` 记录索引名
 - ES 索引命名规则：`{es_index_prefix}_{namespace_name}`
 - 帖子生命周期：OPEN → RESOLVED / TIMEOUT_CLOSED / DELETED
 - 记忆生命周期：ACTIVE → COLD (180天) → ARCHIVED (365天)
-- 提取流水线 7 步（Dagster graph）：加载来源 → 压缩 → 结构化 → 原子化 → 质量门控 → AUDN去重 → 完成
+- 提取流水线：加载来源 → 压缩 → 结构化 → 原子化 → 质量门控 → AUDN去重 → 完成
 
 ## Source Adapter 架构
 
@@ -41,7 +41,7 @@ SourceAdapter (ABC)           SourceContext (dataclass, frozen)
 ### 数据流
 
 ```
-DomainEvent → source_extraction_sensor
+DomainEvent → extraction_poller (APScheduler 30s)
             → adapter_for_event(event_type) 路由到对应适配器
             → adapter.load_context() 产出 SourceContext
             → 提取管线消费 SourceContext（来源无关）
@@ -54,7 +54,7 @@ DomainEvent → source_extraction_sensor
 2. **注册适配器**：在 `adapters/__init__.py` 中 `register_adapter(MyAdapter())`
 3. **发布事件**：业务代码发布 `DomainEvent(event_type="xxx.closed")`
 
-提取管线、Dagster sensor、Memory 模型均无需修改。
+提取管线、调度器、Memory 模型均无需修改。
 
 ### ExtractionRecord
 
@@ -66,7 +66,7 @@ DomainEvent → source_extraction_sensor
 - `forum_memory_frontend/src/` — 前端主代码
 - `forum_memory_backend/forum_memory/core/` — 核心抽象（SourceAdapter、SourceContext、注册表、AUDN、质量评分、提示词）
 - `forum_memory_backend/forum_memory/adapters/` — 来源适配器（ThreadSourceAdapter 等）
-- `forum_memory_backend/forum_memory/dagster/` — Dagster 编排 (assets, sensors, definitions)
+- `forum_memory_backend/forum_memory/scheduler/` — 内置调度器 (event_poller, maintenance_tasks, scheduler)
 - `forum_memory_backend/forum_memory/services/` — 业务逻辑层
 - `forum_memory_backend/forum_memory/scripts/` — 运维脚本 (reindex, backfill, 迁移)
 
