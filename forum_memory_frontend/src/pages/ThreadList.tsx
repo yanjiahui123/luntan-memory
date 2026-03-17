@@ -19,7 +19,7 @@ const STATUSES: { value: ThreadStatus | ''; label: string }[] = [
 export default function ThreadList() {
   const { boardId } = useParams<{ boardId: string }>();
   const navigate = useNavigate();
-  const [status, setStatus] = useUrlState('status', '') as [string, (v: string) => void];
+  const [status, setStatus] = useUrlState('status', '', ['page']) as [string, (v: string) => void];
   const [page, setPage] = useUrlState('page', 1);
 
   const { data: board } = useAsync(() => namespaceApi.get(boardId!), [boardId]);
@@ -56,7 +56,7 @@ export default function ThreadList() {
 
       <div className="filter-bar">
         {STATUSES.map(s => (
-          <button key={s.value} className={`filter-pill ${status === s.value ? 'filter-pill--active' : ''}`} onClick={() => { setStatus(s.value as string); setPage(1); }}>
+          <button key={s.value} className={`filter-pill ${status === s.value ? 'filter-pill--active' : ''}`} onClick={() => setStatus(s.value as string)}>
             {s.label}
           </button>
         ))}

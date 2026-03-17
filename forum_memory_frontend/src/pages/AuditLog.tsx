@@ -30,8 +30,8 @@ const OPERATION_COLORS: Record<string, string> = {
 
 export default function AuditLog() {
   const [page, setPage] = useUrlState('page', 1);
-  const [operation, setOperation] = useUrlState('operation', '');
-  const [memoryId, setMemoryId] = useUrlState('memory_id', '');
+  const [operation, setOperation] = useUrlState('operation', '', ['page']);
+  const [memoryId, setMemoryId] = useUrlState('memory_id', '', ['page']);
 
   const { data, loading, error, refetch } = useAsync(
     () => adminApi.auditLogs({
@@ -59,7 +59,7 @@ export default function AuditLog() {
           <button
             key={op}
             className={`filter-pill ${operation === op ? 'filter-pill--active' : ''}`}
-            onClick={() => { setOperation(op); setPage(1); }}
+            onClick={() => setOperation(op)}
           >
             {op ? (OPERATION_LABELS[op] || op) : '全部'}
           </button>
@@ -74,7 +74,7 @@ export default function AuditLog() {
           }}>
             记忆: {memoryId.slice(0, 8)}...
             <button
-              onClick={() => { setMemoryId(''); setPage(1); }}
+              onClick={() => setMemoryId('')}
               style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, lineHeight: 1, color: 'var(--accent)', fontSize: 13 }}
             >
               ×
@@ -89,7 +89,7 @@ export default function AuditLog() {
         if (!logs?.length) return <EmptyState icon="📋" message="没有审计日志" />;
         return (
           <div className="card" style={{ padding: '0 16px' }}>
-            {logs.map(log => <AuditLogRow key={log.id} log={log} onFilterMemory={(id) => { setMemoryId(id); setPage(1); }} />)}
+            {logs.map(log => <AuditLogRow key={log.id} log={log} onFilterMemory={(id) => setMemoryId(id)} />)}
           </div>
         );
       })()}
