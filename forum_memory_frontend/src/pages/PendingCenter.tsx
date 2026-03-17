@@ -22,7 +22,7 @@ type TabKey = typeof TABS[number]['key'];
 
 export default function PendingCenter() {
   const { boardId } = useParams<{ boardId?: string }>();
-  const [tab, setTab] = useUrlState('tab', 'all') as [string, (v: string) => void];
+  const [tab, setTab] = useUrlState('tab', 'all', ['page']) as [string, (v: string) => void];
 
   return (
     <div>
@@ -55,9 +55,12 @@ function MemoryTab({ tab, boardId }: { tab: Exclude<TabKey, 'quality_alert'>; bo
 
   const nsFilter = boardId ? { namespace_id: boardId } : {};
   const base = { ...nsFilter, page, size: PAGE_SIZE };
-  const params: MemoryListParams = tab === 'low_quality'
-    ? { ...base, lifecycle_status: 'ACTIVE' }
-    : { ...base, pending_human_confirm: true };
+
+  let tabFilter: Partial<MemoryListParams> = {};
+  if (tab === 'pending') tabFilter = { pending_human_confirm: true };
+  else if (tab === 'low_quality') tabFilter = { lifecycle_status: 'ACTIVE' };
+  // 'all' tab: no extra filter — show all memories for review
+  const params: MemoryListParams = { ...base, ...tabFilter };
 
   const { data, loading, error, refetch } = useAsync(() => memoryApi.list(params), [tab, boardId, page]);
   const items = data?.items;
