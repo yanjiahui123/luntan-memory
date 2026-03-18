@@ -116,7 +116,7 @@ export const userApi = {
   myNamespaces: () => get<Namespace[]>('/users/me/managed-namespaces'),
   list: () => get<User[]>('/users'),
   create: (data: Partial<User>) => post<User>('/users', data),
-  deactivate: (id: string) => del<null>(`/users/${id}`),
+  update: (id: string, data: Partial<User>) => put<User>(`/users/${id}`, data),
 };
 
 // ── Namespaces ───────────────────────────────
