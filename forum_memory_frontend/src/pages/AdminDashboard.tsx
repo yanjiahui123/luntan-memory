@@ -57,19 +57,16 @@ function GlobalDashboard({ isSuperAdmin, isBoardAdmin, myNamespaces }: {
         </div>
       )}
 
-      <div className="card" style={{ padding: 16 }}>
+      <div>
         <h3 style={{ fontSize: 14, fontWeight: 700, marginBottom: 12 }}>
           {isBoardAdmin ? '我管理的板块' : '板块概览'}
         </h3>
         {(visibleBoards?.length ?? 0) === 0 ? (
           <p style={{ color: 'var(--text-ter)', fontSize: 13 }}>还没有板块</p>
         ) : (
-          visibleBoards?.map(b => (
-            <div key={b.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: '1px solid var(--border)', fontSize: 13 }}>
-              <span>{b.display_name}</span>
-              <Link to={`/admin/boards/${b.id}`} style={{ fontSize: 12, color: 'var(--accent)', textDecoration: 'none' }}>进入后台 →</Link>
-            </div>
-          ))
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            {visibleBoards?.map(b => <BoardOverviewCard key={b.id} board={b} />)}
+          </div>
         )}
       </div>
 
@@ -130,6 +127,38 @@ function BoardDashboard({ boardId, isSuperAdmin, isAdmin }: { boardId: string; i
       {showCreate && (
         <CreateBoardModal onClose={() => setShowCreate(false)} onCreated={() => { setShowCreate(false); window.location.reload(); }} />
       )}
+    </div>
+  );
+}
+
+function BoardOverviewCard({ board }: { board: Namespace }) {
+  const { data: stats } = useAsync(() => namespaceApi.stats(board.id), [board.id]);
+  const aiRate = stats ? `${((stats.ai_resolve_rate ?? 0) * 100).toFixed(1)}%` : '--';
+  const base = `/admin/boards/${board.id}`;
+
+  return (
+    <Link to={base} style={{ textDecoration: 'none', color: 'inherit' }}>
+      <div className="card" style={{ padding: 16, cursor: 'pointer' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+          <span style={{ fontSize: 14, fontWeight: 600 }}>{board.display_name}</span>
+          <span style={{ fontSize: 12, color: 'var(--accent)' }}>进入后台 →</span>
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, fontSize: 12 }}>
+          <MiniStat label="帖子数" value={stats?.total_threads ?? '--'} color="var(--accent)" />
+          <MiniStat label="AI 解决率" value={aiRate} color="var(--green)" />
+          <MiniStat label="待处理" value={stats?.pending_count ?? '--'} color="var(--red)" />
+          <MiniStat label="记忆总数" value={stats?.total_memories ?? '--'} color="var(--purple)" />
+        </div>
+      </div>
+    </Link>
+  );
+}
+
+function MiniStat({ label, value, color }: { label: string; value: string | number; color: string }) {
+  return (
+    <div>
+      <div style={{ color: 'var(--text-ter)', marginBottom: 2 }}>{label}</div>
+      <div style={{ fontSize: 16, fontWeight: 700, color }}>{value}</div>
     </div>
   );
 }
