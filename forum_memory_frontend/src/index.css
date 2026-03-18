@@ -199,6 +199,9 @@ textarea { resize: vertical; min-height: 120px; }
   width: 100%;
   text-align: left;
   text-decoration: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .sidebar__item:hover { background: var(--surface-alt); text-decoration: none; }
 .sidebar__item--active {

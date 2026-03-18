@@ -57,32 +57,19 @@ function GlobalDashboard({ isSuperAdmin, isBoardAdmin, myNamespaces }: {
         </div>
       )}
 
-      <div className={isSuperAdmin ? 'two-col' : ''}>
-        <div className="card" style={{ padding: 16 }}>
-          <h3 style={{ fontSize: 14, fontWeight: 700, marginBottom: 12 }}>
-            {isBoardAdmin ? '我管理的板块' : '板块概览'}
-          </h3>
-          {(visibleBoards?.length ?? 0) === 0 ? (
-            <p style={{ color: 'var(--text-ter)', fontSize: 13 }}>还没有板块</p>
-          ) : (
-            visibleBoards?.map(b => (
-              <div key={b.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: '1px solid var(--border)', fontSize: 13 }}>
-                <span>{b.display_name}</span>
-                <Link to={`/admin/boards/${b.id}`} style={{ fontSize: 12, color: 'var(--accent)', textDecoration: 'none' }}>进入后台 →</Link>
-              </div>
-            ))
-          )}
-        </div>
-
-        {isSuperAdmin && (
-          <div className="card" style={{ padding: 16 }}>
-            <h3 style={{ fontSize: 14, fontWeight: 700, marginBottom: 12 }}>快速操作</h3>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              <QuickLink to="/admin/pending" label="处理待审事项" />
-              <QuickLink to="/admin/memories" label="管理记忆库" />
-              <QuickLink to="/admin/settings" label="板块配置" />
+      <div className="card" style={{ padding: 16 }}>
+        <h3 style={{ fontSize: 14, fontWeight: 700, marginBottom: 12 }}>
+          {isBoardAdmin ? '我管理的板块' : '板块概览'}
+        </h3>
+        {(visibleBoards?.length ?? 0) === 0 ? (
+          <p style={{ color: 'var(--text-ter)', fontSize: 13 }}>还没有板块</p>
+        ) : (
+          visibleBoards?.map(b => (
+            <div key={b.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: '1px solid var(--border)', fontSize: 13 }}>
+              <span>{b.display_name}</span>
+              <Link to={`/admin/boards/${b.id}`} style={{ fontSize: 12, color: 'var(--accent)', textDecoration: 'none' }}>进入后台 →</Link>
             </div>
-          </div>
+          ))
         )}
       </div>
 
@@ -122,33 +109,20 @@ function BoardDashboard({ boardId, isSuperAdmin, isAdmin }: { boardId: string; i
         <StatCard label="记忆总数" value={stats?.total_memories ?? '--'} sub={stats ? `${stats.locked_memories ?? 0} 已锁定` : '全部记忆'} color="var(--purple)" link={`${base}/memories`} />
       </div>
 
-      <div className="two-col">
-        <div className="card" style={{ padding: 16 }}>
-          <h3 style={{ fontSize: 14, fontWeight: 700, marginBottom: 12 }}>板块信息</h3>
-          <div style={{ fontSize: 13, display: 'flex', flexDirection: 'column', gap: 8 }}>
-            <div style={{ display: 'flex', gap: 8 }}>
-              <span style={{ color: 'var(--text-sec)', minWidth: 70 }}>内部名称:</span>
-              <span style={{ fontFamily: 'monospace' }}>{board?.name}</span>
-            </div>
-            <div style={{ display: 'flex', gap: 8 }}>
-              <span style={{ color: 'var(--text-sec)', minWidth: 70 }}>访问模式:</span>
-              <span>{board?.access_mode}</span>
-            </div>
-            <div style={{ display: 'flex', gap: 8 }}>
-              <span style={{ color: 'var(--text-sec)', minWidth: 70 }}>描述:</span>
-              <span>{board?.description || '无'}</span>
-            </div>
+      <div className="card" style={{ padding: 16 }}>
+        <h3 style={{ fontSize: 14, fontWeight: 700, marginBottom: 12 }}>板块信息</h3>
+        <div style={{ fontSize: 13, display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <span style={{ color: 'var(--text-sec)', minWidth: 70 }}>内部名称:</span>
+            <span style={{ fontFamily: 'monospace' }}>{board?.name}</span>
           </div>
-        </div>
-
-        <div className="card" style={{ padding: 16 }}>
-          <h3 style={{ fontSize: 14, fontWeight: 700, marginBottom: 12 }}>快速操作</h3>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            <QuickLink to={`${base}/pending`} label="处理待审事项" />
-            <QuickLink to={`${base}/memories`} label="管理记忆库" />
-            <QuickLink to={`${base}/settings`} label="板块配置" />
-            <QuickLink to={`${base}/import`} label="📥 导入历史帖子" />
-            <QuickLink to={`/boards/${boardId}/threads`} label="↗ 查看论坛帖子" />
+          <div style={{ display: 'flex', gap: 8 }}>
+            <span style={{ color: 'var(--text-sec)', minWidth: 70 }}>访问模式:</span>
+            <span>{board?.access_mode}</span>
+          </div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <span style={{ color: 'var(--text-sec)', minWidth: 70 }}>描述:</span>
+            <span>{board?.description || '无'}</span>
           </div>
         </div>
       </div>
@@ -213,16 +187,6 @@ function CreateBoardModal({ onClose, onCreated }: { onClose: () => void; onCreat
         </form>
       </div>
     </div>
-  );
-}
-
-function QuickLink({ to, label }: { to: string; label: string }) {
-  return (
-    <Link to={to} style={{ textDecoration: 'none' }}>
-      <div style={{ padding: 12, borderRadius: 'var(--radius)', border: '1px solid var(--border)', fontSize: 13, display: 'flex', justifyContent: 'space-between' }}>
-        <span>{label}</span> <span>&rarr;</span>
-      </div>
-    </Link>
   );
 }
 
