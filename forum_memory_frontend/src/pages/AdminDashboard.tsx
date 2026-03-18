@@ -139,9 +139,8 @@ function BoardOverviewCard({ board }: { board: Namespace }) {
   return (
     <Link to={base} style={{ textDecoration: 'none', color: 'inherit' }}>
       <div className="card" style={{ padding: 16, cursor: 'pointer' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+        <div style={{ marginBottom: 10 }}>
           <span style={{ fontSize: 14, fontWeight: 600 }}>{board.display_name}</span>
-          <span style={{ fontSize: 12, color: 'var(--accent)' }}>进入后台 →</span>
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, fontSize: 12 }}>
           <MiniStat label="帖子数" value={stats?.total_threads ?? '--'} color="var(--accent)" />
