@@ -9,23 +9,25 @@ import type { OperationLog } from '../types';
 const PAGE_SIZE = 30;
 
 const OPERATION_LABELS: Record<string, string> = {
-  CREATE: '创建',
+  ADD: '创建',
   UPDATE: '更新',
   DELETE: '删除',
+  MERGE: '合并',
+  PROMOTE: '晋升 LOCKED',
+  DEMOTE: '降级 NORMAL',
+  ARCHIVE: '归档',
   RESTORE: '恢复',
-  AUTHORITY_CHANGE: '权威变更',
-  LIFECYCLE_TRANSITION: '生命周期变更',
-  QUALITY_FLAG: '质量标记',
 };
 
 const OPERATION_COLORS: Record<string, string> = {
-  CREATE: 'green',
+  ADD: 'green',
   UPDATE: 'blue',
   DELETE: 'red',
+  MERGE: 'purple',
+  PROMOTE: 'green',
+  DEMOTE: 'amber',
+  ARCHIVE: 'gray',
   RESTORE: 'green',
-  AUTHORITY_CHANGE: 'amber',
-  LIFECYCLE_TRANSITION: 'gray',
-  QUALITY_FLAG: 'amber',
 };
 
 export default function AuditLog() {
@@ -46,7 +48,7 @@ export default function AuditLog() {
   const logs = data?.items;
   const totalCount = data?.total || 0;
 
-  const operationOptions = ['', 'CREATE', 'UPDATE', 'DELETE', 'RESTORE', 'AUTHORITY_CHANGE', 'LIFECYCLE_TRANSITION', 'QUALITY_FLAG'];
+  const operationOptions = ['', 'ADD', 'UPDATE', 'DELETE', 'MERGE', 'PROMOTE', 'DEMOTE', 'ARCHIVE', 'RESTORE'];
 
   return (
     <div>
