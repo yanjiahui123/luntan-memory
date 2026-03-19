@@ -24,10 +24,12 @@ export default function ThreadDetail() {
   const navigate = useNavigate();
   const { data: thread, loading, error, refetch } = useAsync(() => threadApi.get(threadId!), [threadId]);
   const { data: comments, refetch: refetchComments } = useAsync(() => threadApi.comments(threadId!), [threadId]);
-  const { currentUser, isSuperAdmin, isAdmin } = useUser();
+  const { currentUser, isSuperAdmin, myNamespaces } = useUser();
   const { addToast } = useToast();
   const isAuthor = !!(currentUser && thread?.author_id && currentUser.id === thread.author_id);
-  const canDelete = isAuthor || isAdmin;
+  // Admin of THIS board: super admin, or board admin managing this board's namespace
+  const isCurrentBoardAdmin = isSuperAdmin || !!(myNamespaces?.some(ns => ns.id === thread?.namespace_id));
+  const canDelete = isAuthor || isCurrentBoardAdmin;
   const [replyText, setReplyText] = useState('');
   const [replying, setReplying] = useState(false);
   const [resolving, setResolving] = useState(false);
@@ -160,7 +162,7 @@ export default function ThreadDetail() {
 
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
         <h3 style={{ fontSize: 15, fontWeight: 600, margin: 0 }}>回答 ({comments?.length || 0})</h3>
-        {thread.status === 'OPEN' && isAdmin && comments?.some(c => c.is_ai) && (
+        {thread.status === 'OPEN' && isCurrentBoardAdmin && comments?.some(c => c.is_ai) && (
           <button
             className="btn-secondary"
             disabled={aiLoading}
@@ -201,7 +203,7 @@ export default function ThreadDetail() {
         </div>
       )}
       {comments?.map(c => (
-        <CommentCard key={c.id} comment={c} thread={thread} onResolve={() => setResolveTarget(c.id)} onDelete={refetchComments} isAdmin={isAdmin} />
+        <CommentCard key={c.id} comment={c} thread={thread} onResolve={() => setResolveTarget(c.id)} onDelete={refetchComments} isAdmin={isCurrentBoardAdmin} />
       ))}
 
       {thread.status === 'OPEN' && (
@@ -214,7 +216,7 @@ export default function ThreadDetail() {
       )}
 
       {(thread.status === 'RESOLVED' || thread.status === 'TIMEOUT_CLOSED') && (
-        <ThreadMemories threadId={threadId!} isAdmin={isAdmin} />
+        <ThreadMemories threadId={threadId!} isAdmin={isCurrentBoardAdmin} />
       )}
 
       <ConfirmModal
@@ -229,7 +231,7 @@ export default function ThreadDetail() {
         open={showDeleteConfirm}
         title="删除帖子"
         message={
-          isAdmin
+          isCurrentBoardAdmin
             ? '确认删除此帖子？帖子将不再显示，关联记忆将标记为"待人工审核"，请前往待处理中心确认是否保留。'
             : '确认删除此帖子？帖子将不再显示，从中提取的知识记忆也将一并删除。'
         }
