@@ -5,7 +5,7 @@ import { useAsync } from '../hooks/useAsync';
 import { Loading, EmptyState, ErrorMsg, Badge, StatusBadge, TimeAgo } from '../components/UI';
 import type { Thread } from '../types';
 
-const PAGE_SIZE = 15;
+const PAGE_SIZE = 10;
 const CONTENT_TRUNCATE = 150;
 
 /** Highlight query keywords in text */

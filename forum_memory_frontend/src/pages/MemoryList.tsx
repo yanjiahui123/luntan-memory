@@ -190,7 +190,7 @@ const EMPTY_FILTERS: FiltersState = {
   knowledge_type: '', tags: '', q: '', page: 1,
 };
 
-const PAGE_SIZE = 40;
+const PAGE_SIZE = 10;
 
 function useUrlFilters(boardId?: string): [FiltersState, (key: string, val: string) => void, (f: FiltersState) => void] {
   const [params, setParams] = useSearchParams();
@@ -266,9 +266,10 @@ export default function MemoryList() {
 
   return (
     <div>
-      <div className="page-header" style={{ marginBottom: 16 }}>
-        <h1 className="page-title">记忆管理</h1>
-      </div>
+      <div style={{ position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg)', paddingBottom: 4 }}>
+        <div className="page-header" style={{ marginBottom: 8 }}>
+          <h1 className="page-title">记忆管理</h1>
+        </div>
 
       <div className="card" style={{ padding: '10px 14px', marginBottom: 16 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
@@ -290,6 +291,7 @@ export default function MemoryList() {
 
           <FilterDropdown filters={filters} namespaces={namespaces} allTags={allTags} onSet={setFilter} onClearAll={clearAll} showAllNamespaces={isSuperAdmin} />
         </div>
+      </div>
       </div>
 
       {(() => {

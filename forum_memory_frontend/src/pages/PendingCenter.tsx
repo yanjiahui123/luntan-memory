@@ -8,7 +8,7 @@ import { Loading, ErrorMsg, EmptyState, Badge, AuthorityBadge, QualityDot, Pagin
 import type { Memory, QualityAlert, MemoryRelation } from '../types';
 import type { MemoryListParams } from '../api/client';
 
-const PAGE_SIZE = 20;
+const PAGE_SIZE = 10;
 
 const TABS = [
   { key: 'all', label: '全部' },
@@ -26,14 +26,15 @@ export default function PendingCenter() {
 
   return (
     <div>
-      <h1 className="page-title" style={{ marginBottom: 20 }}>待处理中心</h1>
-
-      <div className="tabs">
-        {TABS.map(t => (
-          <button key={t.key} className={`tab ${tab === t.key ? 'tab--active' : ''}`} onClick={() => setTab(t.key)}>
-            {t.label}
-          </button>
-        ))}
+      <div style={{ position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg)', paddingBottom: 4 }}>
+        <h1 className="page-title" style={{ marginBottom: 12 }}>待处理中心</h1>
+        <div className="tabs">
+          {TABS.map(t => (
+            <button key={t.key} className={`tab ${tab === t.key ? 'tab--active' : ''}`} onClick={() => setTab(t.key)}>
+              {t.label}
+            </button>
+          ))}
+        </div>
       </div>
 
       <TabContent tab={tab} boardId={boardId} />
@@ -407,7 +408,9 @@ function PendingItem({ memory, checked, onToggle, onPromote, onDiscard }: {
           </div>
 
           <div className="pending-item__actions">
-            <button className="btn-success btn-sm" onClick={onPromote}>✓ 确认入库 (晋升 LOCKED)</button>
+            {memory.authority !== 'LOCKED' && (
+              <button className="btn-success btn-sm" onClick={onPromote}>✓ 确认入库 (晋升 LOCKED)</button>
+            )}
             <button className="btn-danger btn-sm" onClick={onDiscard}>丢弃</button>
             <Link to={`/admin/memories/${memory.id}`}>
               <button className="btn-secondary btn-sm">查看详情</button>

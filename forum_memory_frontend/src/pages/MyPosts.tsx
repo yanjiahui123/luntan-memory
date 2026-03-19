@@ -7,7 +7,7 @@ import { useUser } from '../contexts/UserContext';
 import { Loading, ErrorMsg, EmptyState, StatusBadge, Badge, TimeAgo, Pagination, PriorityBadge } from '../components/UI';
 import type { Thread, ThreadStatus } from '../types';
 
-const PAGE_SIZE = 20;
+const PAGE_SIZE = 10;
 
 const STATUSES: { value: ThreadStatus | ''; label: string }[] = [
   { value: '', label: '全部' },
