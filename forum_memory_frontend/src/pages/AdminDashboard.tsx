@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import { namespaceApi } from '../api/client';
 import { useAsync } from '../hooks/useAsync';
 import { useUser } from '../contexts/UserContext';
@@ -21,12 +21,13 @@ function GlobalDashboard({ isSuperAdmin, isBoardAdmin, myNamespaces }: {
   isBoardAdmin: boolean;
   myNamespaces: Namespace[] | null;
 }) {
-  const { data: boards, loading, error } = useAsync(() => namespaceApi.list());
+  const { data: boards, loading, error, refetch: refetchBoards } = useAsync(() => namespaceApi.list());
   const { data: stats } = useAsync(
     () => isSuperAdmin ? namespaceApi.aggregateStats() : Promise.resolve(null),
     [isSuperAdmin],
   );
   const [showCreate, setShowCreate] = useState(false);
+  const isAdmin = isSuperAdmin || isBoardAdmin;
 
   if (loading) return <Loading />;
   if (error) return <ErrorMsg message={error} />;
@@ -43,7 +44,7 @@ function GlobalDashboard({ isSuperAdmin, isBoardAdmin, myNamespaces }: {
     <div>
       <div className="page-header" style={{ marginBottom: 20 }}>
         <h1 className="page-title">管理仪表盘</h1>
-        {(isSuperAdmin || isBoardAdmin) && (
+        {isAdmin && (
           <button className="btn-primary" onClick={() => setShowCreate(true)}>+ 创建板块</button>
         )}
       </div>
@@ -65,13 +66,15 @@ function GlobalDashboard({ isSuperAdmin, isBoardAdmin, myNamespaces }: {
           <p style={{ color: 'var(--text-ter)', fontSize: 13 }}>还没有板块</p>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-            {visibleBoards?.map(b => <BoardOverviewCard key={b.id} board={b} />)}
+            {visibleBoards?.map(b => (
+              <BoardOverviewCard key={b.id} board={b} isAdmin={isAdmin} onDeleted={refetchBoards} />
+            ))}
           </div>
         )}
       </div>
 
       {showCreate && (
-        <CreateBoardModal onClose={() => setShowCreate(false)} onCreated={() => { setShowCreate(false); window.location.reload(); }} />
+        <CreateBoardModal onClose={() => setShowCreate(false)} onCreated={() => { setShowCreate(false); refetchBoards(); }} />
       )}
     </div>
   );
@@ -131,16 +134,31 @@ function BoardDashboard({ boardId, isSuperAdmin, isAdmin }: { boardId: string; i
   );
 }
 
-function BoardOverviewCard({ board }: { board: Namespace }) {
+function BoardOverviewCard({ board, isAdmin, onDeleted }: { board: Namespace; isAdmin: boolean; onDeleted: () => void }) {
+  const navigate = useNavigate();
   const { data: stats } = useAsync(() => namespaceApi.stats(board.id), [board.id]);
+  const [showDelete, setShowDelete] = useState(false);
   const aiRate = stats ? `${((stats.ai_resolve_rate ?? 0) * 100).toFixed(1)}%` : '--';
   const base = `/admin/boards/${board.id}`;
 
   return (
-    <Link to={base} style={{ textDecoration: 'none', color: 'inherit' }}>
-      <div className="card" style={{ padding: 16, cursor: 'pointer' }}>
-        <div style={{ marginBottom: 10 }}>
+    <>
+      <div
+        className="card"
+        style={{ padding: 16, cursor: 'pointer' }}
+        onClick={() => navigate(base)}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', marginBottom: 10 }}>
           <span style={{ fontSize: 14, fontWeight: 600 }}>{board.display_name}</span>
+          {isAdmin && (
+            <button
+              className="btn-danger btn-sm"
+              style={{ marginLeft: 'auto', fontSize: 11 }}
+              onClick={e => { e.stopPropagation(); setShowDelete(true); }}
+            >
+              删除
+            </button>
+          )}
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, fontSize: 12 }}>
           <MiniStat label="帖子数" value={stats?.total_threads ?? '--'} color="var(--accent)" />
@@ -149,7 +167,65 @@ function BoardOverviewCard({ board }: { board: Namespace }) {
           <MiniStat label="记忆总数" value={stats?.total_memories ?? '--'} color="var(--purple)" />
         </div>
       </div>
-    </Link>
+      {showDelete && (
+        <DeleteBoardModal
+          board={board}
+          onClose={() => setShowDelete(false)}
+          onDeleted={onDeleted}
+        />
+      )}
+    </>
+  );
+}
+
+function DeleteBoardModal({ board, onClose, onDeleted }: { board: Namespace; onClose: () => void; onDeleted: () => void }) {
+  const [input, setInput] = useState('');
+  const [deleting, setDeleting] = useState(false);
+  const [err, setErr] = useState('');
+  const confirmed = input === board.display_name;
+
+  async function handleDelete() {
+    if (!confirmed || deleting) return;
+    setDeleting(true);
+    setErr('');
+    try {
+      await namespaceApi.delete(board.id);
+      onDeleted();
+      onClose();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : '删除失败，请重试');
+    } finally {
+      setDeleting(false);
+    }
+  }
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
+      <div className="card fade-in" style={{ padding: 24, maxWidth: 420, width: '90%' }}>
+        <h3 style={{ marginBottom: 8 }}>删除板块</h3>
+        <p style={{ color: 'var(--text-sec)', fontSize: 14, marginBottom: 16 }}>
+          此操作不可恢复，板块下所有帖子和知识点将一并删除。
+        </p>
+        <p style={{ fontSize: 14, marginBottom: 8 }}>
+          请输入板块名称 <strong>{board.display_name}</strong> 以确认：
+        </p>
+        <input
+          value={input}
+          onChange={e => { setInput(e.target.value); setErr(''); }}
+          placeholder={board.display_name}
+          autoFocus
+          style={{ marginBottom: err ? 8 : 16 }}
+          onKeyDown={e => { if (e.key === 'Enter' && confirmed && !deleting) handleDelete(); }}
+        />
+        {err && <p style={{ color: 'var(--red)', fontSize: 13, marginBottom: 16 }}>{err}</p>}
+        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+          <button className="btn-secondary" onClick={onClose} disabled={deleting}>取消</button>
+          <button className="btn-danger" onClick={handleDelete} disabled={!confirmed || deleting}>
+            {deleting ? '删除中...' : '确认删除'}
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 
