@@ -32,8 +32,11 @@ export default function ThreadDetail() {
   const canDelete = isAuthor || isCurrentBoardAdmin;
   const [replyText, setReplyText] = useState('');
   const [replying, setReplying] = useState(false);
-  const [resolving, setResolving] = useState(false);
-  const [resolveTarget, setResolveTarget] = useState<string | null>(null);
+  const [adopting, setAdopting] = useState(false);
+  const [adoptTarget, setAdoptTarget] = useState<string | null>(null);
+  const [closing, setClosing] = useState(false);
+  const [showCloseConfirm, setShowCloseConfirm] = useState(false);
+  const [reopening, setReopening] = useState(false);
   const [aiLoading, setAiLoading] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [pollStatus, setPollStatus] = useState<'idle' | 'polling' | 'done'>('idle');
@@ -53,18 +56,45 @@ export default function ThreadDetail() {
     }
   }
 
-  async function handleResolve() {
-    if (resolving) return;
-    setResolving(true);
+  async function handleAdopt() {
+    if (adopting || !adoptTarget) return;
+    setAdopting(true);
     try {
-      await threadApi.resolve(threadId!, resolveTarget);
-      setResolveTarget(null);
+      await threadApi.adoptAnswer(threadId!, adoptTarget);
+      setAdoptTarget(null);
       refetch();
       refetchComments();
     } catch (err) {
       addToast('error', '采纳失败: ' + (err instanceof Error ? err.message : String(err)));
     } finally {
-      setResolving(false);
+      setAdopting(false);
+    }
+  }
+
+  async function handleClose() {
+    if (closing) return;
+    setClosing(true);
+    try {
+      await threadApi.resolve(threadId!, null);
+      setShowCloseConfirm(false);
+      refetch();
+    } catch (err) {
+      addToast('error', '关闭失败: ' + (err instanceof Error ? err.message : String(err)));
+    } finally {
+      setClosing(false);
+    }
+  }
+
+  async function handleReopen() {
+    if (reopening) return;
+    setReopening(true);
+    try {
+      await threadApi.reopen(threadId!);
+      refetch();
+    } catch (err) {
+      addToast('error', '重新开启失败: ' + (err instanceof Error ? err.message : String(err)));
+    } finally {
+      setReopening(false);
     }
   }
 
@@ -148,15 +178,23 @@ export default function ThreadDetail() {
           <span>👁 {thread.view_count} 浏览</span>
           <span>💬 {thread.comment_count} 回复</span>
           <TimeAgo date={thread.created_at} />
-          {canDelete && (
-            <button
-              className="btn-sm btn-danger"
-              style={{ marginLeft: 'auto' }}
-              onClick={() => setShowDeleteConfirm(true)}
-            >
-              删除帖子
-            </button>
-          )}
+          <div style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
+            {canDelete && thread.status === 'OPEN' && (
+              <button className="btn-sm btn-secondary" onClick={() => setShowCloseConfirm(true)}>
+                关闭帖子
+              </button>
+            )}
+            {canDelete && (thread.status === 'RESOLVED' || thread.status === 'TIMEOUT_CLOSED') && (
+              <button className="btn-sm btn-secondary" disabled={reopening} onClick={handleReopen}>
+                {reopening ? '开启中...' : '重新开启'}
+              </button>
+            )}
+            {canDelete && (
+              <button className="btn-sm btn-danger" onClick={() => setShowDeleteConfirm(true)}>
+                删除帖子
+              </button>
+            )}
+          </div>
         </div>
       </div>
 
@@ -203,7 +241,7 @@ export default function ThreadDetail() {
         </div>
       )}
       {comments?.map(c => (
-        <CommentCard key={c.id} comment={c} thread={thread} onResolve={() => setResolveTarget(c.id)} onDelete={refetchComments} isAdmin={isCurrentBoardAdmin} />
+        <CommentCard key={c.id} comment={c} thread={thread} onAdopt={() => setAdoptTarget(c.id)} onDelete={refetchComments} isAdmin={isCurrentBoardAdmin} canAdopt={isAuthor || isCurrentBoardAdmin} />
       ))}
 
       {thread.status === 'OPEN' && (
@@ -220,11 +258,19 @@ export default function ThreadDetail() {
       )}
 
       <ConfirmModal
-        open={!!resolveTarget}
+        open={!!adoptTarget}
         title="采纳此回答"
-        message="确认采纳并关闭帖子？关闭后系统将自动提取知识到记忆库。"
-        onConfirm={handleResolve}
-        onCancel={() => setResolveTarget(null)}
+        message="确认将此回答标记为最佳答案？帖子将保持开放状态，可继续讨论。"
+        onConfirm={handleAdopt}
+        onCancel={() => setAdoptTarget(null)}
+      />
+
+      <ConfirmModal
+        open={showCloseConfirm}
+        title="关闭帖子"
+        message="确认关闭此帖子？关闭后系统将自动提取知识到记忆库，发帖人和管理员可以重新开启帖子。"
+        onConfirm={handleClose}
+        onCancel={() => setShowCloseConfirm(false)}
       />
 
       <ConfirmModal
@@ -351,12 +397,13 @@ function ThreadMemories({ threadId, isAdmin }: { threadId: string; isAdmin: bool
 interface CommentCardProps {
   comment: Comment;
   thread: Thread;
-  onResolve: () => void;
+  onAdopt: () => void;
   onDelete: () => void;
   isAdmin: boolean;
+  canAdopt: boolean;
 }
 
-function CommentCard({ comment, thread, onResolve, onDelete, isAdmin }: CommentCardProps) {
+function CommentCard({ comment, thread, onAdopt, onDelete, isAdmin, canAdopt }: CommentCardProps) {
   const { addToast } = useToast();
   const [feedbackGiven, setFeedbackGiven] = useState<FeedbackType | null>(null);
   const [upvotes, setUpvotes] = useState(comment.upvote_count || 0);
@@ -534,9 +581,9 @@ function CommentCard({ comment, thread, onResolve, onDelete, isAdmin }: CommentC
         </div>
       )}
 
-      {thread.status === 'OPEN' && !isBest && (
+      {thread.status === 'OPEN' && !isBest && canAdopt && (
         <div style={{ padding: '10px 0 4px', borderTop: '1px solid var(--border)', marginTop: 10 }}>
-          <button className="btn-success" onClick={onResolve} style={{ width: '100%' }}>✓ 采纳此回答</button>
+          <button className="btn-success" onClick={onAdopt} style={{ width: '100%' }}>✓ 采纳此回答</button>
         </div>
       )}
       <div className="comment-actions" style={{ marginTop: thread.status === 'OPEN' && !isBest ? 6 : undefined }}>
