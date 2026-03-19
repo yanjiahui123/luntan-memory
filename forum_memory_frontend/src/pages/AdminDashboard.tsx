@@ -43,7 +43,7 @@ function GlobalDashboard({ isSuperAdmin, isBoardAdmin, myNamespaces }: {
     <div>
       <div className="page-header" style={{ marginBottom: 20 }}>
         <h1 className="page-title">管理仪表盘</h1>
-        {isSuperAdmin && (
+        {(isSuperAdmin || isBoardAdmin) && (
           <button className="btn-primary" onClick={() => setShowCreate(true)}>+ 创建板块</button>
         )}
       </div>
@@ -94,7 +94,7 @@ function BoardDashboard({ boardId, isSuperAdmin, isAdmin }: { boardId: string; i
           <h1 className="page-title">{board?.display_name || '板块仪表盘'}</h1>
           <p style={{ fontSize: 13, color: 'var(--text-sec)', marginTop: 4 }}>板块管理后台</p>
         </div>
-        {isSuperAdmin && (
+        {isAdmin && (
           <button className="btn-secondary" onClick={() => setShowCreate(true)}>+ 创建板块</button>
         )}
       </div>
