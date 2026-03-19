@@ -94,7 +94,7 @@ function BoardDashboard({ boardId, isSuperAdmin, isAdmin }: { boardId: string; i
           <h1 className="page-title">{board?.display_name || '板块仪表盘'}</h1>
           <p style={{ fontSize: 13, color: 'var(--text-sec)', marginTop: 4 }}>板块管理后台</p>
         </div>
-        {isAdmin && (
+        {isSuperAdmin && (
           <button className="btn-secondary" onClick={() => setShowCreate(true)}>+ 创建板块</button>
         )}
       </div>

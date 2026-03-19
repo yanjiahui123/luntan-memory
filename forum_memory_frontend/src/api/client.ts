@@ -144,6 +144,8 @@ export interface ThreadListParams {
   q?: string;
   page?: number;
   size?: number;
+  tags?: string;
+  environment?: string;
 }
 
 export const threadApi = {
