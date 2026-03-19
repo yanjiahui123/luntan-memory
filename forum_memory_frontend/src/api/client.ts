@@ -177,10 +177,11 @@ export const threadApi = {
 // ── Memories ─────────────────────────────────
 export interface MemoryListParams {
   namespace_id?: string;
-  lifecycle_status?: string;
+  status?: string;
   knowledge_type?: KnowledgeType;
   tags?: string;
-  pending_human_confirm?: boolean;
+  pending_confirm?: boolean;
+  quality_score_max?: number;
   q?: string;
   page?: number;
   size?: number;
