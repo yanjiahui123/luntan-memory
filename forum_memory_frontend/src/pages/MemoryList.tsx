@@ -100,9 +100,10 @@ interface FilterDropdownProps {
   allTags: string[];
   onSet: (key: string, val: string) => void;
   onClearAll: () => void;
+  showAllNamespaces: boolean;
 }
 
-function FilterDropdown({ filters, namespaces, allTags, onSet, onClearAll }: FilterDropdownProps) {
+function FilterDropdown({ filters, namespaces, allTags, onSet, onClearAll, showAllNamespaces }: FilterDropdownProps) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
@@ -128,7 +129,7 @@ function FilterDropdown({ filters, namespaces, allTags, onSet, onClearAll }: Fil
         <div style={{ position: 'absolute', top: 'calc(100% + 6px)', right: 0, zIndex: 200, width: 300, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', boxShadow: '0 4px 16px rgba(0,0,0,.12)', padding: 16 }}>
           <Section label="板块">
             <select value={filters.namespace_id} onChange={e => onSet('namespace_id', e.target.value)} style={{ width: '100%', fontSize: 13 }}>
-              <option value="">全部板块</option>
+              {showAllNamespaces && <option value="">全部板块</option>}
               {namespaces.map(ns => <option key={ns.id} value={ns.id}>{ns.name}</option>)}
             </select>
           </Section>
@@ -228,7 +229,7 @@ function useUrlFilters(boardId?: string): [FiltersState, (key: string, val: stri
 
 export default function MemoryList() {
   const { boardId } = useParams<{ boardId?: string }>();
-  const { myNamespaces } = useUser();
+  const { myNamespaces, isSuperAdmin } = useUser();
   const [filters, setFilter, setFilters] = useUrlFilters(boardId);
   const namespaces = myNamespaces || [];
   const [allTags, setAllTags] = useState<string[]>([]);
@@ -287,7 +288,7 @@ export default function MemoryList() {
             style={{ flex: '1 1 120px', minWidth: 80, border: 'none', outline: 'none', background: 'transparent', fontSize: 13, padding: '4px 0' }}
           />
 
-          <FilterDropdown filters={filters} namespaces={namespaces} allTags={allTags} onSet={setFilter} onClearAll={clearAll} />
+          <FilterDropdown filters={filters} namespaces={namespaces} allTags={allTags} onSet={setFilter} onClearAll={clearAll} showAllNamespaces={isSuperAdmin} />
         </div>
       </div>
 
