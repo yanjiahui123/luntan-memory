@@ -39,7 +39,7 @@ export default function ThreadDetail() {
   const [reopening, setReopening] = useState(false);
   const [aiLoading, setAiLoading] = useState(false);
   const [regenPolling, setRegenPolling] = useState(false);
-  const prevAiCountRef = useRef(0);
+  const prevAiSnapshotRef = useRef<string | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [pollStatus, setPollStatus] = useState<'idle' | 'polling' | 'done'>('idle');
   const [dots, setDots] = useState('');
@@ -102,7 +102,8 @@ export default function ThreadDetail() {
 
   async function handleRegenerate() {
     if (aiLoading || regenPolling) return;
-    prevAiCountRef.current = comments?.filter(c => c.is_ai).length ?? 0;
+    // 记录当前 AI 回答内容快照，用于检测更新完成
+    prevAiSnapshotRef.current = comments?.find(c => c.is_ai)?.content ?? null;
     setAiLoading(true);
     try {
       await threadApi.aiAnswer(threadId!);
@@ -124,11 +125,13 @@ export default function ThreadDetail() {
     return () => { clearInterval(timer); clearTimeout(timeout); };
   }, [regenPolling]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // 检测新 AI 评论：数量超过触发前的值时停止轮询
+  // 检测 AI 回答已更新：内容与触发前快照不同时停止轮询
   useEffect(() => {
     if (!regenPolling) return;
-    const currentAiCount = comments?.filter(c => c.is_ai).length ?? 0;
-    if (currentAiCount > prevAiCountRef.current) {
+    const currentContent = comments?.find(c => c.is_ai)?.content ?? null;
+    const prev = prevAiSnapshotRef.current;
+    // 有内容且与触发前不同（含首次生成 prev=null 的情况）
+    if (currentContent !== null && currentContent !== prev) {
       setRegenPolling(false);
       setAiLoading(false);
     }
@@ -236,7 +239,7 @@ export default function ThreadDetail() {
 
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
         <h3 style={{ fontSize: 15, fontWeight: 600, margin: 0 }}>回答 ({comments?.length || 0})</h3>
-        {thread.status === 'OPEN' && isCurrentBoardAdmin && comments?.some(c => c.is_ai) && (
+        {thread.status === 'OPEN' && (isAuthor || isCurrentBoardAdmin) && comments?.some(c => c.is_ai) && (
           <button
             className="btn-secondary"
             disabled={aiLoading || regenPolling}
