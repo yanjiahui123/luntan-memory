@@ -38,6 +38,8 @@ export default function ThreadDetail() {
   const [showCloseConfirm, setShowCloseConfirm] = useState(false);
   const [reopening, setReopening] = useState(false);
   const [aiLoading, setAiLoading] = useState(false);
+  const [regenPolling, setRegenPolling] = useState(false);
+  const prevAiCountRef = useRef(0);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [pollStatus, setPollStatus] = useState<'idle' | 'polling' | 'done'>('idle');
   const [dots, setDots] = useState('');
@@ -97,6 +99,40 @@ export default function ThreadDetail() {
       setReopening(false);
     }
   }
+
+  async function handleRegenerate() {
+    if (aiLoading || regenPolling) return;
+    prevAiCountRef.current = comments?.filter(c => c.is_ai).length ?? 0;
+    setAiLoading(true);
+    try {
+      await threadApi.aiAnswer(threadId!);
+      setRegenPolling(true);
+    } catch (err) {
+      addToast('error', 'AI 回答触发失败: ' + (err instanceof Error ? err.message : String(err)));
+      setAiLoading(false);
+    }
+  }
+
+  // 轮询定时器：regenPolling=true 时每 3 秒刷新评论列表
+  useEffect(() => {
+    if (!regenPolling) return;
+    const timer = setInterval(refetchComments, 3000);
+    const timeout = setTimeout(() => {
+      setRegenPolling(false);
+      setAiLoading(false);
+    }, 120_000);
+    return () => { clearInterval(timer); clearTimeout(timeout); };
+  }, [regenPolling]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // 检测新 AI 评论：数量超过触发前的值时停止轮询
+  useEffect(() => {
+    if (!regenPolling) return;
+    const currentAiCount = comments?.filter(c => c.is_ai).length ?? 0;
+    if (currentAiCount > prevAiCountRef.current) {
+      setRegenPolling(false);
+      setAiLoading(false);
+    }
+  }, [comments, regenPolling]);
 
   useEffect(() => {
     if (thread?.status !== 'OPEN' || (thread?.comment_count ?? 0) > 0) return;
@@ -203,20 +239,10 @@ export default function ThreadDetail() {
         {thread.status === 'OPEN' && isCurrentBoardAdmin && comments?.some(c => c.is_ai) && (
           <button
             className="btn-secondary"
-            disabled={aiLoading}
-            onClick={async () => {
-              setAiLoading(true);
-              try {
-                await threadApi.aiAnswer(threadId!);
-                refetchComments();
-              } catch (err) {
-                addToast('error', 'AI 回答生成失败: ' + (err instanceof Error ? err.message : String(err)));
-              } finally {
-                setAiLoading(false);
-              }
-            }}
+            disabled={aiLoading || regenPolling}
+            onClick={handleRegenerate}
           >
-            {aiLoading ? '生成中...' : '🤖 重新生成 AI 回答'}
+            {regenPolling ? '生成中...' : '🤖 重新生成 AI 回答'}
           </button>
         )}
       </div>
