@@ -3,6 +3,7 @@ import { Link, useLocation, useNavigate, Outlet } from 'react-router-dom';
 import { useUser } from '../contexts/UserContext';
 import { namespaceApi } from '../api/client';
 import { useAsync } from '../hooks/useAsync';
+import NotificationBell from './NotificationBell';
 import type { Namespace, User } from '../types';
 
 interface NavItem {
@@ -218,6 +219,7 @@ export default function Layout() {
           {isAdmin && (
             <button className={`topbar__link ${isAdminPage ? 'topbar__link--active' : ''}`} onClick={() => navigate('/admin')}>管理后台</button>
           )}
+          {currentUser && <NotificationBell />}
         </nav>
         <div style={{ position: 'relative' }}>
           <div

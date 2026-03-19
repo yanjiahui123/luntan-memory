@@ -364,6 +364,139 @@ textarea { resize: vertical; min-height: 120px; }
 .md-body pre { margin: 10px 0; }
 .md-body a { color: var(--accent); }
 
+/* ── Notification Bell ─────────────────────────── */
+.topbar__bell {
+  position: relative;
+  background: none;
+  border: none;
+  color: rgba(255,255,255,0.75);
+  font-size: 18px;
+  padding: 4px 8px;
+  cursor: pointer;
+  transition: color 0.15s;
+  line-height: 1;
+}
+.topbar__bell:hover { color: #fff; }
+.topbar__bell-badge {
+  position: absolute;
+  top: 0; right: 0;
+  min-width: 16px; height: 16px;
+  background: var(--red);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  border-radius: 8px;
+  display: flex; align-items: center; justify-content: center;
+  padding: 0 4px;
+  line-height: 1;
+}
+
+/* ── Notification Panel ───────────────────────── */
+.notification-panel {
+  position: absolute;
+  top: 40px; right: 0;
+  width: 340px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  z-index: 200;
+  overflow: hidden;
+}
+.notification-panel__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+}
+.notification-panel__mark-all {
+  background: none;
+  border: none;
+  color: var(--accent);
+  font-size: 12px;
+  cursor: pointer;
+  padding: 2px 6px;
+}
+.notification-panel__mark-all:hover { text-decoration: underline; }
+.notification-panel__body {
+  max-height: 400px;
+  overflow-y: auto;
+}
+.notification-panel__empty {
+  padding: 32px 16px;
+  text-align: center;
+  color: var(--text-ter);
+  font-size: 13px;
+}
+
+/* ── Notification Item ────────────────────────── */
+.notification-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 16px;
+  cursor: pointer;
+  transition: background 0.15s;
+  border-bottom: 1px solid var(--border);
+}
+.notification-item:last-child { border-bottom: none; }
+.notification-item:hover { background: var(--surface-alt); }
+.notification-item--unread { background: var(--accent-light); }
+.notification-item--unread:hover { background: #c7d9f7; }
+.notification-item__dot {
+  width: 8px; height: 8px;
+  min-width: 8px;
+  background: var(--accent);
+  border-radius: 50%;
+  margin-top: 5px;
+}
+.notification-item__content { flex: 1; min-width: 0; }
+.notification-item__text { font-size: 13px; color: var(--text); line-height: 1.4; }
+.notification-item__title {
+  font-size: 12px;
+  color: var(--text-sec);
+  margin-top: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.notification-item__time { font-size: 11px; color: var(--text-ter); margin-top: 4px; }
+
+/* ── Reply Indicator (in comment) ─────────────── */
+.reply-indicator {
+  font-size: 12px;
+  color: var(--text-sec);
+  background: var(--surface-alt);
+  padding: 3px 10px;
+  border-radius: 4px;
+  margin-bottom: 8px;
+  display: inline-block;
+}
+
+/* ── Reply Target Bar (above textarea) ────────── */
+.reply-target-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  margin-bottom: 8px;
+  background: var(--accent-light);
+  border-radius: var(--radius);
+  font-size: 13px;
+  color: var(--accent);
+}
+.reply-target-bar__close {
+  background: none;
+  border: none;
+  color: var(--text-sec);
+  font-size: 14px;
+  cursor: pointer;
+  padding: 2px 6px;
+  line-height: 1;
+}
+.reply-target-bar__close:hover { color: var(--text); }
+
 /* ── Hamburger menu button (mobile) ───────────── */
 .topbar__hamburger {
   display: none;
@@ -437,4 +570,6 @@ textarea { resize: vertical; min-height: 120px; }
 
   .thread-item { flex-direction: column; gap: 6px; }
   .thread-item__right { text-align: left; min-width: auto; }
+
+  .notification-panel { width: 300px; right: -40px; }
 }

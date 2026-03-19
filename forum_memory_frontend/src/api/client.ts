@@ -1,6 +1,6 @@
 import type {
   User, Namespace, NamespaceStats, AggregateStats,
-  Thread, ThreadStatus, Comment,
+  Thread, ThreadStatus, Comment, AppNotification,
   Memory, MemoryAuthority, KnowledgeType,
   Feedback, FeedbackSummary, FeedbackType,
   Moderator, DictionaryEntry,
@@ -168,7 +168,11 @@ export const threadApi = {
   reopen: (id: string) => post<Thread>(`/threads/${id}/reopen`),
   timeoutClose: (id: string) => post<Thread>(`/threads/${id}/timeout-close`),
   comments: (id: string) => get<Comment[]>(`/threads/${id}/comments`),
-  addComment: (id: string, content: string) => post<Comment>(`/threads/${id}/comments`, { thread_id: id, content }),
+  addComment: (id: string, content: string, replyToCommentId?: string) =>
+    post<Comment>(`/threads/${id}/comments`, {
+      thread_id: id, content,
+      reply_to_comment_id: replyToCommentId ?? null,
+    }),
   upvoteComment: (threadId: string, commentId: string) => post<Comment>(`/threads/${threadId}/comments/${commentId}/upvote`),
   deleteComment: (threadId: string, commentId: string) => del<null>(`/threads/${threadId}/comments/${commentId}`),
   aiAnswer: (threadId: string) => post<null>(`/threads/${threadId}/ai-answer`),
@@ -293,6 +297,18 @@ export const adminApi = {
   /** 查询异步导入任务状态 */
   importJobStatus: (jobId: string): Promise<ImportJobDetail> =>
     get<ImportJobDetail>(`/admin/import-jobs/${jobId}`),
+};
+
+// ── Notifications ────────────────────────────
+export const notificationApi = {
+  unreadCount: () => get<{ unread_count: number }>('/notifications/unread-count'),
+  list: (params: { page?: number; size?: number; unread_only?: boolean } = {}) => {
+    const q = new URLSearchParams();
+    Object.entries(params).forEach(([k, v]) => { if (v != null && v !== '') q.set(k, String(v)); });
+    return requestPaginated<AppNotification>(`/notifications?${q}`);
+  },
+  markRead: (notifId: string) => post<null>(`/notifications/${notifId}/read`),
+  markAllRead: () => post<null>('/notifications/read-all'),
 };
 
 // ── Uploads ──────────────────────────────────

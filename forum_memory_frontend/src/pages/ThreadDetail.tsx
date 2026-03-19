@@ -32,6 +32,7 @@ export default function ThreadDetail() {
   const canDelete = isAuthor || isCurrentBoardAdmin;
   const [replyText, setReplyText] = useState('');
   const [replying, setReplying] = useState(false);
+  const [replyTarget, setReplyTarget] = useState<Comment | null>(null);
   const [adopting, setAdopting] = useState(false);
   const [adoptTarget, setAdoptTarget] = useState<string | null>(null);
   const [closing, setClosing] = useState(false);
@@ -48,8 +49,9 @@ export default function ThreadDetail() {
     if (!replyText.trim() || replying) return;
     setReplying(true);
     try {
-      await threadApi.addComment(threadId!, replyText);
+      await threadApi.addComment(threadId!, replyText, replyTarget?.id);
       setReplyText('');
+      setReplyTarget(null);
       refetchComments();
     } catch (err) {
       addToast('error', '回复失败: ' + (err instanceof Error ? err.message : String(err)));
@@ -270,12 +272,18 @@ export default function ThreadDetail() {
         </div>
       )}
       {comments?.map(c => (
-        <CommentCard key={c.id} comment={c} thread={thread} onAdopt={() => setAdoptTarget(c.id)} onDelete={refetchComments} isAdmin={isCurrentBoardAdmin} canAdopt={isAuthor || isCurrentBoardAdmin} />
+        <CommentCard key={c.id} comment={c} thread={thread} onAdopt={() => setAdoptTarget(c.id)} onDelete={refetchComments} isAdmin={isCurrentBoardAdmin} canAdopt={isAuthor || isCurrentBoardAdmin} onReply={() => setReplyTarget(c)} />
       ))}
 
       {thread.status === 'OPEN' && (
         <div className="card" style={{ padding: 16, marginTop: 16 }}>
-          <ImagePasteTextarea placeholder="写下你的回答... (支持粘贴图片和 Markdown)" value={replyText} onChange={setReplyText} style={{ marginBottom: 12 }} />
+          {replyTarget && (
+            <div className="reply-target-bar">
+              <span>回复 @{replyTarget.is_ai ? 'AI 助手' : (replyTarget.author_display_name || '用户')}</span>
+              <button className="reply-target-bar__close" onClick={() => setReplyTarget(null)}>✕</button>
+            </div>
+          )}
+          <ImagePasteTextarea placeholder={replyTarget ? `回复 @${replyTarget.is_ai ? 'AI 助手' : (replyTarget.author_display_name || '用户')}...` : '写下你的回答... (支持粘贴图片和 Markdown)'} value={replyText} onChange={setReplyText} style={{ marginBottom: 12 }} />
           <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
             <button className="btn-primary" onClick={handleReply} disabled={!replyText.trim() || replying}>{replying ? '发送中...' : '发送回复'}</button>
           </div>
@@ -428,11 +436,12 @@ interface CommentCardProps {
   thread: Thread;
   onAdopt: () => void;
   onDelete: () => void;
+  onReply: () => void;
   isAdmin: boolean;
   canAdopt: boolean;
 }
 
-function CommentCard({ comment, thread, onAdopt, onDelete, isAdmin, canAdopt }: CommentCardProps) {
+function CommentCard({ comment, thread, onAdopt, onDelete, onReply, isAdmin, canAdopt }: CommentCardProps) {
   const { addToast } = useToast();
   const [feedbackGiven, setFeedbackGiven] = useState<FeedbackType | null>(null);
   const [upvotes, setUpvotes] = useState(comment.upvote_count || 0);
@@ -530,6 +539,12 @@ function CommentCard({ comment, thread, onAdopt, onDelete, isAdmin, canAdopt }: 
         <span style={{ marginLeft: 'auto', fontSize: 12, color: 'var(--text-ter)' }}><TimeAgo date={comment.created_at} /></span>
       </div>
 
+      {comment.reply_to_comment_id && (
+        <div className="reply-indicator">
+          ↩ 回复 @{comment.reply_to_author_display_name || '用户'}
+        </div>
+      )}
+
       <MarkdownContent content={comment.content} style={{ fontSize: 14 }} />
 
       {isAi && (hasCitations || comment.rag_context) && (
@@ -624,6 +639,9 @@ function CommentCard({ comment, thread, onAdopt, onDelete, isAdmin, canAdopt }: 
             <button className={`btn-sm ${feedbackGiven === 'useful' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => handleFeedback('useful')}>有用</button>
             <button className={`btn-sm ${feedbackGiven === 'wrong' ? 'btn-danger' : 'btn-secondary'}`} onClick={() => handleFeedback('wrong')}>错误</button>
           </>
+        )}
+        {thread.status === 'OPEN' && (
+          <button className="btn-sm btn-secondary" onClick={onReply}>💬 回复</button>
         )}
         <div style={{ flex: 1 }} />
         {isAdmin && !isBest && (

@@ -110,6 +110,19 @@ export interface Comment {
   upvote_count: number;
   cited_memory_ids: string[];
   rag_context?: string | RagChunk[] | null;
+  reply_to_comment_id?: string | null;
+  reply_to_author_display_name?: string | null;
+  created_at: string;
+}
+
+export interface AppNotification {
+  id: string;
+  notification_type: 'comment_on_thread' | 'reply_to_comment';
+  actor_display_name: string | null;
+  thread_id: string;
+  thread_title: string | null;
+  comment_id: string | null;
+  is_read: boolean;
   created_at: string;
 }
 
