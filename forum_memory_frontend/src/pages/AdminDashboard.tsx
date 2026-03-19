@@ -26,8 +26,14 @@ function GlobalDashboard({ isSuperAdmin, isBoardAdmin, myNamespaces }: {
     () => isSuperAdmin ? namespaceApi.aggregateStats() : Promise.resolve(null),
     [isSuperAdmin],
   );
+  const { refetch: refetchUser } = useUser();
   const [showCreate, setShowCreate] = useState(false);
   const isAdmin = isSuperAdmin || isBoardAdmin;
+
+  function handleBoardChange() {
+    refetchBoards();
+    refetchUser();
+  }
 
   if (loading) return <Loading />;
   if (error) return <ErrorMsg message={error} />;
@@ -67,14 +73,14 @@ function GlobalDashboard({ isSuperAdmin, isBoardAdmin, myNamespaces }: {
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
             {visibleBoards?.map(b => (
-              <BoardOverviewCard key={b.id} board={b} isAdmin={isAdmin} onDeleted={refetchBoards} />
+              <BoardOverviewCard key={b.id} board={b} isAdmin={isAdmin} onDeleted={handleBoardChange} />
             ))}
           </div>
         )}
       </div>
 
       {showCreate && (
-        <CreateBoardModal onClose={() => setShowCreate(false)} onCreated={() => { setShowCreate(false); refetchBoards(); }} />
+        <CreateBoardModal onClose={() => setShowCreate(false)} onCreated={() => { setShowCreate(false); handleBoardChange(); }} />
       )}
     </div>
   );
