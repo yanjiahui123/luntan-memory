@@ -72,7 +72,7 @@ export default function MemoryDetail() {
               <div style={{ display: 'flex', gap: 6 }}>
                 <AuthorityBadge authority={memory.authority} />
                 {lifecycleStatus && <LifecycleBadge status={lifecycleStatus} />}
-                {memory.pending_human_confirm && <Badge type="amber">⏳ 待确认</Badge>}
+                {memory.pending_human_confirm && memory.authority !== 'LOCKED' && <Badge type="amber">⏳ 待确认</Badge>}
               </div>
               <div style={{ display: 'flex', gap: 8 }}>
                 {(lifecycleStatus === 'COLD' || lifecycleStatus === 'ARCHIVED') && (

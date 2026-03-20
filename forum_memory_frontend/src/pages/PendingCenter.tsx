@@ -395,7 +395,7 @@ function PendingItem({ memory, checked, onToggle, onPromote, onDiscard }: {
         />
         <div style={{ flex: 1 }}>
           <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
-            {isPending && <Badge type="amber">⏳ 超时待确认</Badge>}
+            {isPending && memory.authority !== 'LOCKED' && <Badge type="amber">⏳ 超时待确认</Badge>}
             {isLowQuality && <Badge type="red">⚠️ 低质量</Badge>}
             <AuthorityBadge authority={memory.authority} />
             {memory.tags?.map((t: string) => <Badge key={t} type="gray">{t}</Badge>)}

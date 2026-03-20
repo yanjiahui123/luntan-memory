@@ -230,7 +230,7 @@ export default function ThreadDetail() {
                 {reopening ? '开启中...' : '重新开启'}
               </button>
             )}
-            {canDelete && (
+            {canDelete && thread.status !== 'DELETED' && (
               <button className="btn-sm btn-danger" onClick={() => setShowDeleteConfirm(true)}>
                 删除帖子
               </button>
