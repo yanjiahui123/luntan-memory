@@ -37,8 +37,8 @@ export default function NotificationBell() {
 
   useEffect(() => {
     fetchUnread();
-    const timer = setInterval(fetchUnread, 30_000);
-    return () => clearInterval(timer);
+    const timer = window.setInterval(fetchUnread, 30_000);
+    return () => window.clearInterval(timer);
   }, [fetchUnread]);
 
   // Load notifications when panel opens
