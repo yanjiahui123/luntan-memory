@@ -44,6 +44,14 @@ export default function ThreadDetail() {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [pollStatus, setPollStatus] = useState<'idle' | 'polling' | 'done'>('idle');
   const [dots, setDots] = useState('');
+  const viewRecorded = useRef(false);
+
+  // Record view once per page visit (ref guard prevents StrictMode double-fire)
+  useEffect(() => {
+    if (!threadId || viewRecorded.current) return;
+    viewRecorded.current = true;
+    threadApi.recordView(threadId).catch(() => {});
+  }, [threadId]);
 
   async function handleReply() {
     if (!replyText.trim() || replying) return;

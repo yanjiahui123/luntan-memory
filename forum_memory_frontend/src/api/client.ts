@@ -176,6 +176,7 @@ export const threadApi = {
   upvoteComment: (threadId: string, commentId: string) => post<Comment>(`/threads/${threadId}/comments/${commentId}/upvote`),
   deleteComment: (threadId: string, commentId: string) => del<null>(`/threads/${threadId}/comments/${commentId}`),
   aiAnswer: (threadId: string) => post<null>(`/threads/${threadId}/ai-answer`),
+  recordView: (threadId: string) => post<null>(`/threads/${threadId}/view`),
 };
 
 // ── Memories ─────────────────────────────────
