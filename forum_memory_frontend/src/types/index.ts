@@ -112,6 +112,7 @@ export interface Comment {
   rag_context?: string | RagChunk[] | null;
   reply_to_comment_id?: string | null;
   reply_to_author_display_name?: string | null;
+  reply_to_content_preview?: string | null;
   created_at: string;
 }
 

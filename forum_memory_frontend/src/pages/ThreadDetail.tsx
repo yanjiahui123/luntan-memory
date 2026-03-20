@@ -548,8 +548,13 @@ function CommentCard({ comment, thread, onAdopt, onDelete, onReply, isAdmin, can
       </div>
 
       {comment.reply_to_comment_id && (
-        <div className="reply-indicator">
-          ↩ 回复 @{comment.reply_to_author_display_name || '用户'}
+        <div className="reply-quote">
+          <div className="reply-quote__header">
+            ↩ {comment.reply_to_author_display_name || '用户'}
+          </div>
+          {comment.reply_to_content_preview && (
+            <div className="reply-quote__body">{comment.reply_to_content_preview}</div>
+          )}
         </div>
       )}
 

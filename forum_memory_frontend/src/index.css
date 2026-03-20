@@ -464,14 +464,27 @@ textarea { resize: vertical; min-height: 120px; }
 .notification-item__time { font-size: 11px; color: var(--text-ter); margin-top: 4px; }
 
 /* ── Reply Indicator (in comment) ─────────────── */
-.reply-indicator {
-  font-size: 12px;
-  color: var(--text-sec);
+.reply-quote {
+  border-left: 3px solid var(--border);
+  padding: 6px 12px;
+  margin-bottom: 10px;
   background: var(--surface-alt);
-  padding: 3px 10px;
-  border-radius: 4px;
-  margin-bottom: 8px;
-  display: inline-block;
+  border-radius: 0 4px 4px 0;
+}
+.reply-quote__header {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-sec);
+  margin-bottom: 2px;
+}
+.reply-quote__body {
+  font-size: 12px;
+  color: var(--text-ter);
+  line-height: 1.5;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
 }
 
 /* ── Reply Target Bar (above textarea) ────────── */
