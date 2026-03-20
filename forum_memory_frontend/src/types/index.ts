@@ -17,6 +17,7 @@ export interface NamespaceConfig {
   enable_memory_search?: boolean;
   enable_rag_search?: boolean;
   kb_sn_list?: string[];
+  rag_top_k?: number;
   dictionary?: Record<string, string>;
   [key: string]: unknown;
 }

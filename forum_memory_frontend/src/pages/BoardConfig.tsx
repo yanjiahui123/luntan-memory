@@ -160,7 +160,7 @@ function KBConfigTab({ board, onUpdate }: { board: Namespace; onUpdate: () => vo
   const [newSn, setNewSn] = useState('');
   const [saving, setSaving] = useState(false);
 
-  async function handleToggle(key: string, value: boolean) {
+  async function handleToggle(key: string, value: boolean | number) {
     await namespaceApi.update(board.id, { config: { ...board.config, [key]: value } } as Partial<Namespace>);
     onUpdate();
   }
@@ -200,6 +200,24 @@ function KBConfigTab({ board, onUpdate }: { board: Namespace; onUpdate: () => vo
           <span style={{ fontSize: 12, color: 'var(--text-sec)' }}>（从外部知识库检索）</span>
         </label>
       </div>
+
+      {enableRag && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 20, padding: '12px 16px', background: 'var(--bg-sec, #f5f5f5)', borderRadius: 8 }}>
+          <label style={{ fontSize: 14, fontWeight: 600, whiteSpace: 'nowrap' }}>RAG 返回切片数</label>
+          <input
+            type="number"
+            min={1}
+            max={10}
+            value={board.config?.rag_top_k ?? 5}
+            onChange={e => {
+              const val = Math.min(10, Math.max(1, Number(e.target.value) || 5));
+              handleToggle('rag_top_k', val);
+            }}
+            style={{ width: 70, textAlign: 'center' }}
+          />
+          <span style={{ fontSize: 12, color: 'var(--text-sec)' }}>（范围 1-10，默认 5）</span>
+        </div>
+      )}
 
       <h4 style={{ fontSize: 14, fontWeight: 600, marginBottom: 12 }}>外部知识库配置</h4>
       <p style={{ fontSize: 13, color: 'var(--text-sec)', marginBottom: 16 }}>配置外部知识库序列号，AI 回答时会结合知识库检索结果生成更准确的回答。</p>
