@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Link, useParams, useNavigate } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { threadApi, feedbackApi, memoryApi } from '../api/client';
+import { threadApi, feedbackApi, memoryApi, getToken } from '../api/client';
 import { useAsync } from '../hooks/useAsync';
 import { useUser } from '../contexts/UserContext';
 import { useToast } from '../contexts/ToastContext';
@@ -39,11 +39,10 @@ export default function ThreadDetail() {
   const [showCloseConfirm, setShowCloseConfirm] = useState(false);
   const [reopening, setReopening] = useState(false);
   const [aiLoading, setAiLoading] = useState(false);
-  const [regenPolling, setRegenPolling] = useState(false);
-  const prevAiSnapshotRef = useRef<string | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-  const [pollStatus, setPollStatus] = useState<'idle' | 'polling' | 'done'>('idle');
-  const [dots, setDots] = useState('');
+  const [streamPhase, setStreamPhase] = useState<'idle' | 'searching' | 'generating' | 'done'>('idle');
+  const [streamingContent, setStreamingContent] = useState('');
+  const esRef = useRef<EventSource | null>(null);
   const viewRecorded = useRef(false);
 
   // Record view once per page visit (ref guard prevents StrictMode double-fire)
@@ -110,97 +109,56 @@ export default function ThreadDetail() {
     }
   }
 
-  async function handleRegenerate() {
-    if (aiLoading || regenPolling) return;
-    // 记录当前 AI 回答内容快照，用于检测更新完成
-    prevAiSnapshotRef.current = comments?.find(c => c.is_ai)?.content ?? null;
+  function connectStream() {
+    if (esRef.current) esRef.current.close();
+    setStreamingContent('');
+    setStreamPhase('idle');
     setAiLoading(true);
-    try {
-      await threadApi.aiAnswer(threadId!);
-      setRegenPolling(true);
-    } catch (err) {
-      addToast('error', 'AI 回答触发失败: ' + (err instanceof Error ? err.message : String(err)));
+    const token = getToken();
+    const qs = token ? `?token=${encodeURIComponent(token)}` : '';
+    const es = new EventSource(`/api/v1/threads/${threadId}/ai-answer/stream${qs}`);
+    esRef.current = es;
+    es.onmessage = (event) => {
+      try {
+        const msg = JSON.parse(event.data as string);
+        if (msg.phase === 'searching') setStreamPhase('searching');
+        else if (msg.phase === 'generating') setStreamPhase('generating');
+        else if (msg.token) setStreamingContent(prev => prev + msg.token);
+        else if (msg.done) {
+          es.close();
+          esRef.current = null;
+          setStreamPhase('done');
+          setAiLoading(false);
+          refetchComments();
+        } else if (msg.error) {
+          es.close();
+          esRef.current = null;
+          setStreamPhase('done');
+          setAiLoading(false);
+          addToast('error', 'AI 回答生成失败: ' + msg.error);
+        }
+      } catch { /* ignore parse errors */ }
+    };
+    es.onerror = () => {
+      es.close();
+      esRef.current = null;
+      setStreamPhase('done');
       setAiLoading(false);
-    }
+    };
   }
 
-  // 轮询定时器：regenPolling=true 时每 3 秒刷新评论列表
-  useEffect(() => {
-    if (!regenPolling) return;
-    const timer = setInterval(refetchComments, 3000);
-    const timeout = setTimeout(() => {
-      setRegenPolling(false);
-      setAiLoading(false);
-    }, 120_000);
-    return () => { clearInterval(timer); clearTimeout(timeout); };
-  }, [regenPolling]); // eslint-disable-line react-hooks/exhaustive-deps
+  function handleRegenerate() {
+    if (aiLoading) return;
+    setStreamingContent('');
+    connectStream();
+  }
 
-  // 检测 AI 回答已更新：内容与触发前快照不同时停止轮询
-  useEffect(() => {
-    if (!regenPolling) return;
-    const currentContent = comments?.find(c => c.is_ai)?.content ?? null;
-    const prev = prevAiSnapshotRef.current;
-    // 有内容且与触发前不同（含首次生成 prev=null 的情况）
-    if (currentContent !== null && currentContent !== prev) {
-      setRegenPolling(false);
-      setAiLoading(false);
-    }
-  }, [comments, regenPolling]);
-
+  // Auto-connect streaming for new threads with no comments
   useEffect(() => {
     if (thread?.status !== 'OPEN' || (thread?.comment_count ?? 0) > 0) return;
-    setPollStatus('polling');
-
-    let es: EventSource | null = null;
-    let retryCount = 0;
-    const MAX_RETRIES = 5;
-    let retryTimer: ReturnType<typeof setTimeout> | null = null;
-
-    function connect() {
-      es = new EventSource(`/api/v1/threads/${threadId}/ai-answer/stream`);
-      es.onmessage = (event) => {
-        try {
-          const data = JSON.parse(event.data as string) as { ready?: boolean; timeout?: boolean };
-          if (data.ready) {
-            refetchComments();
-            setPollStatus('done');
-            es?.close();
-          } else if (data.timeout) {
-            setPollStatus('done');
-            es?.close();
-          }
-        } catch (err) {
-          console.warn('SSE parse error:', err);
-        }
-      };
-      es.onerror = () => {
-        es?.close();
-        if (retryCount < MAX_RETRIES) {
-          const delay = Math.min(1000 * Math.pow(2, retryCount), 16000);
-          retryCount++;
-          retryTimer = setTimeout(connect, delay);
-        } else {
-          setPollStatus('done');
-        }
-      };
-      // Don't reset retryCount on open — connection flapping would bypass backoff
-    }
-    connect();
-
-    return () => {
-      es?.close();
-      if (retryTimer) clearTimeout(retryTimer);
-      setPollStatus('idle');
-    };
+    connectStream();
+    return () => { esRef.current?.close(); esRef.current = null; };
   }, [thread?.id]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  useEffect(() => {
-    if (pollStatus !== 'polling') return;
-    const timer = setInterval(() => {
-      setDots(d => d.length >= 3 ? '' : d + '.');
-    }, 500);
-    return () => clearInterval(timer);
-  }, [pollStatus]);
 
   if (loading) return <Loading />;
   if (error) return <ErrorMsg message={error} />;
@@ -252,34 +210,31 @@ export default function ThreadDetail() {
         {thread.status === 'OPEN' && (isAuthor || isCurrentBoardAdmin) && comments?.some(c => c.is_ai) && (
           <button
             className="btn-secondary"
-            disabled={aiLoading || regenPolling}
+            disabled={aiLoading}
             onClick={handleRegenerate}
           >
-            {regenPolling ? '生成中...' : '🤖 重新生成 AI 回答'}
+            {aiLoading ? '生成中...' : '🤖 重新生成 AI 回答'}
           </button>
         )}
       </div>
 
-      {thread.status === 'OPEN' && (!comments || comments.length === 0) && (
+      {/* Streaming AI answer card */}
+      {(streamPhase === 'searching' || streamPhase === 'generating') && (
+        <StreamingAiComment phase={streamPhase} content={streamingContent} />
+      )}
+
+      {/* Connecting message for new threads before first SSE event arrives */}
+      {thread.status === 'OPEN' && (!comments || comments.length === 0) && streamPhase === 'idle' && aiLoading && (
         <div className="card" style={{ padding: 16, marginBottom: 12, textAlign: 'center', color: 'var(--text-sec)', fontSize: 13 }}>
-          {pollStatus === 'polling' && (
-            <>
-              <div style={{ marginBottom: 6, fontWeight: 500 }}>AI 正在分析您的问题{dots}</div>
-              <div style={{ fontSize: 11, color: 'var(--text-ter)' }}>回答将在稍后自动出现，请稍候...</div>
-            </>
-          )}
-          {pollStatus === 'done' && (
-            <>
-              <div style={{ marginBottom: 8 }}>AI 分析可能仍在进行中</div>
-              <button className="btn-primary btn-sm" onClick={refetchComments}>🔄 刷新查看</button>
-            </>
-          )}
-          {pollStatus === 'idle' && (
-            <div style={{ color: 'var(--text-ter)' }}>正在连接 AI 服务...</div>
-          )}
+          <div style={{ color: 'var(--text-ter)' }}>正在连接 AI 服务...</div>
         </div>
       )}
-      {comments?.map(c => (
+
+      {comments?.filter(c => {
+        // Hide old AI comment while streaming a new one (regeneration)
+        if ((streamPhase === 'searching' || streamPhase === 'generating') && c.is_ai) return false;
+        return true;
+      }).map(c => (
         <CommentCard key={c.id} comment={c} thread={thread} onAdopt={() => setAdoptTarget(c.id)} onDelete={refetchComments} isAdmin={isCurrentBoardAdmin} canAdopt={isAuthor || isCurrentBoardAdmin} onReply={() => setReplyTarget(c)} />
       ))}
 
@@ -333,6 +288,34 @@ export default function ThreadDetail() {
         }}
         onCancel={() => setShowDeleteConfirm(false)}
       />
+    </div>
+  );
+}
+
+function StreamingAiComment({ phase, content }: { phase: string; content: string }) {
+  const phaseLabel = phase === 'searching' ? '🔍 搜索知识中...' : '✍️ 生成中...';
+  return (
+    <div className="card comment-box comment-box--ai" style={{ marginBottom: 12 }}>
+      <div className="comment-author">
+        <div className="comment-avatar" style={{ background: 'var(--purple-light)', color: 'var(--purple)' }}>
+          🤖
+        </div>
+        <span style={{ fontWeight: 600, fontSize: 13 }}>AI 助手</span>
+        <Badge type="purple">自动回复</Badge>
+        <span style={{ marginLeft: 'auto', fontSize: 12, color: 'var(--accent)' }}>
+          {phaseLabel}
+        </span>
+      </div>
+      {content ? (
+        <div className="md-body streaming-content" style={{ fontSize: 14 }}>
+          <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
+          <span className="streaming-cursor" />
+        </div>
+      ) : (
+        <div style={{ fontSize: 13, color: 'var(--text-sec)', padding: '8px 0' }}>
+          {phase === 'searching' ? '正在搜索相关知识记忆和知识库...' : '正在组织回答...'}
+        </div>
+      )}
     </div>
   );
 }

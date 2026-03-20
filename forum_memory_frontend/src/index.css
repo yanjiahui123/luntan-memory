@@ -251,6 +251,19 @@ textarea { resize: vertical; min-height: 120px; }
 }
 .comment-actions { display: flex; gap: 8px; margin-top: 12px; align-items: center; }
 
+/* ── Streaming AI Cursor ─────────────────────── */
+.streaming-content { position: relative; }
+.streaming-cursor {
+  display: inline-block;
+  width: 2px;
+  height: 1em;
+  background: var(--purple);
+  animation: cursorBlink 1s step-end infinite;
+  vertical-align: text-bottom;
+  margin-left: 2px;
+}
+@keyframes cursorBlink { 50% { opacity: 0; } }
+
 .filter-bar { display: flex; gap: 8px; margin-bottom: 16px; align-items: center; flex-wrap: wrap; }
 .filter-pill {
   padding: 6px 14px; border-radius: 20px; font-size: 13px; cursor: pointer;
