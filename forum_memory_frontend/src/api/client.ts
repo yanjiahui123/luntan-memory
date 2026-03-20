@@ -186,6 +186,7 @@ export interface MemoryListParams {
   knowledge_type?: KnowledgeType;
   tags?: string;
   pending_confirm?: boolean;
+  pending_review?: boolean;
   quality_score_max?: number;
   q?: string;
   page?: number;

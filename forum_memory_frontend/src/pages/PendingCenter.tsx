@@ -58,9 +58,9 @@ function MemoryTab({ tab, boardId }: { tab: Exclude<TabKey, 'quality_alert'>; bo
   const base = { ...nsFilter, page, size: PAGE_SIZE };
 
   let tabFilter: Partial<MemoryListParams> = {};
-  if (tab === 'pending') tabFilter = { pending_confirm: true };
+  if (tab === 'all') tabFilter = { pending_review: true };
+  else if (tab === 'pending') tabFilter = { pending_confirm: true };
   else if (tab === 'low_quality') tabFilter = { status: 'ACTIVE', quality_score_max: 0.3 };
-  // 'all' tab: no extra filter — show all memories for review
   const params: MemoryListParams = { ...base, ...tabFilter };
 
   const { data, loading, error, refetch } = useAsync(() => memoryApi.list(params), [tab, boardId, page]);
