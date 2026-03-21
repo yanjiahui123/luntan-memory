@@ -472,11 +472,18 @@ function CommentCard({ comment, thread, onAdopt, onDelete, onReply, isAdmin, can
     if (!hasCitations) return;
     try {
       if (feedbackGiven === type) {
+        // 取消当前类型
         for (const mid of comment.cited_memory_ids) {
           await feedbackApi.withdraw(mid, { feedback_type: type });
         }
         setFeedbackGiven(null);
       } else {
+        // 切换类型：先撤回旧反馈，再提交新反馈
+        if (feedbackGiven) {
+          for (const mid of comment.cited_memory_ids) {
+            await feedbackApi.withdraw(mid, { feedback_type: feedbackGiven });
+          }
+        }
         for (const mid of comment.cited_memory_ids) {
           await feedbackApi.submit(mid, { feedback_type: type });
         }
