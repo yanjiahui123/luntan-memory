@@ -123,10 +123,6 @@ function BoardDashboard({ boardId, isSuperAdmin, isAdmin }: { boardId: string; i
             <span style={{ fontFamily: 'monospace' }}>{board?.name}</span>
           </div>
           <div style={{ display: 'flex', gap: 8 }}>
-            <span style={{ color: 'var(--text-sec)', minWidth: 70 }}>访问模式:</span>
-            <span>{board?.access_mode}</span>
-          </div>
-          <div style={{ display: 'flex', gap: 8 }}>
             <span style={{ color: 'var(--text-sec)', minWidth: 70 }}>描述:</span>
             <span>{board?.description || '无'}</span>
           </div>
@@ -280,14 +276,6 @@ function CreateBoardModal({ onClose, onCreated }: { onClose: () => void; onCreat
           <div style={{ marginBottom: 14 }}>
             <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6 }}>描述</label>
             <textarea placeholder="板块描述（可选）" value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} style={{ minHeight: 80 }} />
-          </div>
-          <div style={{ marginBottom: 20 }}>
-            <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6 }}>访问模式</label>
-            <select value={form.access_mode} onChange={e => setForm(f => ({ ...f, access_mode: e.target.value }))} style={{ width: 'auto', minWidth: 160 }}>
-              <option value="public">公开</option>
-              <option value="internal">内部</option>
-              <option value="restricted">受限</option>
-            </select>
           </div>
           {error && <div style={{ color: 'var(--red)', fontSize: 13, marginBottom: 12 }}>错误: {error}</div>}
           <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>

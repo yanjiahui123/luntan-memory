@@ -66,7 +66,7 @@ function BoardConfigPanel({ boardId, isSuperAdmin, isAdmin }: { boardId: string;
 }
 
 function InfoTab({ board, onUpdate }: { board: Namespace; onUpdate: () => void }) {
-  const [form, setForm] = useState({ display_name: board.display_name, description: board.description || '', access_mode: board.access_mode || 'public' });
+  const [form, setForm] = useState({ display_name: board.display_name, description: board.description || '' });
   const [saving, setSaving] = useState(false);
 
   async function handleSave() {
@@ -88,14 +88,6 @@ function InfoTab({ board, onUpdate }: { board: Namespace; onUpdate: () => void }
       <div style={{ marginBottom: 16 }}>
         <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6 }}>描述</label>
         <textarea value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} style={{ minHeight: 80 }} />
-      </div>
-      <div style={{ marginBottom: 20 }}>
-        <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6 }}>访问模式</label>
-        <select value={form.access_mode} onChange={e => setForm(f => ({ ...f, access_mode: e.target.value }))} style={{ width: 'auto' }}>
-          <option value="public">公开</option>
-          <option value="internal">内部</option>
-          <option value="restricted">受限</option>
-        </select>
       </div>
       <button className="btn-primary" onClick={handleSave} disabled={saving}>{saving ? '保存中...' : '保存'}</button>
     </div>
