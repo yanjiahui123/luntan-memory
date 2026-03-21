@@ -42,7 +42,8 @@ export default function ImagePasteTextarea({ value, onChange, placeholder, style
         insertAtCursor(`![${file.name || 'image'}](${result.url})\n`);
       }
     } catch (err) {
-      console.error('Image upload failed:', err);
+      const msg = err instanceof Error ? err.message : String(err);
+      alert(`图片上传失败: ${msg}`);
     } finally {
       setUploading(false);
     }
