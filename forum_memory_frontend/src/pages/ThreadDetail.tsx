@@ -639,8 +639,9 @@ function CommentCard({ comment, thread, onAdopt, onDelete, onReply, isAdmin, can
         </button>
         {isAi && hasCitations && (
           <>
-            <button className={`btn-sm ${feedbackGiven === 'useful' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => handleFeedback('useful')}>有用</button>
-            <button className={`btn-sm ${feedbackGiven === 'wrong' ? 'btn-danger' : 'btn-secondary'}`} onClick={() => handleFeedback('wrong')}>错误</button>
+            <button className={`btn-sm ${feedbackGiven === 'useful' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => handleFeedback('useful')}>👍 有用</button>
+            <button className={`btn-sm ${feedbackGiven === 'wrong' ? 'btn-danger' : 'btn-secondary'}`} onClick={() => handleFeedback('wrong')}>⚠️ 错误</button>
+            <button className={`btn-sm ${feedbackGiven === 'outdated' ? 'btn-warning' : 'btn-secondary'}`} onClick={() => handleFeedback('outdated')}>📅 过时</button>
           </>
         )}
         {thread.status === 'OPEN' && (

@@ -198,7 +198,7 @@ export interface MemorySearchResponse {
   total_recalled?: number;
 }
 
-export type FeedbackType = 'useful' | 'wrong' | 'outdated';
+export type FeedbackType = 'useful' | 'not_useful' | 'wrong' | 'outdated';
 
 export interface Feedback {
   id: string;
@@ -210,6 +210,7 @@ export interface Feedback {
 
 export interface FeedbackSummary {
   useful: number;
+  not_useful: number;
   wrong: number;
   outdated: number;
   total: number;
