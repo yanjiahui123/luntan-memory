@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { threadApi } from '../api/client';
 import { useAsync } from '../hooks/useAsync';
@@ -8,7 +8,9 @@ import type { Thread } from '../types';
 const PAGE_SIZE = 10;
 const CONTENT_TRUNCATE = 150;
 
-/** Highlight query keywords in text */
+/** Highlight query keywords in text.
+ *  split(regex-with-capture-group) produces [nonMatch, match, nonMatch, match, ...],
+ *  so odd-indexed parts are always the captured keyword — no need for regex.test(). */
 function HighlightText({ text, query }: { text: string; query: string }) {
   if (!query.trim()) return <>{text}</>;
   const keywords = query.trim().split(/\s+/).filter(Boolean);
@@ -19,7 +21,7 @@ function HighlightText({ text, query }: { text: string; query: string }) {
   return (
     <>
       {parts.map((part, i) =>
-        regex.test(part) ? (
+        i % 2 === 1 ? (
           <mark key={i} style={{ background: 'var(--amber-light, #fff3cd)', padding: '0 1px', borderRadius: 2 }}>{part}</mark>
         ) : (
           <span key={i}>{part}</span>
@@ -33,6 +35,9 @@ export default function SearchResults() {
   const [params] = useSearchParams();
   const query = params.get('q') || '';
   const [page, setPage] = useState(1);
+
+  // Reset page to 1 when query changes
+  useEffect(() => { setPage(1); }, [query]);
 
   const { data: result, loading, error } = useAsync(
     () => query.trim()
