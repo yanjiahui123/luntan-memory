@@ -4,13 +4,14 @@ import { uploadApi } from '../api/client';
 interface ImagePasteTextareaProps extends Omit<React.TextareaHTMLAttributes<HTMLTextAreaElement>, 'onChange'> {
   value: string;
   onChange: (value: string) => void;
+  onUploadError?: (message: string) => void;
 }
 
 /**
  * Textarea that supports pasting and dragging images.
  * Uploads images and inserts markdown ![image](url) at cursor position.
  */
-export default function ImagePasteTextarea({ value, onChange, placeholder, style, ...rest }: ImagePasteTextareaProps) {
+export default function ImagePasteTextarea({ value, onChange, onUploadError, placeholder, style, ...rest }: ImagePasteTextareaProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [uploading, setUploading] = useState(false);
 
@@ -43,7 +44,7 @@ export default function ImagePasteTextarea({ value, onChange, placeholder, style
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      alert(`图片上传失败: ${msg}`);
+      if (onUploadError) onUploadError(msg);
     } finally {
       setUploading(false);
     }

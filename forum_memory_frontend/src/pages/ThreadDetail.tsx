@@ -246,7 +246,7 @@ export default function ThreadDetail() {
               <button className="reply-target-bar__close" onClick={() => setReplyTarget(null)}>✕</button>
             </div>
           )}
-          <ImagePasteTextarea placeholder={replyTarget ? `回复 @${replyTarget.is_ai ? 'AI 助手' : (replyTarget.author_display_name || '用户')}...` : '写下你的回答... (支持粘贴图片和 Markdown)'} value={replyText} onChange={setReplyText} style={{ marginBottom: 12 }} />
+          <ImagePasteTextarea placeholder={replyTarget ? `回复 @${replyTarget.is_ai ? 'AI 助手' : (replyTarget.author_display_name || '用户')}...` : '写下你的回答... (支持粘贴图片和 Markdown)'} value={replyText} onChange={setReplyText} onUploadError={msg => addToast('error', `图片上传失败: ${msg}`)} style={{ marginBottom: 12 }} />
           <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
             <button className="btn-primary" onClick={handleReply} disabled={!replyText.trim() || replying}>{replying ? '发送中...' : '发送回复'}</button>
           </div>
@@ -372,7 +372,7 @@ function ThreadMemories({ threadId, isAdmin }: { threadId: string; isAdmin: bool
         <div key={mem.id} className="card" style={{ padding: 14, marginBottom: 8 }}>
           {editingId === mem.id ? (
             <div>
-              <ImagePasteTextarea value={editContent} onChange={setEditContent} style={{ marginBottom: 12, minHeight: 100 }} />
+              <ImagePasteTextarea value={editContent} onChange={setEditContent} onUploadError={msg => addToast('error', `图片上传失败: ${msg}`)} style={{ marginBottom: 12, minHeight: 100 }} />
               <div style={{ display: 'flex', gap: 8 }}>
                 <button className="btn-primary btn-sm" onClick={() => handleSave(mem.id)}>保存</button>
                 <button className="btn-secondary btn-sm" onClick={() => setEditingId(null)}>取消</button>

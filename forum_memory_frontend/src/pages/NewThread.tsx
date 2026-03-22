@@ -3,11 +3,13 @@ import { useParams, useNavigate, Link } from 'react-router-dom';
 import { threadApi, memoryApi } from '../api/client';
 import ImagePasteTextarea from '../components/ImagePasteTextarea';
 import { TagChipsInput, StatusBadge } from '../components/UI';
+import { useToast } from '../contexts/ToastContext';
 import type { Thread } from '../types';
 
 export default function NewThread() {
   const { boardId } = useParams<{ boardId: string }>();
   const navigate = useNavigate();
+  const { addToast } = useToast();
   const [form, setForm] = useState({ title: '', content: '', tags: '', environment: '' });
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -182,7 +184,7 @@ export default function NewThread() {
 
         <div style={{ marginBottom: 16 }}>
           <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6 }}>详细描述 *</label>
-          <ImagePasteTextarea placeholder="详细描述你遇到的问题，支持粘贴图片、Markdown 和代码块..." value={form.content} onChange={v => update('content', v)} style={{ minHeight: 160 }} required />
+          <ImagePasteTextarea placeholder="详细描述你遇到的问题，支持粘贴图片、Markdown 和代码块..." value={form.content} onChange={v => update('content', v)} onUploadError={msg => addToast('error', `图片上传失败: ${msg}`)} style={{ minHeight: 160 }} required />
         </div>
 
         <div style={{ marginBottom: 20 }}>
