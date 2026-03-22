@@ -34,7 +34,6 @@ export default function ThreadDetail() {
   const [replying, setReplying] = useState(false);
   const [replyTarget, setReplyTarget] = useState<Comment | null>(null);
   const [adopting, setAdopting] = useState(false);
-  const [adoptTarget, setAdoptTarget] = useState<string | null>(null);
   const [closing, setClosing] = useState(false);
   const [showCloseConfirm, setShowCloseConfirm] = useState(false);
   const [reopening, setReopening] = useState(false);
@@ -67,12 +66,11 @@ export default function ThreadDetail() {
     }
   }
 
-  async function handleAdopt() {
-    if (adopting || !adoptTarget) return;
+  async function handleAdopt(commentId: string) {
+    if (adopting) return;
     setAdopting(true);
     try {
-      await threadApi.adoptAnswer(threadId!, adoptTarget);
-      setAdoptTarget(null);
+      await threadApi.adoptAnswer(threadId!, commentId);
       refetch();
       refetchComments();
     } catch (err) {
@@ -235,7 +233,7 @@ export default function ThreadDetail() {
         if ((streamPhase === 'searching' || streamPhase === 'generating') && c.is_ai) return false;
         return true;
       }).map(c => (
-        <CommentCard key={c.id} comment={c} thread={thread} onAdopt={() => setAdoptTarget(c.id)} onDelete={refetchComments} isAdmin={isCurrentBoardAdmin} canAdopt={isAuthor || isCurrentBoardAdmin} onReply={() => setReplyTarget(c)} />
+        <CommentCard key={c.id} comment={c} thread={thread} onAdopt={() => handleAdopt(c.id)} onDelete={refetchComments} isAdmin={isCurrentBoardAdmin} canAdopt={isAuthor || isCurrentBoardAdmin} onReply={() => setReplyTarget(c)} />
       ))}
 
       {thread.status === 'OPEN' && (
@@ -256,14 +254,6 @@ export default function ThreadDetail() {
       {(thread.status === 'RESOLVED' || thread.status === 'TIMEOUT_CLOSED') && (
         <ThreadMemories threadId={threadId!} isAdmin={isCurrentBoardAdmin} />
       )}
-
-      <ConfirmModal
-        open={!!adoptTarget}
-        title="采纳此回答"
-        message="确认将此回答标记为最佳答案？帖子将保持开放状态，可继续讨论。"
-        onConfirm={handleAdopt}
-        onCancel={() => setAdoptTarget(null)}
-      />
 
       <ConfirmModal
         open={showCloseConfirm}
