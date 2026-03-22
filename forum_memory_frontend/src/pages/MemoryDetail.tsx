@@ -130,6 +130,8 @@ export default function MemoryDetail() {
               ['👎 没用', memory.not_useful_count],
               ['⚠️ 错误', memory.wrong_count],
               ['🔍 检索', `${memory.retrieve_count} 次`],
+              ['📌 引用', `${memory.cite_count} 次`],
+              ['✅ 解决问题', `${memory.resolved_citation_count} 次`],
             ]} />
             {fbSummary && (
               <div style={{ marginTop: 8, fontSize: 12, color: 'var(--text-sec)' }}>

@@ -366,6 +366,7 @@ function MemoryRow({ memory, keyword, onRestored }: { memory: Memory; keyword: s
           <LifecycleBadge status={(memory.status || memory.lifecycle_status)!} />
           {memory.knowledge_type && <KnowledgeTypeBadge type={memory.knowledge_type} />}
           {memory.tags?.map(t => <Badge key={t} type="gray">{t}</Badge>)}
+          {memory.resolved_citation_count > 0 && <Badge type="green">✅ 解决 {memory.resolved_citation_count} 个问题</Badge>}
           {memory.pending_human_confirm && memory.authority !== 'LOCKED' && <Badge type="amber">⏳ 待确认</Badge>}
           {canRestore && (
             <button

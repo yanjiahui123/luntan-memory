@@ -16,16 +16,24 @@ const STATUSES: { value: ThreadStatus | ''; label: string }[] = [
   { value: 'TIMEOUT_CLOSED', label: '已超时' },
 ];
 
+const SORT_OPTIONS: { value: string; label: string }[] = [
+  { value: '', label: '最新发帖' },
+  { value: 'active', label: '最近活跃' },
+  { value: 'views', label: '最多浏览' },
+  { value: 'unanswered', label: '待回答优先' },
+];
+
 export default function ThreadList() {
   const { boardId } = useParams<{ boardId: string }>();
   const navigate = useNavigate();
   const [status, setStatus] = useUrlState('status', '', ['page']) as [string, (v: string) => void];
+  const [sort, setSort] = useUrlState('sort', '', ['page']) as [string, (v: string) => void];
   const [page, setPage] = useUrlState('page', 1);
 
   const { data: board } = useAsync(() => namespaceApi.get(boardId!), [boardId]);
   const { data, loading, error, refetch } = useAsync(
-    () => threadApi.list({ namespace_id: boardId, status: status || undefined, page, size: PAGE_SIZE }),
-    [boardId, status, page]
+    () => threadApi.list({ namespace_id: boardId, status: status || undefined, sort: sort || undefined, page, size: PAGE_SIZE }),
+    [boardId, status, sort, page]
   );
   const threads = data?.items;
   const totalCount = data?.total || 0;
@@ -54,12 +62,21 @@ export default function ThreadList() {
         </div>
       </div>
 
-      <div className="filter-bar">
-        {STATUSES.map(s => (
-          <button key={s.value} className={`filter-pill ${status === s.value ? 'filter-pill--active' : ''}`} onClick={() => setStatus(s.value as string)}>
-            {s.label}
-          </button>
-        ))}
+      <div className="filter-bar" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
+        <div style={{ display: 'flex', gap: 4 }}>
+          {STATUSES.map(s => (
+            <button key={s.value} className={`filter-pill ${status === s.value ? 'filter-pill--active' : ''}`} onClick={() => setStatus(s.value as string)}>
+              {s.label}
+            </button>
+          ))}
+        </div>
+        <select
+          value={sort}
+          onChange={e => setSort(e.target.value)}
+          style={{ fontSize: 13, padding: '4px 8px', border: '1px solid var(--border)', borderRadius: 'var(--radius)', background: 'var(--surface)' }}
+        >
+          {SORT_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+        </select>
       </div>
 
       {(() => {
@@ -89,6 +106,7 @@ function ThreadItem({ thread }: { thread: Thread }) {
         <div className="thread-item__meta">
           <StatusBadge status={thread.status} />
           <PriorityBadge priority={thread.priority} />
+          {thread.has_ai_answer && <span title="AI 已回答" style={{ fontSize: 13 }}>🤖</span>}
           {thread.author_display_name && <span style={{ color: 'var(--text-ter)' }}>👤 {thread.author_display_name}</span>}
           {thread.environment && <Badge type="gray">🌍 {thread.environment}</Badge>}
           {thread.tags?.map(t => <Badge key={t} type="gray">{t}</Badge>)}

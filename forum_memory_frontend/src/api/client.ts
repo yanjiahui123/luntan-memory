@@ -142,6 +142,7 @@ export interface ThreadListParams {
   author_id?: string;
   priority?: string;
   q?: string;
+  sort?: string;
   page?: number;
   size?: number;
   tags?: string;
@@ -156,6 +157,7 @@ export const threadApi = {
     if (params.author_id) q.set('author_id', params.author_id);
     if (params.priority) q.set('priority', params.priority);
     if (params.q) q.set('q', params.q);
+    if (params.sort) q.set('sort', params.sort);
     q.set('page', String(params.page ?? 1));
     q.set('size', String(params.size ?? 20));
     return requestPaginated<Thread>(`/threads?${q}`);

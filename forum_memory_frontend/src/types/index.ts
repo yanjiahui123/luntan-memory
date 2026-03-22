@@ -84,6 +84,7 @@ export interface Thread {
   updated_at: string;
   resolved_at: string | null;
   best_answer_id: string | null;
+  has_ai_answer?: boolean;
 }
 
 export interface RagChunk {

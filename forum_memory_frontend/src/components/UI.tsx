@@ -160,17 +160,26 @@ interface TagChipsInputProps {
   value?: string;
   onChange: (value: string) => void;
   placeholder?: string;
+  suggestions?: string[];
 }
 
-export function TagChipsInput({ value = '', onChange, placeholder = '输入标签后按 Enter 或逗号添加' }: TagChipsInputProps) {
+export function TagChipsInput({ value = '', onChange, placeholder = '输入标签后按 Enter 或逗号添加', suggestions }: TagChipsInputProps) {
   const [input, setInput] = React.useState('');
+  const [showSuggestions, setShowSuggestions] = React.useState(false);
   const tags = value ? value.split(',').map(t => t.trim()).filter(Boolean) : [];
+
+  const filtered = React.useMemo(() => {
+    if (!suggestions || !input.trim()) return [];
+    const q = input.trim().toLowerCase();
+    return suggestions.filter(s => s.toLowerCase().includes(q) && !tags.includes(s)).slice(0, 8);
+  }, [suggestions, input, tags]);
 
   function addTag(raw: string) {
     const t = raw.trim();
     if (!t || tags.includes(t)) { setInput(''); return; }
     onChange([...tags, t].join(','));
     setInput('');
+    setShowSuggestions(false);
   }
 
   function removeTag(tag: string) {
@@ -187,24 +196,36 @@ export function TagChipsInput({ value = '', onChange, placeholder = '输入标�
   }
 
   return (
-    <div
-      style={{ display: 'flex', flexWrap: 'wrap', gap: 5, alignItems: 'center', padding: '6px 10px', border: '1px solid var(--border)', borderRadius: 'var(--radius)', background: 'var(--surface)', minHeight: 40, cursor: 'text' }}
-      onClick={e => (e.currentTarget.querySelector('input') as HTMLInputElement | null)?.focus()}
-    >
-      {tags.map(tag => (
-        <span key={tag} style={{ display: 'inline-flex', alignItems: 'center', gap: 3, padding: '2px 8px', borderRadius: 99, background: 'var(--accent-light)', color: 'var(--accent)', fontSize: 12, fontWeight: 600 }}>
-          {tag}
-          <button type="button" onClick={() => removeTag(tag)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--accent)', padding: 0, fontSize: 15, lineHeight: 1, display: 'flex', alignItems: 'center' }}>×</button>
-        </span>
-      ))}
-      <input
-        value={input}
-        onChange={e => setInput(e.target.value)}
-        onKeyDown={handleKeyDown}
-        onBlur={() => input.trim() && addTag(input)}
-        placeholder={tags.length === 0 ? placeholder : ''}
-        style={{ border: 'none', outline: 'none', background: 'transparent', fontSize: 13, minWidth: 80, flex: 1, padding: '2px 0', fontFamily: 'var(--font)' }}
-      />
+    <div style={{ position: 'relative' }}>
+      <div
+        style={{ display: 'flex', flexWrap: 'wrap', gap: 5, alignItems: 'center', padding: '6px 10px', border: '1px solid var(--border)', borderRadius: 'var(--radius)', background: 'var(--surface)', minHeight: 40, cursor: 'text' }}
+        onClick={e => (e.currentTarget.querySelector('input') as HTMLInputElement | null)?.focus()}
+      >
+        {tags.map(tag => (
+          <span key={tag} style={{ display: 'inline-flex', alignItems: 'center', gap: 3, padding: '2px 8px', borderRadius: 99, background: 'var(--accent-light)', color: 'var(--accent)', fontSize: 12, fontWeight: 600 }}>
+            {tag}
+            <button type="button" onClick={() => removeTag(tag)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--accent)', padding: 0, fontSize: 15, lineHeight: 1, display: 'flex', alignItems: 'center' }}>×</button>
+          </span>
+        ))}
+        <input
+          value={input}
+          onChange={e => { setInput(e.target.value); setShowSuggestions(true); }}
+          onKeyDown={handleKeyDown}
+          onBlur={() => { setTimeout(() => setShowSuggestions(false), 150); if (input.trim()) addTag(input); }}
+          onFocus={() => input.trim() && setShowSuggestions(true)}
+          placeholder={tags.length === 0 ? placeholder : ''}
+          style={{ border: 'none', outline: 'none', background: 'transparent', fontSize: 13, minWidth: 80, flex: 1, padding: '2px 0', fontFamily: 'var(--font)' }}
+        />
+      </div>
+      {showSuggestions && filtered.length > 0 && (
+        <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 100, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', boxShadow: '0 4px 12px rgba(0,0,0,.1)', marginTop: 2, maxHeight: 160, overflowY: 'auto' }}>
+          {filtered.map(s => (
+            <button key={s} type="button" onMouseDown={e => { e.preventDefault(); addTag(s); }} style={{ display: 'block', width: '100%', textAlign: 'left', padding: '6px 12px', fontSize: 13, background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text)' }}>
+              {s}
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -224,9 +245,11 @@ export function TimeAgo({ date }: { date: string | null | undefined }) {
 
 export function QualityDot({ score }: { score: number }) {
   let color = 'var(--red)';
-  if (score > 0.8) color = 'var(--green)';
-  else if (score > 0.5) color = 'var(--text)';
-  return <span style={{ color, fontWeight: 700 }}>{score.toFixed(2)}</span>;
+  let label = '待改进';
+  if (score > 0.8) { color = 'var(--green)'; label = '优质'; }
+  else if (score > 0.5) { color = 'var(--text)'; label = '一般'; }
+  const tip = `质量分 ${score.toFixed(2)}（${label}）\n>0.8 优质 / 0.5~0.8 一般 / <0.5 待改进`;
+  return <span style={{ color, fontWeight: 700, cursor: 'help' }} title={tip}>{score.toFixed(2)}</span>;
 }
 
 // ── KnowledgeType ──────────────────────────────────────────────────────────

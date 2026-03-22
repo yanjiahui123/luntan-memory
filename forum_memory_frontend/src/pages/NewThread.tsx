@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { threadApi } from '../api/client';
+import { threadApi, memoryApi } from '../api/client';
 import ImagePasteTextarea from '../components/ImagePasteTextarea';
 import { TagChipsInput, StatusBadge } from '../components/UI';
 import type { Thread } from '../types';
@@ -12,6 +12,13 @@ export default function NewThread() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [tagSuggestions, setTagSuggestions] = useState<string[]>([]);
+
+  // Load tag suggestions for autocomplete
+  useEffect(() => {
+    if (!boardId) return;
+    memoryApi.tags(boardId).then(setTagSuggestions).catch(() => {});
+  }, [boardId]);
 
   // 相似问题拦截
   const [similar, setSimilar] = useState<Thread[]>([]);
@@ -190,7 +197,7 @@ export default function NewThread() {
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginTop: 12 }}>
               <div>
                 <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6 }}>技术分类标签</label>
-                <TagChipsInput value={form.tags} onChange={v => update('tags', v)} placeholder="按 Enter 添加标签" />
+                <TagChipsInput value={form.tags} onChange={v => update('tags', v)} placeholder="按 Enter 添加标签" suggestions={tagSuggestions} />
               </div>
               <div>
                 <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6 }}>适用环境</label>

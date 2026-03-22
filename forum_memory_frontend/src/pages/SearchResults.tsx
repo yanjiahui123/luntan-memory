@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { threadApi } from '../api/client';
+import { threadApi, namespaceApi } from '../api/client';
 import { useAsync } from '../hooks/useAsync';
 import { Loading, EmptyState, ErrorMsg, Badge, StatusBadge, TimeAgo } from '../components/UI';
 import type { Thread } from '../types';
@@ -32,29 +32,48 @@ function HighlightText({ text, query }: { text: string; query: string }) {
 }
 
 export default function SearchResults() {
-  const [params] = useSearchParams();
+  const [params, setParams] = useSearchParams();
   const query = params.get('q') || '';
+  const nsId = params.get('ns') || '';
   const [page, setPage] = useState(1);
 
-  // Reset page to 1 when query changes
-  useEffect(() => { setPage(1); }, [query]);
+  // Reset page to 1 when query or namespace changes
+  useEffect(() => { setPage(1); }, [query, nsId]);
+
+  // Fetch board name when scoped to a namespace
+  const { data: scopedBoard } = useAsync(
+    () => nsId ? namespaceApi.get(nsId) : Promise.resolve(null),
+    [nsId],
+  );
 
   const { data: result, loading, error } = useAsync(
     () => query.trim()
-      ? threadApi.list({ q: query, page, size: PAGE_SIZE })
+      ? threadApi.list({ q: query, namespace_id: nsId || undefined, page, size: PAGE_SIZE })
       : Promise.resolve(null),
-    [query, page],
+    [query, nsId, page],
   );
 
   const threads = result?.items || [];
   const total = result?.total || 0;
   const totalPages = Math.ceil(total / PAGE_SIZE);
 
+  function clearScope() {
+    setParams(prev => { prev.delete('ns'); return prev; }, { replace: true });
+  }
+
   return (
     <div>
       <h1 className="page-title" style={{ marginBottom: 4 }}>搜索结果</h1>
       <p style={{ color: 'var(--text-sec)', marginBottom: 20, fontSize: 14 }}>
         关键词: <strong>"{query}"</strong>
+        {nsId && scopedBoard && (
+          <span style={{ marginLeft: 8 }}>
+            在 <strong>{scopedBoard.display_name || scopedBoard.name}</strong> 中搜索
+            <button onClick={clearScope} style={{ marginLeft: 6, background: 'none', border: 'none', color: 'var(--accent)', cursor: 'pointer', fontSize: 13, textDecoration: 'underline' }}>
+              搜索全部
+            </button>
+          </span>
+        )}
         {total > 0 && <span style={{ marginLeft: 8 }}>共 {total} 条结果</span>}
       </p>
 
