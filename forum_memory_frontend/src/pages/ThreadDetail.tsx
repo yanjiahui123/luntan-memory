@@ -19,6 +19,48 @@ function MarkdownContent({ content, style }: { content: string; style?: React.CS
   );
 }
 
+function CollapsibleContent({ content, maxHeight }: { content: string; maxHeight: number }) {
+  const innerRef = useRef<HTMLDivElement>(null);
+  const [needsCollapse, setNeedsCollapse] = useState(false);
+  const [expanded, setExpanded] = useState(false);
+
+  useEffect(() => {
+    if (!innerRef.current) return;
+    setNeedsCollapse(innerRef.current.scrollHeight > maxHeight);
+  }, [content, maxHeight]);
+
+  return (
+    <div style={{ position: 'relative' }}>
+      <div
+        ref={innerRef}
+        style={{
+          maxHeight: !needsCollapse || expanded ? 'none' : maxHeight,
+          overflow: 'hidden',
+          transition: 'max-height 0.3s ease',
+        }}
+      >
+        <MarkdownContent content={content} style={{ fontSize: 14 }} />
+      </div>
+      {needsCollapse && !expanded && (
+        <div style={{
+          position: 'absolute', bottom: 0, left: 0, right: 0, height: 60,
+          background: 'linear-gradient(transparent, var(--bg-card, #fff))',
+          pointerEvents: 'none',
+        }} />
+      )}
+      {needsCollapse && (
+        <button
+          className="btn-sm btn-secondary"
+          onClick={() => setExpanded(!expanded)}
+          style={{ display: 'block', margin: '8px auto 0', fontSize: 12 }}
+        >
+          {expanded ? '收起 ▴' : '展开全文 ▾'}
+        </button>
+      )}
+    </div>
+  );
+}
+
 export default function ThreadDetail() {
   const { threadId } = useParams<{ threadId: string }>();
   const navigate = useNavigate();
@@ -536,7 +578,7 @@ function CommentCard({ comment, thread, onAdopt, onDelete, onReply, isAdmin, can
         </div>
       )}
 
-      <MarkdownContent content={comment.content} style={{ fontSize: 14 }} />
+      <CollapsibleContent content={comment.content} maxHeight={300} />
 
       {isAi && (hasCitations || comment.rag_context) && (
         <div style={{ marginTop: 10 }}>
