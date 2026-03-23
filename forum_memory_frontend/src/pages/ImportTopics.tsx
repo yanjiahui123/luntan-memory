@@ -228,6 +228,9 @@ export default function ImportTopics() {
   const { isSuperAdmin, myNamespaces: boards, loading: userLoading } = useUser();
 
   const [namespaceId, setNamespaceId] = useState(routeBoardId || '');
+  useEffect(() => {
+    if (!namespaceId && boards?.length) setNamespaceId(boards[0].id);
+  }, [boards]); // eslint-disable-line react-hooks/exhaustive-deps
   const [files, setFiles] = useState<File[]>([]);
   const [workers, setWorkers] = useState(4);
   const [skipExtraction, setSkipExtraction] = useState(false);
@@ -317,7 +320,6 @@ export default function ImportTopics() {
             目标板块 *
           </label>
           <select value={namespaceId} onChange={e => setNamespaceId(e.target.value)} disabled={isRunning}>
-            <option value="">-- 请选择板块 --</option>
             {boards?.map(b => (
               <option key={b.id} value={b.id}>{b.display_name || b.name}</option>
             ))}
