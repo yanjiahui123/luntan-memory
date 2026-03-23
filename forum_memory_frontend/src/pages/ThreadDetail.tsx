@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Link, useParams, useNavigate } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { threadApi, feedbackApi, memoryApi, getToken } from '../api/client';
+import { threadApi, feedbackApi, memoryApi, namespaceApi, getToken } from '../api/client';
 import { useAsync } from '../hooks/useAsync';
 import { useUser } from '../contexts/UserContext';
 import { useToast } from '../contexts/ToastContext';
@@ -23,6 +23,7 @@ export default function ThreadDetail() {
   const { threadId } = useParams<{ threadId: string }>();
   const navigate = useNavigate();
   const { data: thread, loading, error, refetch } = useAsync(() => threadApi.get(threadId!), [threadId]);
+  const { data: board } = useAsync(() => thread ? namespaceApi.get(thread.namespace_id) : Promise.resolve(null), [thread?.namespace_id]);
   const { data: comments, refetch: refetchComments } = useAsync(() => threadApi.comments(threadId!), [threadId]);
   const { currentUser, isSuperAdmin, myNamespaces } = useUser();
   const { addToast } = useToast();
@@ -166,7 +167,7 @@ export default function ThreadDetail() {
     <div>
       <div className="breadcrumb">
         <Link to="/boards">板块</Link> <span>›</span>
-        <Link to={`/boards/${thread.namespace_id}/threads`}>帖子列表</Link> <span>›</span>
+        <Link to={`/boards/${thread.namespace_id}/threads`}>{board?.display_name || board?.name || '...'}</Link> <span>›</span>
         <span style={{ maxWidth: 300, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'inline-block', verticalAlign: 'middle' }}>{thread.title}</span>
       </div>
 
