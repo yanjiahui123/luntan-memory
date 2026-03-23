@@ -425,6 +425,7 @@ interface CommentCardProps {
 function CommentCard({ comment, thread, onAdopt, onDelete, onReply, isAdmin, canAdopt }: CommentCardProps) {
   const { addToast } = useToast();
   const [feedbackGiven, setFeedbackGiven] = useState<FeedbackType | null>(null);
+  const [feedbackLoading, setFeedbackLoading] = useState(false);
   const [upvotes, setUpvotes] = useState(comment.upvote_count || 0);
   const [upvoted, setUpvoted] = useState(false);
   const [citedMemories, setCitedMemories] = useState<Memory[] | null>(null);
@@ -459,28 +460,24 @@ function CommentCard({ comment, thread, onAdopt, onDelete, onReply, isAdmin, can
   }
 
   async function handleFeedback(type: FeedbackType) {
-    if (!hasCitations) return;
+    if (!hasCitations || feedbackLoading) return;
+    setFeedbackLoading(true);
     try {
+      const mids = comment.cited_memory_ids;
       if (feedbackGiven === type) {
-        // 取消当前类型
-        for (const mid of comment.cited_memory_ids) {
-          await feedbackApi.withdraw(mid, { feedback_type: type });
-        }
+        await Promise.all(mids.map(mid => feedbackApi.withdraw(mid, { feedback_type: type })));
         setFeedbackGiven(null);
       } else {
-        // 切换类型：先撤回旧反馈，再提交新反馈
         if (feedbackGiven) {
-          for (const mid of comment.cited_memory_ids) {
-            await feedbackApi.withdraw(mid, { feedback_type: feedbackGiven });
-          }
+          await Promise.all(mids.map(mid => feedbackApi.withdraw(mid, { feedback_type: feedbackGiven })));
         }
-        for (const mid of comment.cited_memory_ids) {
-          await feedbackApi.submit(mid, { feedback_type: type });
-        }
+        await Promise.all(mids.map(mid => feedbackApi.submit(mid, { feedback_type: type })));
         setFeedbackGiven(type);
       }
     } catch (err) {
       console.error('Feedback failed:', err);
+    } finally {
+      setFeedbackLoading(false);
     }
   }
 
@@ -629,9 +626,9 @@ function CommentCard({ comment, thread, onAdopt, onDelete, onReply, isAdmin, can
         </button>
         {isAi && hasCitations && (
           <>
-            <button className={`btn-sm ${feedbackGiven === 'useful' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => handleFeedback('useful')}>👍 有用</button>
-            <button className={`btn-sm ${feedbackGiven === 'wrong' ? 'btn-danger' : 'btn-secondary'}`} onClick={() => handleFeedback('wrong')}>⚠️ 错误</button>
-            <button className={`btn-sm ${feedbackGiven === 'outdated' ? 'btn-warning' : 'btn-secondary'}`} onClick={() => handleFeedback('outdated')}>📅 过时</button>
+            <button className={`btn-sm ${feedbackGiven === 'useful' ? 'btn-primary' : 'btn-secondary'}`} disabled={feedbackLoading} onClick={() => handleFeedback('useful')}>👍 有用</button>
+            <button className={`btn-sm ${feedbackGiven === 'wrong' ? 'btn-danger' : 'btn-secondary'}`} disabled={feedbackLoading} onClick={() => handleFeedback('wrong')}>⚠️ 错误</button>
+            <button className={`btn-sm ${feedbackGiven === 'outdated' ? 'btn-warning' : 'btn-secondary'}`} disabled={feedbackLoading} onClick={() => handleFeedback('outdated')}>📅 过时</button>
           </>
         )}
         {thread.status === 'OPEN' && (
