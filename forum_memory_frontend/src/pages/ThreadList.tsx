@@ -117,7 +117,7 @@ function ThreadItem({ thread }: { thread: Thread }) {
           <span style={{ fontSize: 12, color: 'var(--text-ter)' }}>👁 {thread.view_count ?? 0}</span>
           <span>{thread.comment_count} 回复</span>
         </div>
-        <TimeAgo date={thread.created_at} />
+        <div style={{ fontSize: 11, color: 'var(--text-ter)' }}>发布: <TimeAgo date={thread.created_at} /></div>
         {hasUpdate && (
           <div style={{ fontSize: 11, color: 'var(--text-ter)' }}>更新: <TimeAgo date={thread.updated_at} /></div>
         )}
