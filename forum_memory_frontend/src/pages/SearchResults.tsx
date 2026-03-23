@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { threadApi, namespaceApi } from '../api/client';
 import { useAsync } from '../hooks/useAsync';
-import { Loading, EmptyState, ErrorMsg, Badge, StatusBadge, TimeAgo } from '../components/UI';
+import { Loading, EmptyState, ErrorMsg, Badge, Pagination, StatusBadge, TimeAgo } from '../components/UI';
 import type { Thread } from '../types';
 
 const PAGE_SIZE = 10;
@@ -55,8 +55,6 @@ export default function SearchResults() {
 
   const threads = result?.items || [];
   const total = result?.total || 0;
-  const totalPages = Math.ceil(total / PAGE_SIZE);
-
   function clearScope() {
     setParams(prev => { prev.delete('ns'); return prev; }, { replace: true });
   }
@@ -97,27 +95,7 @@ export default function SearchResults() {
               {threads.map(thread => (
                 <ThreadHit key={thread.id} thread={thread} query={query} />
               ))}
-              {totalPages > 1 && (
-                <div style={{ display: 'flex', justifyContent: 'center', gap: 8, marginTop: 16 }}>
-                  <button
-                    className="btn-secondary btn-sm"
-                    disabled={page <= 1}
-                    onClick={() => setPage(p => p - 1)}
-                  >
-                    上一页
-                  </button>
-                  <span style={{ lineHeight: '30px', fontSize: 13, color: 'var(--text-sec)' }}>
-                    {page} / {totalPages}
-                  </span>
-                  <button
-                    className="btn-secondary btn-sm"
-                    disabled={page >= totalPages}
-                    onClick={() => setPage(p => p + 1)}
-                  >
-                    下一页
-                  </button>
-                </div>
-              )}
+              <Pagination page={page} total={total} size={PAGE_SIZE} onChange={setPage} />
             </>
           )}
         </>

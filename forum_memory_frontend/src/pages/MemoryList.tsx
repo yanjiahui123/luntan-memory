@@ -6,7 +6,7 @@ import { useUser } from '../contexts/UserContext';
 import { useToast } from '../contexts/ToastContext';
 import {
   AuthorityBadge, Badge, EmptyState, ErrorMsg,
-  KnowledgeTypeBadge, LifecycleBadge, Loading,
+  KnowledgeTypeBadge, LifecycleBadge, Loading, Pagination,
   QualityDot, KNOWLEDGE_TYPE_LABELS,
 } from '../components/UI';
 import type { Memory, Namespace } from '../types';
@@ -254,8 +254,6 @@ export default function MemoryList() {
 
   const memories = data?.items;
   const totalCount = data?.total || 0;
-  const totalPages = Math.ceil(totalCount / PAGE_SIZE);
-
   function clearAll() {
     setFilters({ ...EMPTY_FILTERS, namespace_id: boardId || '' });
     setDebouncedQ('');
@@ -305,13 +303,7 @@ export default function MemoryList() {
         );
       })()}
 
-      {totalCount > 0 && (
-        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 12, marginTop: 16 }}>
-          <button className="btn-sm btn-secondary" disabled={filters.page <= 1} onClick={() => setFilters({ ...filters, page: filters.page - 1 })}>← 上一页</button>
-          <span style={{ fontSize: 13, color: 'var(--text-sec)' }}>第 {filters.page} 页 / 共 {totalPages} 页（{totalCount} 条）</span>
-          <button className="btn-sm btn-secondary" disabled={filters.page >= totalPages} onClick={() => setFilters({ ...filters, page: filters.page + 1 })}>下一页 →</button>
-        </div>
-      )}
+      <Pagination page={filters.page} total={totalCount} size={10} onChange={p => setFilters({ ...filters, page: p })} />
     </div>
   );
 }
