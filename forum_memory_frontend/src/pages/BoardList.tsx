@@ -39,15 +39,13 @@ export default function BoardList() {
 function BoardCard({ board, stats }: { board: Namespace; stats?: NamespaceStats }) {
   return (
     <Link to={`/boards/${board.id}/threads`} style={{ textDecoration: 'none', color: 'inherit' }}>
-      <div className="card" style={{ padding: 20, height: '100%', transition: 'box-shadow 0.15s', cursor: 'pointer' }}>
+      <div className="card" style={{ padding: 20, height: '100%', display: 'flex', flexDirection: 'column', transition: 'box-shadow 0.15s', cursor: 'pointer' }}>
         <h2 style={{ fontSize: 16, fontWeight: 700, marginBottom: 6, color: 'var(--text)' }}>
           {board.display_name || board.name}
         </h2>
-        {board.description && (
-          <p style={{ fontSize: 13, color: 'var(--text-sec)', lineHeight: 1.5, marginBottom: 12, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>
-            {board.description}
-          </p>
-        )}
+        <p style={{ fontSize: 13, color: 'var(--text-sec)', lineHeight: 1.5, marginBottom: 12, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', flex: 1 }}>
+          {board.description || '\u00A0'}
+        </p>
         {stats ? (
           <div style={{ display: 'flex', gap: 16, fontSize: 12, color: 'var(--text-ter)' }}>
             <span>💬 {stats.thread_count ?? stats.total_threads ?? 0} 帖子</span>
