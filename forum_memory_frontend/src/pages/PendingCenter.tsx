@@ -26,7 +26,7 @@ export default function PendingCenter() {
 
   return (
     <div>
-      <div style={{ position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg)', paddingBottom: 4 }}>
+      <div style={{ position: 'sticky', top: 'var(--topbar-h)', zIndex: 10, background: 'var(--bg)', paddingBottom: 4 }}>
         <h1 className="page-title" style={{ marginBottom: 12 }}>待处理中心</h1>
         <div className="tabs">
           {TABS.map(t => (
