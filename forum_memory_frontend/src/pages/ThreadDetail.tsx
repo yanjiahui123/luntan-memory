@@ -458,11 +458,38 @@ function ThreadMemories({ threadId, isAdmin }: { threadId: string; isAdmin: bool
 const MEMORY_TRUNCATE = 120;
 const RAG_TRUNCATE = 200;
 
-/** Expandable cited memory item */
+/** Expandable cited memory item with per-memory feedback */
 function CitedMemoryItem({ mem, index, isAdmin }: { mem: Memory; index: number; isAdmin: boolean }) {
   const [expanded, setExpanded] = useState(false);
+  const [feedback, setFeedback] = useState<FeedbackType | null>(null);
+  const [fbLoading, setFbLoading] = useState(false);
   const needsTruncate = mem.content.length > MEMORY_TRUNCATE;
   const displayText = !needsTruncate || expanded ? mem.content : mem.content.slice(0, MEMORY_TRUNCATE) + '...';
+
+  useEffect(() => {
+    feedbackApi.mine(mem.id)
+      .then(res => { if (res.feedback_type) setFeedback(res.feedback_type); })
+      .catch(() => {});
+  }, [mem.id]);
+
+  async function handleFeedback(type: FeedbackType) {
+    if (fbLoading) return;
+    setFbLoading(true);
+    try {
+      if (feedback === type) {
+        await feedbackApi.withdraw(mem.id, { feedback_type: type });
+        setFeedback(null);
+      } else {
+        if (feedback) {
+          await feedbackApi.withdraw(mem.id, { feedback_type: feedback });
+        }
+        await feedbackApi.submit(mem.id, { feedback_type: type });
+        setFeedback(type);
+      }
+    } catch { /* ignore */ } finally {
+      setFbLoading(false);
+    }
+  }
 
   return (
     <div style={{ padding: '8px 0', borderTop: index > 0 ? '1px solid var(--border)' : 'none' }}>
@@ -487,6 +514,11 @@ function CitedMemoryItem({ mem, index, isAdmin }: { mem: Memory; index: number; 
         {isAdmin && (
           <Link to={`/admin/memories/${mem.id}`} style={{ fontSize: 11, marginLeft: 'auto' }}>查看详情 →</Link>
         )}
+      </div>
+      <div style={{ display: 'flex', gap: 4, marginTop: 6 }}>
+        <button className={`btn-sm ${feedback === 'useful' ? 'btn-primary' : 'btn-secondary'}`} disabled={fbLoading} onClick={() => handleFeedback('useful')} style={{ fontSize: 11 }}>👍 有用</button>
+        <button className={`btn-sm ${feedback === 'wrong' ? 'btn-danger' : 'btn-secondary'}`} disabled={fbLoading} onClick={() => handleFeedback('wrong')} style={{ fontSize: 11 }}>⚠️ 错误</button>
+        <button className={`btn-sm ${feedback === 'outdated' ? 'btn-warning' : 'btn-secondary'}`} disabled={fbLoading} onClick={() => handleFeedback('outdated')} style={{ fontSize: 11 }}>📅 过时</button>
       </div>
     </div>
   );
@@ -544,8 +576,6 @@ interface CommentCardProps {
 
 function CommentCard({ comment, thread, onAdopt, onDelete, onReply, isAdmin, canAdopt }: CommentCardProps) {
   const { addToast } = useToast();
-  const [feedbackGiven, setFeedbackGiven] = useState<FeedbackType | null>(null);
-  const [feedbackLoading, setFeedbackLoading] = useState(false);
   const [upvotes, setUpvotes] = useState(comment.upvote_count || 0);
   const [upvoted, setUpvoted] = useState(false);
   const [citedMemories, setCitedMemories] = useState<Memory[] | null>(null);
@@ -554,15 +584,6 @@ function CommentCard({ comment, thread, onAdopt, onDelete, onReply, isAdmin, can
   const isAi = comment.is_ai;
   const isBest = comment.is_best_answer;
   const hasCitations = (comment.cited_memory_ids?.length ?? 0) > 0;
-
-  // Load user's previous feedback on mount
-  useEffect(() => {
-    if (!isAi || !hasCitations) return;
-    const firstMemoryId = comment.cited_memory_ids[0];
-    feedbackApi.mine(firstMemoryId)
-      .then(res => { if (res.feedback_type) setFeedbackGiven(res.feedback_type); })
-      .catch(() => { /* ignore — user may not have given feedback yet */ });
-  }, [comment.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function handleDelete() {
     try {
@@ -586,28 +607,6 @@ function CommentCard({ comment, thread, onAdopt, onDelete, onReply, isAdmin, can
         addToast('warning', '引用记忆加载失败');
         citationsLoaded.current = false; // Allow retry on next click
       });
-  }
-
-  async function handleFeedback(type: FeedbackType) {
-    if (!hasCitations || feedbackLoading) return;
-    setFeedbackLoading(true);
-    try {
-      const mids = comment.cited_memory_ids;
-      if (feedbackGiven === type) {
-        await Promise.all(mids.map(mid => feedbackApi.withdraw(mid, { feedback_type: type })));
-        setFeedbackGiven(null);
-      } else {
-        if (feedbackGiven) {
-          await Promise.all(mids.map(mid => feedbackApi.withdraw(mid, { feedback_type: feedbackGiven })));
-        }
-        await Promise.all(mids.map(mid => feedbackApi.submit(mid, { feedback_type: type })));
-        setFeedbackGiven(type);
-      }
-    } catch (err) {
-      console.error('Feedback failed:', err);
-    } finally {
-      setFeedbackLoading(false);
-    }
   }
 
   async function handleUpvote() {
@@ -716,13 +715,6 @@ function CommentCard({ comment, thread, onAdopt, onDelete, onReply, isAdmin, can
         <button className={`btn-sm ${upvoted ? 'btn-primary' : 'btn-secondary'}`} onClick={handleUpvote}>
           👍 {upvotes}
         </button>
-        {isAi && hasCitations && (
-          <>
-            <button className={`btn-sm ${feedbackGiven === 'useful' ? 'btn-primary' : 'btn-secondary'}`} disabled={feedbackLoading} onClick={() => handleFeedback('useful')}>👍 有用</button>
-            <button className={`btn-sm ${feedbackGiven === 'wrong' ? 'btn-danger' : 'btn-secondary'}`} disabled={feedbackLoading} onClick={() => handleFeedback('wrong')}>⚠️ 错误</button>
-            <button className={`btn-sm ${feedbackGiven === 'outdated' ? 'btn-warning' : 'btn-secondary'}`} disabled={feedbackLoading} onClick={() => handleFeedback('outdated')}>📅 过时</button>
-          </>
-        )}
         {thread.status === 'OPEN' && (
           <button className="btn-sm btn-secondary" onClick={onReply}>💬 回复</button>
         )}
