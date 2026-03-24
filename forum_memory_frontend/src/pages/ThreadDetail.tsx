@@ -455,6 +455,83 @@ function ThreadMemories({ threadId, isAdmin }: { threadId: string; isAdmin: bool
   );
 }
 
+const MEMORY_TRUNCATE = 120;
+const RAG_TRUNCATE = 200;
+
+/** Expandable cited memory item */
+function CitedMemoryItem({ mem, index, isAdmin }: { mem: Memory; index: number; isAdmin: boolean }) {
+  const [expanded, setExpanded] = useState(false);
+  const needsTruncate = mem.content.length > MEMORY_TRUNCATE;
+  const displayText = !needsTruncate || expanded ? mem.content : mem.content.slice(0, MEMORY_TRUNCATE) + '...';
+
+  return (
+    <div style={{ padding: '8px 0', borderTop: index > 0 ? '1px solid var(--border)' : 'none' }}>
+      <div style={{ fontSize: 13, lineHeight: 1.6, color: 'var(--text)', whiteSpace: 'pre-wrap' }}>
+        {displayText}
+      </div>
+      {needsTruncate && (
+        <button
+          onClick={() => setExpanded(!expanded)}
+          style={{ fontSize: 11, color: 'var(--accent)', background: 'none', border: 'none', cursor: 'pointer', padding: '2px 0', marginTop: 2 }}
+        >
+          {expanded ? '收起 ▴' : '展开全文 ▾'}
+        </button>
+      )}
+      <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginTop: 4, flexWrap: 'wrap' }}>
+        {mem.knowledge_type && <KnowledgeTypeBadge type={mem.knowledge_type} />}
+        {mem.tags?.map(t => <Badge key={t} type="gray">{t}</Badge>)}
+        <QualityDot score={mem.quality_score} />
+        {mem.source_id && (
+          <Link to={`/threads/${mem.source_id}`} style={{ fontSize: 11, color: 'var(--text-sec)' }}>来源帖子</Link>
+        )}
+        {isAdmin && (
+          <Link to={`/admin/memories/${mem.id}`} style={{ fontSize: 11, marginLeft: 'auto' }}>查看详情 →</Link>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** Expandable RAG chunk item */
+function RagChunkItem({ chunk, index }: { chunk: RagChunk; index: number }) {
+  const [expanded, setExpanded] = useState(false);
+  const title = chunk?.metadata?.extended_metadata?.title || chunk?.metadata?.source || `片段 ${index + 1}`;
+  const source = chunk?.metadata?.source || '';
+  const text = chunk?.text || '';
+  const needsTruncate = text.length > RAG_TRUNCATE;
+  const displayText = !needsTruncate || expanded ? text : text.slice(0, RAG_TRUNCATE) + '...';
+  const isSourceUrl = /^https?:\/\//i.test(source);
+
+  return (
+    <div style={{ padding: '8px 10px', background: 'var(--bg)', borderRadius: 'var(--radius)', border: '1px solid var(--border)' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+        <span style={{ fontSize: 11, color: 'var(--text-ter)' }}>#{index + 1}</span>
+        {isSourceUrl ? (
+          <a href={source} target="_blank" rel="noopener noreferrer"
+            style={{ fontSize: 12, fontWeight: 600, color: 'var(--accent)', textDecoration: 'none' }}
+            title={source}
+          >
+            {title}↗
+          </a>
+        ) : (
+          <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text)' }}>{title as string}</span>
+        )}
+      </div>
+      <div style={{ fontSize: 12, lineHeight: 1.7, color: 'var(--text-sec)', whiteSpace: 'pre-wrap' }}>
+        {displayText}
+      </div>
+      {needsTruncate && (
+        <button
+          onClick={() => setExpanded(!expanded)}
+          style={{ fontSize: 11, color: 'var(--accent)', background: 'none', border: 'none', cursor: 'pointer', padding: '2px 0', marginTop: 2 }}
+        >
+          {expanded ? '收起 ▴' : '展开全文 ▾'}
+        </button>
+      )}
+    </div>
+  );
+}
+
 interface CommentCardProps {
   comment: Comment;
   thread: Thread;
@@ -604,22 +681,7 @@ function CommentCard({ comment, thread, onAdopt, onDelete, onReply, isAdmin, can
           {showCitations && (
             <div style={{ marginTop: 8, padding: 12, background: 'var(--purple-light)', borderRadius: 'var(--radius)', border: '1px solid var(--border)' }}>
               {citedMemories ? citedMemories.map((mem, i) => (
-                <div key={mem.id} style={{ padding: '8px 0', borderTop: i > 0 ? '1px solid var(--border)' : 'none' }}>
-                  <div style={{ fontSize: 13, lineHeight: 1.6, color: 'var(--text)' }}>
-                    {mem.content.length > 120 ? mem.content.slice(0, 120) + '...' : mem.content}
-                  </div>
-                  <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginTop: 4, flexWrap: 'wrap' }}>
-                    {mem.knowledge_type && <KnowledgeTypeBadge type={mem.knowledge_type} />}
-                    {mem.tags?.map(t => <Badge key={t} type="gray">{t}</Badge>)}
-                    <QualityDot score={mem.quality_score} />
-                    {mem.source_id && (
-                      <Link to={`/threads/${mem.source_id}`} style={{ fontSize: 11, color: 'var(--text-sec)' }}>来源帖子</Link>
-                    )}
-                    {isAdmin && (
-                      <Link to={`/admin/memories/${mem.id}`} style={{ fontSize: 11, marginLeft: 'auto' }}>查看详情 →</Link>
-                    )}
-                  </div>
-                </div>
+                <CitedMemoryItem key={mem.id} mem={mem} index={i} isAdmin={isAdmin} />
               )) : hasCitations && (
                 <div style={{ fontSize: 12, color: 'var(--text-ter)', padding: '4px 0' }}>加载中...</div>
               )}
@@ -634,31 +696,9 @@ function CommentCard({ comment, thread, onAdopt, onDelete, onReply, isAdmin, can
                     📚 知识库参考{isLegacyText ? '' : `（${ragChunks.length} 条）`}
                   </div>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                    {ragChunks.map((chunk, idx) => {
-                      const title = chunk?.metadata?.extended_metadata?.title || chunk?.metadata?.source || `片段 ${idx + 1}`;
-                      const source = chunk?.metadata?.source || '';
-                      const text = chunk?.text || '';
-                      return (
-                        <div key={idx} style={{ padding: '8px 10px', background: 'var(--bg)', borderRadius: 'var(--radius)', border: '1px solid var(--border)' }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
-                            <span style={{ fontSize: 11, color: 'var(--text-ter)' }}>#{idx + 1}</span>
-                            {isUrl(source) ? (
-                              <a href={source} target="_blank" rel="noopener noreferrer"
-                                style={{ fontSize: 12, fontWeight: 600, color: 'var(--accent)', textDecoration: 'none' }}
-                                title={source}
-                              >
-                                {title}↗
-                              </a>
-                            ) : (
-                              <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text)' }}>{title as string}</span>
-                            )}
-                          </div>
-                          <div style={{ fontSize: 12, lineHeight: 1.7, color: 'var(--text-sec)', whiteSpace: 'pre-wrap' }}>
-                            {text.length > 200 ? text.slice(0, 200) + '…' : text}
-                          </div>
-                        </div>
-                      );
-                    })}
+                    {ragChunks.map((chunk, idx) => (
+                      <RagChunkItem key={idx} chunk={chunk} index={idx} />
+                    ))}
                   </div>
                 </div>
               )}
