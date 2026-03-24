@@ -223,6 +223,7 @@ export const feedbackApi = {
   withdraw: (memoryId: string, data: { feedback_type: FeedbackType }) =>
     request<null>(`/memories/${memoryId}/feedback`, { method: 'DELETE', body: JSON.stringify(data) }),
   list: (memoryId: string) => get<Feedback[]>(`/memories/${memoryId}/feedback`),
+  mine: (memoryId: string) => get<{ feedback_type: FeedbackType | null }>(`/memories/${memoryId}/feedback/mine`),
   summary: (memoryId: string) => get<FeedbackSummary>(`/memories/${memoryId}/feedback/summary`),
 };
 

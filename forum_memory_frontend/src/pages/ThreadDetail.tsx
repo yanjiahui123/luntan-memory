@@ -478,6 +478,15 @@ function CommentCard({ comment, thread, onAdopt, onDelete, onReply, isAdmin, can
   const isBest = comment.is_best_answer;
   const hasCitations = (comment.cited_memory_ids?.length ?? 0) > 0;
 
+  // Load user's previous feedback on mount
+  useEffect(() => {
+    if (!isAi || !hasCitations) return;
+    const firstMemoryId = comment.cited_memory_ids[0];
+    feedbackApi.mine(firstMemoryId)
+      .then(res => { if (res.feedback_type) setFeedbackGiven(res.feedback_type); })
+      .catch(() => { /* ignore — user may not have given feedback yet */ });
+  }, [comment.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
   async function handleDelete() {
     try {
       await threadApi.deleteComment(comment.thread_id, comment.id);
