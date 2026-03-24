@@ -127,7 +127,7 @@ export default function ThreadDetail() {
     if (closing) return;
     setClosing(true);
     try {
-      await threadApi.resolve(threadId!, null);
+      await threadApi.close(threadId!);
       setShowCloseConfirm(false);
       refetch();
     } catch (err) {
@@ -232,7 +232,7 @@ export default function ThreadDetail() {
                 关闭帖子
               </button>
             )}
-            {canDelete && (thread.status === 'RESOLVED' || thread.status === 'TIMEOUT_CLOSED') && (
+            {canDelete && (thread.status === 'RESOLVED' || thread.status === 'CLOSED' || thread.status === 'TIMEOUT_CLOSED') && (
               <button className="btn-sm btn-secondary" disabled={reopening} onClick={handleReopen}>
                 {reopening ? '开启中...' : '重新开启'}
               </button>
@@ -294,14 +294,14 @@ export default function ThreadDetail() {
         </div>
       )}
 
-      {(thread.status === 'RESOLVED' || thread.status === 'TIMEOUT_CLOSED') && (
+      {(thread.status === 'RESOLVED' || thread.status === 'CLOSED' || thread.status === 'TIMEOUT_CLOSED') && (
         <ThreadMemories threadId={threadId!} isAdmin={isCurrentBoardAdmin} />
       )}
 
       <ConfirmModal
         open={showCloseConfirm}
         title="关闭帖子"
-        message="确认关闭此帖子？关闭后系统将自动提取知识到记忆库，发帖人和管理员可以重新开启帖子。"
+        message="确认关闭此帖子？帖子将标记为已关闭（不等于已解决），发帖人和管理员可以重新开启。"
         onConfirm={handleClose}
         onCancel={() => setShowCloseConfirm(false)}
       />

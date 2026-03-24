@@ -166,6 +166,7 @@ export const threadApi = {
   create: (data: { namespace_id: string; title: string; content: string }) => post<Thread>('/threads', data),
   delete: (id: string) => del<null>(`/threads/${id}`),
   resolve: (id: string, bestAnswerId: string | null) => post<Thread>(`/threads/${id}/resolve`, { best_answer_id: bestAnswerId }),
+  close: (id: string) => post<Thread>(`/threads/${id}/close`),
   adoptAnswer: (id: string, bestAnswerId: string) => post<Thread>(`/threads/${id}/adopt-answer`, { best_answer_id: bestAnswerId }),
   reopen: (id: string) => post<Thread>(`/threads/${id}/reopen`),
   timeoutClose: (id: string) => post<Thread>(`/threads/${id}/timeout-close`),

@@ -16,6 +16,7 @@ export function StatusBadge({ status }: { status: ThreadStatus }) {
   const map: Record<ThreadStatus, { type: string; label: string }> = {
     OPEN: { type: 'blue', label: '进行中' },
     RESOLVED: { type: 'green', label: '✓ 已解决' },
+    CLOSED: { type: 'gray', label: '已关闭' },
     TIMEOUT_CLOSED: { type: 'amber', label: '⏰ 超时关闭' },
     DELETED: { type: 'red', label: '已删除' },
   };

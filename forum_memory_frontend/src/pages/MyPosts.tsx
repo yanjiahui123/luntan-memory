@@ -13,6 +13,7 @@ const STATUSES: { value: ThreadStatus | ''; label: string }[] = [
   { value: '', label: '全部' },
   { value: 'OPEN', label: '进行中' },
   { value: 'RESOLVED', label: '已解决' },
+  { value: 'CLOSED', label: '已关闭' },
   { value: 'TIMEOUT_CLOSED', label: '已超时' },
 ];
 

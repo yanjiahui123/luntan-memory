@@ -63,7 +63,7 @@ export interface AggregateStats {
   locked_memories?: number;
 }
 
-export type ThreadStatus = 'OPEN' | 'RESOLVED' | 'TIMEOUT_CLOSED' | 'DELETED';
+export type ThreadStatus = 'OPEN' | 'RESOLVED' | 'CLOSED' | 'TIMEOUT_CLOSED' | 'DELETED';
 
 export interface Thread {
   id: string;
