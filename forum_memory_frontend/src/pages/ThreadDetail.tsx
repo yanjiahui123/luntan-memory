@@ -301,7 +301,11 @@ export default function ThreadDetail() {
       <ConfirmModal
         open={showCloseConfirm}
         title="关闭帖子"
-        message="确认关闭此帖子？帖子将标记为已关闭（不等于已解决），发帖人和管理员可以重新开启。"
+        message={
+          thread.best_answer_id
+            ? '该帖子已有采纳答案，关闭后将标记为"已解决"并触发记忆提取。发帖人和管理员可以重新开启。'
+            : '确认关闭此帖子？帖子将标记为"已关闭"（无采纳答案），发帖人和管理员可以重新开启。'
+        }
         onConfirm={handleClose}
         onCancel={() => setShowCloseConfirm(false)}
       />
