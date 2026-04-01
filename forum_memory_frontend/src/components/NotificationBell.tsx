@@ -17,6 +17,9 @@ function notificationText(n: AppNotification): string {
   if (n.notification_type === 'reply_to_comment') {
     return `${actor} 回复了你的评论`;
   }
+  if (n.notification_type === 'new_thread_in_namespace') {
+    return `${actor} 在你管理的板块发布了新帖`;
+  }
   return `${actor} 评论了你的帖子`;
 }
 

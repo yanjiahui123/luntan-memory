@@ -120,7 +120,7 @@ export interface Comment {
 
 export interface AppNotification {
   id: string;
-  notification_type: 'comment_on_thread' | 'reply_to_comment';
+  notification_type: 'comment_on_thread' | 'reply_to_comment' | 'new_thread_in_namespace';
   actor_display_name: string | null;
   thread_id: string;
   thread_title: string | null;
