@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useLocation, useNavigate, Outlet } from 'react-router-dom';
 import { useUser } from '../contexts/UserContext';
-import { namespaceApi } from '../api/client';
+import { namespaceApi, userApi } from '../api/client';
 import { useAsync } from '../hooks/useAsync';
 import NotificationBell from './NotificationBell';
 import type { Namespace, User } from '../types';
@@ -35,24 +35,26 @@ function boardAdminNav(boardId: string): NavItem[] {
   ];
 }
 
-/* ── Forum sidebar: dynamic board list ─────────── */
-function ForumSidebar({ boards, currentBoardId, currentUser, locationPath, onClose }: {
-  boards: Namespace[] | null;
+/* ── Forum sidebar: followed boards + quick links ─── */
+function ForumSidebar({ followedBoards, currentBoardId, currentUser, locationPath, onClose }: {
+  followedBoards: Namespace[] | null;
   currentBoardId: string | null;
   currentUser: User | null;
   locationPath: string;
   onClose: () => void;
 }) {
-  const activeBoards = boards ? boards.filter(b => b.is_active) : null;
+  const isOnBoardsPage = locationPath === '/boards';
   return (
     <>
-      <div className="sidebar__section">板块</div>
-      {activeBoards === null ? (
+      <div className="sidebar__section">★ 我关注的</div>
+      {followedBoards === null ? (
         <div style={{ padding: '8px 20px', fontSize: 12, color: 'var(--text-ter)' }}>加载中...</div>
-      ) : activeBoards.length === 0 ? (
-        <div style={{ padding: '8px 20px', fontSize: 12, color: 'var(--text-ter)' }}>暂无板块</div>
+      ) : followedBoards.length === 0 ? (
+        <div style={{ padding: '8px 20px', fontSize: 12, color: 'var(--text-ter)' }}>
+          还没有关注板块
+        </div>
       ) : (
-        activeBoards.map(b => (
+        followedBoards.map(b => (
           <Link
             key={b.id}
             to={`/boards/${b.id}/threads`}
@@ -63,17 +65,22 @@ function ForumSidebar({ boards, currentBoardId, currentUser, locationPath, onClo
           </Link>
         ))
       )}
+      <div className="sidebar__section" style={{ marginTop: 12 }}>快捷入口</div>
+      <Link
+        to="/boards"
+        className={`sidebar__item ${isOnBoardsPage ? 'sidebar__item--active' : ''}`}
+        onClick={onClose}
+      >
+        📋 全部板块
+      </Link>
       {currentUser && (
-        <>
-          <div className="sidebar__section" style={{ marginTop: 12 }}>其他</div>
-          <Link
-            to="/my-posts"
-            className={`sidebar__item ${locationPath === '/my-posts' ? 'sidebar__item--active' : ''}`}
-            onClick={onClose}
-          >
-            📝 我的帖子
-          </Link>
-        </>
+        <Link
+          to="/my-posts"
+          className={`sidebar__item ${locationPath === '/my-posts' ? 'sidebar__item--active' : ''}`}
+          onClick={onClose}
+        >
+          📝 我的帖子
+        </Link>
       )}
     </>
   );
@@ -175,9 +182,9 @@ export default function Layout() {
   }, [currentBoardId]);
   const effectiveBoardId = currentBoardId || sessionStorage.getItem('lastBoardId');
 
-  const { data: allBoards } = useAsync(
-    () => isAdminPage ? Promise.resolve(null) : namespaceApi.list(),
-    [isAdminPage],
+  const { data: followedBoards } = useAsync(
+    () => (isAdminPage || !currentUser) ? Promise.resolve(null) : userApi.followedBoards(),
+    [isAdminPage, currentUser?.id],
   );
 
   const [showUserMenu, setShowUserMenu] = useState(false);
@@ -240,7 +247,7 @@ export default function Layout() {
         {isAdminPage ? (
           <AdminSidebar nav={adminNav} sidebarTitle={adminTitle} activeBoardId={activeBoardId} isBoardAdmin={isBoardAdmin} isAdmin={isAdmin} myNamespaces={myNamespaces} locationPath={location.pathname} onClose={closeSidebar} />
         ) : (
-          <ForumSidebar boards={allBoards} currentBoardId={currentBoardId} currentUser={currentUser} locationPath={location.pathname} onClose={closeSidebar} />
+          <ForumSidebar followedBoards={followedBoards} currentBoardId={currentBoardId} currentUser={currentUser} locationPath={location.pathname} onClose={closeSidebar} />
         )}
       </aside>
 
