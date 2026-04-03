@@ -20,6 +20,7 @@ import ImportTopics from './pages/ImportTopics';
 import UserManagement from './pages/UserManagement';
 import AuditLog from './pages/AuditLog';
 import MyPosts from './pages/MyPosts';
+import JoinBoard from './pages/JoinBoard';
 
 export default function App() {
   return (
@@ -37,6 +38,7 @@ export default function App() {
           <Route path="/threads/:threadId" element={<ThreadDetail />} />
           <Route path="/search" element={<SearchResults />} />
           <Route path="/my-posts" element={<MyPosts />} />
+          <Route path="/join/:code" element={<JoinBoard />} />
 
           {/* Admin routes — protected by AdminGuard */}
           <Route element={<AdminGuard />}>

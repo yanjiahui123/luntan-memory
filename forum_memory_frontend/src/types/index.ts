@@ -225,6 +225,40 @@ export interface Moderator {
   display_name: string;
 }
 
+export type MemberRole = 'moderator' | 'member';
+
+export interface NamespaceMember {
+  user_id: string;
+  employee_id: string;
+  display_name: string;
+  dept_path: string | null;
+  role: MemberRole;
+  joined_at: string;
+}
+
+export interface NamespaceInvite {
+  id: string;
+  code: string;
+  role: MemberRole;
+  max_uses: number | null;
+  use_count: number;
+  expires_at: string | null;
+  is_active: boolean;
+  created_at: string;
+}
+
+export interface UserSearchResult {
+  w3account: string;
+  name: string;
+  dept_code?: string;
+  [key: string]: unknown;
+}
+
+export interface DeptOption {
+  dept_code: string;
+  dept_path: string;
+}
+
 export interface DictionaryEntry {
   slang: string;
   canonical: string;

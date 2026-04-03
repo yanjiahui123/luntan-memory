@@ -36,12 +36,23 @@ export default function BoardList() {
   );
 }
 
+function AccessBadge({ mode }: { mode?: string }) {
+  if (mode === 'PRIVATE') {
+    return <span style={{ fontSize: 11, padding: '1px 6px', borderRadius: 4, background: '#fef2f2', color: '#dc2626', fontWeight: 600, marginLeft: 6 }}>私密</span>;
+  }
+  if (mode === 'RESTRICTED') {
+    return <span style={{ fontSize: 11, padding: '1px 6px', borderRadius: 4, background: '#fefce8', color: '#ca8a04', fontWeight: 600, marginLeft: 6 }}>限制</span>;
+  }
+  return null;
+}
+
 function BoardCard({ board, stats }: { board: Namespace; stats?: NamespaceStats }) {
   return (
     <Link to={`/boards/${board.id}/threads`} style={{ textDecoration: 'none', color: 'inherit' }}>
       <div className="card" style={{ padding: 20, height: '100%', display: 'flex', flexDirection: 'column', transition: 'box-shadow 0.15s', cursor: 'pointer' }}>
         <h2 style={{ fontSize: 16, fontWeight: 700, marginBottom: 6, color: 'var(--text)' }}>
           {board.display_name || board.name}
+          <AccessBadge mode={board.access_mode} />
         </h2>
         <p style={{ fontSize: 13, color: 'var(--text-sec)', lineHeight: 1.5, marginBottom: 12, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', flex: 1 }}>
           {board.description || '\u00A0'}

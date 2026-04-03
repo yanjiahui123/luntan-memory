@@ -6,6 +6,7 @@ import type {
   Moderator, DictionaryEntry,
   PaginatedResult, AuthLoginResponse, UploadResponse, ImportResult, QualityAlert,
   MemorySearchResponse, ImportJob, ImportJobDetail, MemoryRelation,
+  NamespaceMember, NamespaceInvite, UserSearchResult, DeptOption,
 } from '../types';
 
 const BASE = '/api/v1';
@@ -117,6 +118,8 @@ export const userApi = {
   list: () => get<User[]>('/users'),
   create: (data: Partial<User>) => post<User>('/users', data),
   update: (id: string, data: Partial<User>) => put<User>(`/users/${id}`, data),
+  search: (q: string) => get<UserSearchResult[]>(`/users/search?q=${encodeURIComponent(q)}`),
+  departments: () => get<DeptOption[]>('/users/departments'),
 };
 
 // ── Namespaces ───────────────────────────────
@@ -315,6 +318,34 @@ export const notificationApi = {
   },
   markRead: (notifId: string) => post<null>(`/notifications/${notifId}/read`),
   markAllRead: () => post<null>('/notifications/read-all'),
+};
+
+// ── Members ─────────────────────────────────
+export const memberApi = {
+  list: (nsId: string, role?: string) => {
+    const q = new URLSearchParams();
+    if (role) q.set('role', role);
+    return get<NamespaceMember[]>(`/namespaces/${nsId}/members?${q}`);
+  },
+  add: (nsId: string, employeeId: string, role = 'member') =>
+    post<NamespaceMember>(`/namespaces/${nsId}/members`, { employee_id: employeeId, role }),
+  batchAdd: (nsId: string, employeeIds: string[], role = 'member') =>
+    post<{ added: number; skipped: number; errors: string[] }>(`/namespaces/${nsId}/members/batch`, { employee_ids: employeeIds, role }),
+  batchAddByDept: (nsId: string, deptCode: string, role = 'member') =>
+    post<{ added: number; skipped: number; errors: string[]; total_in_dept: number }>(`/namespaces/${nsId}/members/batch-by-dept`, { dept_code: deptCode, role }),
+  updateRole: (nsId: string, userId: string, role: string) =>
+    put<{ user_id: string; role: string }>(`/namespaces/${nsId}/members/${userId}/role`, { role }),
+  remove: (nsId: string, userId: string) => del<null>(`/namespaces/${nsId}/members/${userId}`),
+};
+
+// ── Invites ─────────────────────────────────
+export const inviteApi = {
+  create: (nsId: string, data: { role?: string; max_uses?: number | null; expires_hours?: number | null }) =>
+    post<NamespaceInvite>(`/namespaces/${nsId}/invites`, data),
+  list: (nsId: string) => get<NamespaceInvite[]>(`/namespaces/${nsId}/invites`),
+  revoke: (nsId: string, inviteId: string) => del<null>(`/namespaces/${nsId}/invites/${inviteId}`),
+  getInfo: (code: string) => get<{ namespace_id: string; namespace_display_name: string; role: string; expires_at: string | null }>(`/invites/${code}`),
+  join: (code: string) => post<{ namespace_id: string; namespace_display_name: string; role: string }>(`/invites/${code}/join`),
 };
 
 // ── Uploads ──────────────────────────────────

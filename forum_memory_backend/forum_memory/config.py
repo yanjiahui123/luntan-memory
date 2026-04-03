@@ -68,6 +68,12 @@ class Settings(BaseSettings):
     sso_callback_url: str = ""  # URL parameter for cookie verification
     sso_user_scope: str = ""  # User scope parameter
 
+    # External user directory (iData)
+    idata_app_token: str = ""
+    idata_user_info_url: str = ""
+    idata_dept_employee_url: str = ""
+    idata_member_search_url: str = ""
+
     # File uploads
     upload_dir: str = "uploads"
     upload_max_size_mb: int = 5
