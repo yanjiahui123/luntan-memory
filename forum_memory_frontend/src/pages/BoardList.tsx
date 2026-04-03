@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { namespaceApi, userApi } from '../api/client';
 import { useAsync } from '../hooks/useAsync';
 import { Loading, ErrorMsg, EmptyState } from '../components/UI';
@@ -8,11 +8,14 @@ import type { Namespace, NamespaceStats } from '../types';
 type ViewTab = 'followed' | 'all';
 
 export default function BoardList() {
+  const [searchParams] = useSearchParams();
+  const initialTab: ViewTab = searchParams.get('view') === 'all' ? 'all' : 'followed';
+
   const { data: boards, loading, error, refetch } = useAsync(() => namespaceApi.list());
   const { data: followedBoards, refetch: refetchFollowed } = useAsync(() => userApi.followedBoards());
   const [statsMap, setStatsMap] = useState<Record<string, NamespaceStats>>({});
   const [followedIds, setFollowedIds] = useState<Set<string>>(new Set());
-  const [tab, setTab] = useState<ViewTab>('followed');
+  const [tab, setTab] = useState<ViewTab>(initialTab);
 
   const activeBoards = (boards || []).filter(b => b.is_active);
 

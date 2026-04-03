@@ -67,7 +67,7 @@ function ForumSidebar({ followedBoards, currentBoardId, currentUser, locationPat
       )}
       <div className="sidebar__section" style={{ marginTop: 12 }}>快捷入口</div>
       <Link
-        to="/boards"
+        to="/boards?view=all"
         className={`sidebar__item ${isOnBoardsPage ? 'sidebar__item--active' : ''}`}
         onClick={onClose}
       >
