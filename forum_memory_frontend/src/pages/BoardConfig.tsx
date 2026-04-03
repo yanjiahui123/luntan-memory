@@ -71,7 +71,11 @@ function BoardConfigPanel({ boardId, isSuperAdmin, isAdmin }: { boardId: string;
 }
 
 function InfoTab({ board, onUpdate }: { board: Namespace; onUpdate: () => void }) {
-  const [form, setForm] = useState({ display_name: board.display_name, description: board.description || '' });
+  const [form, setForm] = useState({
+    display_name: board.display_name,
+    description: board.description || '',
+    access_mode: board.access_mode || 'public',
+  });
   const [saving, setSaving] = useState(false);
 
   async function handleSave() {
@@ -93,6 +97,19 @@ function InfoTab({ board, onUpdate }: { board: Namespace; onUpdate: () => void }
       <div style={{ marginBottom: 16 }}>
         <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6 }}>描述</label>
         <textarea value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} style={{ minHeight: 80 }} />
+      </div>
+      <div style={{ marginBottom: 16 }}>
+        <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6 }}>访问模式</label>
+        <select value={form.access_mode} onChange={e => setForm(f => ({ ...f, access_mode: e.target.value }))}>
+          <option value="public">公开 — 所有人可查看和发帖</option>
+          <option value="restricted">限制 — 所有人可查看，仅成员可发帖</option>
+          <option value="private">私密 — 仅成员可查看和发帖</option>
+        </select>
+        {form.access_mode !== 'public' && (
+          <p style={{ fontSize: 12, color: 'var(--text-sec)', marginTop: 4 }}>
+            保存后可在「成员管理」Tab 中管理成员和邀请链接
+          </p>
+        )}
       </div>
       <button className="btn-primary" onClick={handleSave} disabled={saving}>{saving ? '保存中...' : '保存'}</button>
     </div>
