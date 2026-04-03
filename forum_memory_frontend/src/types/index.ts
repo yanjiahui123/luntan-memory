@@ -248,9 +248,9 @@ export interface NamespaceInvite {
 }
 
 export interface UserSearchResult {
-  w3account: string;
-  name: string;
-  dept_code?: string;
+  w3Account: string;
+  last_name: string;
+  dept?: string;
   [key: string]: unknown;
 }
 

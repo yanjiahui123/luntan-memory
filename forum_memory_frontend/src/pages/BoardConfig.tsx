@@ -454,7 +454,7 @@ function SearchAddSection({ boardId, onAdded }: { boardId: string; onAdded: () =
     try {
       await memberApi.add(boardId, account, role);
       onAdded();
-      setResults(prev => prev.filter(r => r.w3account !== account));
+      setResults(prev => prev.filter(r => r.w3Account !== account));
     } catch (err) {
       setErrMsg(err instanceof Error ? err.message : String(err));
     } finally {
@@ -480,18 +480,19 @@ function SearchAddSection({ boardId, onAdded }: { boardId: string; onAdded: () =
       {results.length > 0 && (
         <div style={{ maxHeight: 240, overflow: 'auto', border: '1px solid var(--border)', borderRadius: 6, marginTop: 4 }}>
           {results.map(r => (
-            <div key={r.w3account} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px', borderBottom: '1px solid var(--border)' }}>
+            <div key={r.w3Account} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px', borderBottom: '1px solid var(--border)' }}>
               <div>
-                <span style={{ fontWeight: 600 }}>{r.name}</span>
-                <span style={{ color: 'var(--text-sec)', fontSize: 12, marginLeft: 8 }}>{r.w3account}</span>
+                <span style={{ fontWeight: 600 }}>{r.last_name}</span>
+                <span style={{ color: 'var(--text-sec)', fontSize: 12, marginLeft: 8 }}>{r.w3Account}</span>
+                {r.dept && <span style={{ color: 'var(--text-ter)', fontSize: 11, marginLeft: 8 }}>{r.dept}</span>}
               </div>
               <button
                 className="btn-primary btn-sm"
-                onClick={() => handleAdd(r.w3account)}
-                disabled={adding === r.w3account}
+                onClick={() => handleAdd(r.w3Account)}
+                disabled={adding === r.w3Account}
                 style={{ fontSize: 12 }}
               >
-                {adding === r.w3account ? '...' : '添加'}
+                {adding === r.w3Account ? '...' : '添加'}
               </button>
             </div>
           ))}
