@@ -46,24 +46,26 @@ function ForumSidebar({ followedBoards, currentBoardId, currentUser, locationPat
   return (
     <>
       <div className="sidebar__section">★ 我关注的</div>
-      {followedBoards === null ? (
-        <div style={{ padding: '8px 20px', fontSize: 12, color: 'var(--text-ter)' }}>加载中...</div>
-      ) : followedBoards.length === 0 ? (
-        <div style={{ padding: '8px 20px', fontSize: 12, color: 'var(--text-ter)' }}>
-          还没有关注板块
-        </div>
-      ) : (
-        followedBoards.map(b => (
-          <Link
-            key={b.id}
-            to={`/boards/${b.id}/threads`}
-            className={`sidebar__item ${currentBoardId === b.id ? 'sidebar__item--active' : ''}`}
-            onClick={onClose}
-          >
-            {b.display_name}
-          </Link>
-        ))
-      )}
+      <div style={{ maxHeight: 'calc(100vh - 220px)', overflowY: 'auto' }}>
+        {followedBoards === null ? (
+          <div style={{ padding: '8px 20px', fontSize: 12, color: 'var(--text-ter)' }}>加载中...</div>
+        ) : followedBoards.length === 0 ? (
+          <div style={{ padding: '8px 20px', fontSize: 12, color: 'var(--text-ter)' }}>
+            还没有关注板块
+          </div>
+        ) : (
+          followedBoards.map(b => (
+            <Link
+              key={b.id}
+              to={`/boards/${b.id}/threads`}
+              className={`sidebar__item ${currentBoardId === b.id ? 'sidebar__item--active' : ''}`}
+              onClick={onClose}
+            >
+              {b.display_name}
+            </Link>
+          ))
+        )}
+      </div>
       <div className="sidebar__section" style={{ marginTop: 12 }}>快捷入口</div>
       <Link
         to="/boards?view=all"
