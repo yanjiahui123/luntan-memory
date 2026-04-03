@@ -150,22 +150,35 @@ export default function ThreadDetail() {
     }
   }
 
-  function connectStream() {
+  function connectStream(force = false) {
     if (esRef.current) esRef.current.close();
     setStreamingContent('');
     setStreamPhase('idle');
     setAiLoading(true);
     const token = getToken();
-    const qs = token ? `?token=${encodeURIComponent(token)}` : '';
+    const params = new URLSearchParams();
+    if (token) params.set('token', token);
+    if (force) params.set('force', 'true');
+    const qs = params.toString() ? `?${params}` : '';
     const es = new EventSource(`/api/v1/threads/${threadId}/ai-answer/stream${qs}`);
     esRef.current = es;
     es.onmessage = (event) => {
       try {
         const msg = JSON.parse(event.data as string);
-        if (msg.phase === 'searching') setStreamPhase('searching');
-        else if (msg.phase === 'generating') setStreamPhase('generating');
-        else if (msg.token) setStreamingContent(prev => prev + msg.token);
-        else if (msg.done) {
+        if (msg.skipped) {
+          // AI answer already exists or in progress, just refresh comments
+          es.close();
+          esRef.current = null;
+          setStreamPhase('done');
+          setAiLoading(false);
+          refetchComments();
+        } else if (msg.phase === 'searching') {
+          setStreamPhase('searching');
+        } else if (msg.phase === 'generating') {
+          setStreamPhase('generating');
+        } else if (msg.token) {
+          setStreamingContent(prev => prev + msg.token);
+        } else if (msg.done) {
           es.close();
           esRef.current = null;
           setStreamPhase('done');
@@ -191,13 +204,13 @@ export default function ThreadDetail() {
   function handleRegenerate() {
     if (aiLoading) return;
     setStreamingContent('');
-    connectStream();
+    connectStream(true); // force=true to regenerate
   }
 
   // Auto-connect streaming for new threads with no comments
   useEffect(() => {
     if (thread?.status !== 'OPEN' || (thread?.comment_count ?? 0) > 0) return;
-    connectStream();
+    connectStream(); // force=false, backend will skip if AI answer exists or in progress
     return () => { esRef.current?.close(); esRef.current = null; };
   }, [thread?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
