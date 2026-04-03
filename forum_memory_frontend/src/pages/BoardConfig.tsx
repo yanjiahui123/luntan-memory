@@ -40,8 +40,8 @@ function BoardConfigPanel({ boardId, isSuperAdmin, isAdmin }: { boardId: string;
 
   if (loading || !board) return <Loading />;
 
-  const accessMode = board.access_mode || 'PUBLIC';
-  const showMembers = accessMode === 'RESTRICTED' || accessMode === 'PRIVATE';
+  const accessMode = (board.access_mode || 'public').toLowerCase();
+  const showMembers = accessMode === 'restricted' || accessMode === 'private';
 
   const tabs = [
     { key: 'info', label: '基本信息' },

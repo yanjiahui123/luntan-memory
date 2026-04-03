@@ -37,10 +37,11 @@ export default function BoardList() {
 }
 
 function AccessBadge({ mode }: { mode?: string }) {
-  if (mode === 'PRIVATE') {
+  const m = (mode || '').toLowerCase();
+  if (m === 'private') {
     return <span style={{ fontSize: 11, padding: '1px 6px', borderRadius: 4, background: '#fef2f2', color: '#dc2626', fontWeight: 600, marginLeft: 6 }}>私密</span>;
   }
-  if (mode === 'RESTRICTED') {
+  if (m === 'restricted') {
     return <span style={{ fontSize: 11, padding: '1px 6px', borderRadius: 4, background: '#fefce8', color: '#ca8a04', fontWeight: 600, marginLeft: 6 }}>限制</span>;
   }
   return null;
