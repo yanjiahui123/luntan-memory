@@ -262,28 +262,44 @@ function KBConfigTab({ board, onUpdate }: { board: Namespace; onUpdate: () => vo
 
 function ModeratorsTab({ boardId }: { boardId: string }) {
   const { data: moderators, loading, refetch } = useAsync(() => namespaceApi.listModerators(boardId), [boardId]);
-  const [employeeId, setEmployeeId] = useState('');
-  const [displayName, setDisplayName] = useState('');
-  const [adding, setAdding] = useState(false);
+  const [query, setQuery] = useState('');
+  const [results, setResults] = useState<UserSearchResult[]>([]);
+  const [searching, setSearching] = useState(false);
+  const [adding, setAdding] = useState('');
   const [errMsg, setErrMsg] = useState('');
+  const timerRef = useRef<ReturnType<typeof setTimeout>>();
 
-  async function handleAdd() {
-    if (!employeeId.trim()) return;
-    setAdding(true);
+  const doSearch = useCallback((q: string) => {
+    if (!q.trim()) { setResults([]); return; }
+    setSearching(true);
+    userApi.search(q.trim())
+      .then(setResults)
+      .catch(() => setResults([]))
+      .finally(() => setSearching(false));
+  }, []);
+
+  function handleInput(val: string) {
+    setQuery(val);
+    clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(() => doSearch(val), 300);
+  }
+
+  async function handleAdd(account: string, displayName: string) {
+    setAdding(account);
     setErrMsg('');
     try {
-      await namespaceApi.addModerator(boardId, employeeId.trim(), displayName.trim() || undefined);
-      setEmployeeId('');
-      setDisplayName('');
+      await namespaceApi.addModerator(boardId, account, displayName || undefined);
       refetch();
+      setResults(prev => prev.filter(r => r.w3Account !== account));
     } catch (err) {
       setErrMsg(err instanceof Error ? err.message : String(err));
     } finally {
-      setAdding(false);
+      setAdding('');
     }
   }
 
   async function handleRemove(userId: string) {
+    setErrMsg('');
     try {
       await namespaceApi.removeModerator(boardId, userId);
       refetch();
@@ -296,7 +312,7 @@ function ModeratorsTab({ boardId }: { boardId: string }) {
 
   return (
     <div className="card" style={{ padding: 20 }}>
-      <p style={{ fontSize: 13, color: 'var(--text-sec)', marginBottom: 16 }}>输入工号即可添加板块管理员。若该工号用户尚未注册，系统将自动创建账号。</p>
+      <p style={{ fontSize: 13, color: 'var(--text-sec)', marginBottom: 16 }}>搜索用户姓名或工号来添加板块管理员。</p>
 
       {(moderators?.length ?? 0) > 0 ? (
         <table className="dict-table" style={{ marginBottom: 16 }}>
@@ -315,13 +331,34 @@ function ModeratorsTab({ boardId }: { boardId: string }) {
         <p style={{ color: 'var(--text-ter)', fontSize: 13, marginBottom: 16 }}>暂无板块管理员</p>
       )}
 
-      <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-        <input placeholder="工号（必填）" value={employeeId} onChange={e => { setEmployeeId(e.target.value); setErrMsg(''); }} onKeyDown={e => e.key === 'Enter' && handleAdd()} style={{ flex: 1 }} />
-        <input placeholder="姓名（选填）" value={displayName} onChange={e => setDisplayName(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleAdd()} style={{ flex: 1 }} />
-        <button className="btn-primary" onClick={handleAdd} disabled={!employeeId.trim() || adding}>
-          {adding ? '添加中...' : '添加'}
-        </button>
-      </div>
+      <input
+        placeholder="输入姓名或工号搜索..."
+        value={query}
+        onChange={e => handleInput(e.target.value)}
+        style={{ marginBottom: 8 }}
+      />
+      {searching && <p style={{ fontSize: 12, color: 'var(--text-sec)' }}>搜索中...</p>}
+      {results.length > 0 && (
+        <div style={{ maxHeight: 240, overflow: 'auto', border: '1px solid var(--border)', borderRadius: 6 }}>
+          {results.map(r => (
+            <div key={r.w3Account} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px', borderBottom: '1px solid var(--border)' }}>
+              <div>
+                <span style={{ fontWeight: 600 }}>{r.last_name}</span>
+                <span style={{ color: 'var(--text-sec)', fontSize: 12, marginLeft: 8 }}>{r.w3Account}</span>
+                {r.dept && <span style={{ color: 'var(--text-ter)', fontSize: 11, marginLeft: 8 }}>{r.dept}</span>}
+              </div>
+              <button
+                className="btn-primary btn-sm"
+                onClick={() => handleAdd(r.w3Account, r.last_name)}
+                disabled={adding === r.w3Account}
+                style={{ fontSize: 12 }}
+              >
+                {adding === r.w3Account ? '...' : '添加'}
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
       {errMsg && <p style={{ color: 'var(--danger)', fontSize: 13, marginTop: 8 }}>{errMsg}</p>}
     </div>
   );
