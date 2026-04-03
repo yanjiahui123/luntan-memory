@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { namespaceApi, userApi } from '../api/client';
+import { namespaceApi } from '../api/client';
 import { useAsync } from '../hooks/useAsync';
+import { useFollow } from '../contexts/FollowContext';
 import { Loading, ErrorMsg, EmptyState } from '../components/UI';
 import type { Namespace, NamespaceStats } from '../types';
 
@@ -12,26 +13,24 @@ export default function BoardList() {
   const initialTab: ViewTab = searchParams.get('view') === 'all' ? 'all' : 'followed';
 
   const { data: boards, loading, error, refetch } = useAsync(() => namespaceApi.list());
-  const { data: followedBoards, refetch: refetchFollowed } = useAsync(() => userApi.followedBoards());
+  const { followedIds: ctxFollowedIds, refetchFollowed: ctxRefetch } = useFollow();
   const [statsMap, setStatsMap] = useState<Record<string, NamespaceStats>>({});
   const [followedIds, setFollowedIds] = useState<Set<string>>(new Set());
   const [tab, setTab] = useState<ViewTab>(initialTab);
 
   const activeBoards = (boards || []).filter(b => b.is_active);
 
-  // Build followed set
+  // Sync from context
   useEffect(() => {
-    if (followedBoards) {
-      setFollowedIds(new Set(followedBoards.map(b => b.id)));
-    }
-  }, [followedBoards]);
+    setFollowedIds(ctxFollowedIds);
+  }, [ctxFollowedIds]);
 
   // Auto-switch to "all" if no followed boards
   useEffect(() => {
-    if (followedBoards && followedBoards.length === 0) {
+    if (ctxFollowedIds.size === 0 && initialTab !== 'all') {
       setTab('all');
     }
-  }, [followedBoards]);
+  }, [ctxFollowedIds, initialTab]);
 
   // Batch fetch stats
   useEffect(() => {
@@ -58,7 +57,7 @@ export default function BoardList() {
       } else {
         await namespaceApi.follow(boardId);
       }
-      refetchFollowed();
+      ctxRefetch(); // notify Layout sidebar to refresh
     } catch {
       // Revert on failure
       setFollowedIds(prev => {
@@ -67,7 +66,7 @@ export default function BoardList() {
         return next;
       });
     }
-  }, [followedIds, refetchFollowed]);
+  }, [followedIds, ctxRefetch]);
 
   if (loading) return <Loading />;
   if (error) return <ErrorMsg message={error} onRetry={refetch} />;

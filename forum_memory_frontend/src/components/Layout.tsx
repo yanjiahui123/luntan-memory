@@ -1,8 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useLocation, useNavigate, Outlet } from 'react-router-dom';
 import { useUser } from '../contexts/UserContext';
-import { namespaceApi, userApi } from '../api/client';
-import { useAsync } from '../hooks/useAsync';
+import { useFollow } from '../contexts/FollowContext';
 import NotificationBell from './NotificationBell';
 import type { Namespace, User } from '../types';
 
@@ -170,6 +169,7 @@ export default function Layout() {
   const location = useLocation();
   const navigate = useNavigate();
   const { currentUser, isSuperAdmin, isBoardAdmin, isAdmin, myNamespaces } = useUser();
+  const { followedBoards } = useFollow();
   const isAdminPage = location.pathname.startsWith('/admin');
 
   const boardAdminMatch = location.pathname.match(/^\/admin\/boards\/([^/]+)/);
@@ -181,11 +181,6 @@ export default function Layout() {
     if (currentBoardId) sessionStorage.setItem('lastBoardId', currentBoardId);
   }, [currentBoardId]);
   const effectiveBoardId = currentBoardId || sessionStorage.getItem('lastBoardId');
-
-  const { data: followedBoards } = useAsync(
-    () => (isAdminPage || !currentUser) ? Promise.resolve(null) : userApi.followedBoards(),
-    [isAdminPage, currentUser?.id],
-  );
 
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);

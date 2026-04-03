@@ -2,6 +2,7 @@ import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { UserProvider } from './contexts/UserContext';
 import { ToastProvider } from './contexts/ToastContext';
+import { FollowProvider } from './contexts/FollowContext';
 import ErrorBoundary from './components/ErrorBoundary';
 import Layout from './components/Layout';
 import AdminGuard from './components/AdminGuard';
@@ -26,6 +27,7 @@ export default function App() {
   return (
     <BrowserRouter>
       <UserProvider>
+      <FollowProvider>
       <ToastProvider>
       <ErrorBoundary>
       <Routes>
@@ -64,6 +66,7 @@ export default function App() {
       </Routes>
       </ErrorBoundary>
       </ToastProvider>
+      </FollowProvider>
       </UserProvider>
     </BrowserRouter>
   );
