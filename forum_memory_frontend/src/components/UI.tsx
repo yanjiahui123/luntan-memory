@@ -81,10 +81,17 @@ export function ErrorMsg({ message, onRetry }: ErrorMsgProps) {
 interface EmptyStateProps {
   icon?: string;
   message?: string;
+  action?: React.ReactNode;
 }
 
-export function EmptyState({ icon = '📭', message = '暂无数据' }: EmptyStateProps) {
-  return <div className="empty-state fade-in"><div className="empty-state__icon">{icon}</div>{message}</div>;
+export function EmptyState({ icon = '📭', message = '暂无数据', action }: EmptyStateProps) {
+  return (
+    <div className="empty-state fade-in">
+      <div className="empty-state__icon">{icon}</div>
+      {message}
+      {action && <div style={{ marginTop: 12 }}>{action}</div>}
+    </div>
+  );
 }
 
 // ── Pagination ─────────────────────────────────────────────────────────────
