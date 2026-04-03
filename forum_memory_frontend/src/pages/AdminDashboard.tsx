@@ -277,6 +277,14 @@ function CreateBoardModal({ onClose, onCreated }: { onClose: () => void; onCreat
             <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6 }}>描述</label>
             <textarea placeholder="板块描述（可选）" value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} style={{ minHeight: 80 }} />
           </div>
+          <div style={{ marginBottom: 14 }}>
+            <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6 }}>访问模式</label>
+            <select value={form.access_mode} onChange={e => setForm(f => ({ ...f, access_mode: e.target.value }))}>
+              <option value="public">公开 — 所有人可查看和发帖</option>
+              <option value="restricted">限制 — 所有人可查看，仅成员可发帖</option>
+              <option value="private">私密 — 仅成员可查看和发帖</option>
+            </select>
+          </div>
           {error && <div style={{ color: 'var(--red)', fontSize: 13, marginBottom: 12 }}>错误: {error}</div>}
           <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
             <button type="button" className="btn-secondary" onClick={onClose}>取消</button>
