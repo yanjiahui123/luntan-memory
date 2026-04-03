@@ -21,7 +21,8 @@ function GlobalDashboard({ isSuperAdmin, isBoardAdmin, myNamespaces }: {
   isBoardAdmin: boolean;
   myNamespaces: Namespace[] | null;
 }) {
-  const { data: boards, loading, error, refetch: refetchBoards } = useAsync(() => namespaceApi.list());
+  const { data: boardsResult, loading, error, refetch: refetchBoards } = useAsync(() => namespaceApi.list(1, 200));
+  const boards = boardsResult?.items ?? null;
   const { data: stats } = useAsync(
     () => isSuperAdmin ? namespaceApi.aggregateStats() : Promise.resolve(null),
     [isSuperAdmin],

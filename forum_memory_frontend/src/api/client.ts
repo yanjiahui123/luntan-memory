@@ -125,7 +125,7 @@ export const userApi = {
 
 // ── Namespaces ───────────────────────────────
 export const namespaceApi = {
-  list: () => get<Namespace[]>('/namespaces'),
+  list: (page = 1, size = 20) => requestPaginated<Namespace>(`/namespaces?page=${page}&size=${size}`),
   get: (id: string) => get<Namespace>(`/namespaces/${id}`),
   follow: (id: string) => post<{ followed: boolean }>(`/namespaces/${id}/follow`),
   unfollow: (id: string) => del<{ followed: boolean }>(`/namespaces/${id}/follow`),

@@ -1,26 +1,34 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { namespaceApi } from '../api/client';
-import { useAsync } from '../hooks/useAsync';
 import { useFollow } from '../contexts/FollowContext';
 import { Loading, ErrorMsg, EmptyState } from '../components/UI';
 import type { Namespace, NamespaceStats } from '../types';
 
 type ViewTab = 'followed' | 'all';
+const PAGE_SIZE = 20;
 
 export default function BoardList() {
   const [searchParams] = useSearchParams();
   const initialTab: ViewTab = searchParams.get('view') === 'all' ? 'all' : 'followed';
 
-  const { data: boards, loading, error, refetch } = useAsync(() => namespaceApi.list());
-  const { followedIds: ctxFollowedIds, refetchFollowed: ctxRefetch } = useFollow();
-  const [statsMap, setStatsMap] = useState<Record<string, NamespaceStats>>({});
+  const { followedBoards, followedIds: ctxFollowedIds, refetchFollowed: ctxRefetch } = useFollow();
   const [followedIds, setFollowedIds] = useState<Set<string>>(new Set());
   const [tab, setTab] = useState<ViewTab>(initialTab);
 
-  const activeBoards = (boards || []).filter(b => b.is_active);
+  // All boards pagination state
+  const [allBoards, setAllBoards] = useState<Namespace[]>([]);
+  const [allTotal, setAllTotal] = useState(0);
+  const [allPage, setAllPage] = useState(1);
+  const [allLoading, setAllLoading] = useState(false);
+  const [allError, setAllError] = useState<string | null>(null);
 
-  // Sync from context
+  // Followed boards pagination (client-side since followedBoards is from context)
+  const [followedPage, setFollowedPage] = useState(1);
+
+  const [statsMap, setStatsMap] = useState<Record<string, NamespaceStats>>({});
+
+  // Sync followed IDs from context
   useEffect(() => {
     setFollowedIds(ctxFollowedIds);
   }, [ctxFollowedIds]);
@@ -32,20 +40,40 @@ export default function BoardList() {
     }
   }, [ctxFollowedIds, initialTab]);
 
-  // Batch fetch stats
+  // Fetch all boards page
   useEffect(() => {
-    if (!activeBoards.length) return;
-    Promise.all(activeBoards.map(b => namespaceApi.stats(b.id).catch(() => null)))
+    if (tab !== 'all') return;
+    setAllLoading(true);
+    setAllError(null);
+    namespaceApi.list(allPage, PAGE_SIZE)
+      .then(res => {
+        setAllBoards(res.items);
+        setAllTotal(res.total);
+      })
+      .catch(e => setAllError(e instanceof Error ? e.message : String(e)))
+      .finally(() => setAllLoading(false));
+  }, [tab, allPage]);
+
+  // Fetch stats for visible boards
+  useEffect(() => {
+    const visible = tab === 'all' ? allBoards : pagedFollowed();
+    if (!visible.length) return;
+    Promise.all(visible.map(b => namespaceApi.stats(b.id).catch(() => null)))
       .then(results => {
         const map: Record<string, NamespaceStats> = {};
-        results.forEach((s, i) => { if (s) map[activeBoards[i].id] = s; });
-        setStatsMap(map);
+        results.forEach((s, i) => { if (s) map[visible[i].id] = s; });
+        setStatsMap(prev => ({ ...prev, ...map }));
       });
-  }, [boards]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [tab, allBoards, followedBoards, followedPage, allPage]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  function pagedFollowed(): Namespace[] {
+    if (!followedBoards) return [];
+    const start = (followedPage - 1) * PAGE_SIZE;
+    return followedBoards.slice(start, start + PAGE_SIZE);
+  }
 
   const handleToggleFollow = useCallback(async (boardId: string) => {
     const isFollowed = followedIds.has(boardId);
-    // Optimistic update
     setFollowedIds(prev => {
       const next = new Set(prev);
       if (isFollowed) { next.delete(boardId); } else { next.add(boardId); }
@@ -57,9 +85,8 @@ export default function BoardList() {
       } else {
         await namespaceApi.follow(boardId);
       }
-      ctxRefetch(); // notify Layout sidebar to refresh
+      ctxRefetch();
     } catch {
-      // Revert on failure
       setFollowedIds(prev => {
         const next = new Set(prev);
         if (isFollowed) { next.add(boardId); } else { next.delete(boardId); }
@@ -68,13 +95,21 @@ export default function BoardList() {
     }
   }, [followedIds, ctxRefetch]);
 
-  if (loading) return <Loading />;
-  if (error) return <ErrorMsg message={error} onRetry={refetch} />;
-  if (!activeBoards.length) return <EmptyState icon="📂" message="还没有板块" />;
+  // Determine display data based on tab
+  const isFollowedTab = tab === 'followed';
+  const displayBoards = isFollowedTab ? pagedFollowed() : allBoards;
+  const displayTotal = isFollowedTab ? (followedBoards?.length ?? 0) : allTotal;
+  const currentPage = isFollowedTab ? followedPage : allPage;
+  const totalPages = Math.ceil(displayTotal / PAGE_SIZE);
+  const isLoading = isFollowedTab ? !followedBoards : allLoading;
 
-  const displayBoards = tab === 'followed'
-    ? activeBoards.filter(b => followedIds.has(b.id))
-    : activeBoards;
+  function handlePageChange(p: number) {
+    if (isFollowedTab) { setFollowedPage(p); } else { setAllPage(p); }
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  if (isLoading && currentPage === 1) return <Loading />;
+  if (!isFollowedTab && allError) return <ErrorMsg message={allError} onRetry={() => setAllPage(1)} />;
 
   return (
     <div>
@@ -83,37 +118,61 @@ export default function BoardList() {
         <div className="tabs" style={{ marginBottom: 0 }}>
           <button
             className={`tab ${tab === 'followed' ? 'tab--active' : ''}`}
-            onClick={() => setTab('followed')}
+            onClick={() => { setTab('followed'); setFollowedPage(1); }}
           >
             我关注的
           </button>
           <button
             className={`tab ${tab === 'all' ? 'tab--active' : ''}`}
-            onClick={() => setTab('all')}
+            onClick={() => { setTab('all'); setAllPage(1); }}
           >
             全部板块
           </button>
         </div>
       </div>
 
-      {displayBoards.length === 0 && tab === 'followed' ? (
+      {displayBoards.length === 0 && isFollowedTab ? (
         <EmptyState
           icon="⭐"
           message="还没有关注任何板块"
           action={<button className="btn-secondary" onClick={() => setTab('all')}>浏览全部板块</button>}
         />
       ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 16 }}>
-          {displayBoards.map(b => (
-            <BoardCard
-              key={b.id}
-              board={b}
-              stats={statsMap[b.id]}
-              followed={followedIds.has(b.id)}
-              onToggleFollow={handleToggleFollow}
-            />
-          ))}
-        </div>
+        <>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 16 }}>
+            {displayBoards.map(b => (
+              <BoardCard
+                key={b.id}
+                board={b}
+                stats={statsMap[b.id]}
+                followed={followedIds.has(b.id)}
+                onToggleFollow={handleToggleFollow}
+              />
+            ))}
+          </div>
+
+          {totalPages > 1 && (
+            <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 8, marginTop: 24 }}>
+              <button
+                className="btn-secondary btn-sm"
+                disabled={currentPage <= 1}
+                onClick={() => handlePageChange(currentPage - 1)}
+              >
+                上一页
+              </button>
+              <span style={{ fontSize: 13, color: 'var(--text-sec)' }}>
+                {currentPage} / {totalPages}
+              </span>
+              <button
+                className="btn-secondary btn-sm"
+                disabled={currentPage >= totalPages}
+                onClick={() => handlePageChange(currentPage + 1)}
+              >
+                下一页
+              </button>
+            </div>
+          )}
+        </>
       )}
     </div>
   );
