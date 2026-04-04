@@ -86,6 +86,7 @@ export default function ThreadDetail() {
   const [streamingContent, setStreamingContent] = useState('');
   const esRef = useRef<EventSource | null>(null);
   const viewRecorded = useRef(false);
+  const autoConnectAttempted = useRef(false);
 
   // Record view once per page visit (ref guard prevents StrictMode double-fire)
   useEffect(() => {
@@ -166,7 +167,6 @@ export default function ThreadDetail() {
       try {
         const msg = JSON.parse(event.data as string);
         if (msg.skipped) {
-          // AI answer already exists or in progress, just refresh comments
           es.close();
           esRef.current = null;
           setStreamPhase('done');
@@ -207,12 +207,22 @@ export default function ThreadDetail() {
     connectStream(true); // force=true to regenerate
   }
 
-  // Auto-connect streaming for new threads with no comments
+  // Detect placeholder AI comment (means AI is generating in another session)
+  const AI_PLACEHOLDER = '<!-- ai_generating -->';
+  const hasPlaceholderAi = !!(comments?.some(c => c.is_ai && c.content === AI_PLACEHOLDER));
+
+  // Auto-connect streaming for new threads with no comments,
+  // OR when a placeholder AI comment exists (previous stream was interrupted).
+  // autoConnectAttempted ref prevents infinite re-triggering if backend returns "skipped".
   useEffect(() => {
-    if (thread?.status !== 'OPEN' || (thread?.comment_count ?? 0) > 0) return;
-    connectStream(); // force=false, backend will skip if AI answer exists or in progress
+    if (thread?.status !== 'OPEN') return;
+    if (autoConnectAttempted.current) return;
+    const noComments = (thread?.comment_count ?? 0) === 0;
+    if (!noComments && !hasPlaceholderAi) return;
+    autoConnectAttempted.current = true;
+    connectStream(); // force=false, backend will skip if real AI answer exists or in progress
     return () => { esRef.current?.close(); esRef.current = null; };
-  }, [thread?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [thread?.id, hasPlaceholderAi]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (loading) return <Loading />;
   if (error) return <ErrorMsg message={error} />;
@@ -277,16 +287,20 @@ export default function ThreadDetail() {
         <StreamingAiComment phase={streamPhase} content={streamingContent} />
       )}
 
-      {/* Connecting message for new threads before first SSE event arrives */}
-      {thread.status === 'OPEN' && (!comments || comments.length === 0) && streamPhase === 'idle' && aiLoading && (
+      {/* Connecting / placeholder message */}
+      {thread.status === 'OPEN' && streamPhase === 'idle' && (aiLoading || hasPlaceholderAi) && (
         <div className="card" style={{ padding: 16, marginBottom: 12, textAlign: 'center', color: 'var(--text-sec)', fontSize: 13 }}>
-          <div style={{ color: 'var(--text-ter)' }}>正在连接 AI 服务...</div>
+          <div style={{ color: 'var(--text-ter)' }}>
+            {aiLoading ? '正在连接 AI 服务...' : '🤖 AI 正在生成回答，请稍候...'}
+          </div>
         </div>
       )}
 
       {comments?.filter(c => {
         // Hide old AI comment while streaming a new one (regeneration)
         if ((streamPhase === 'searching' || streamPhase === 'generating') && c.is_ai) return false;
+        // Hide placeholder AI comment (generation in progress)
+        if (c.is_ai && c.content === AI_PLACEHOLDER) return false;
         return true;
       }).map(c => (
         <CommentCard key={c.id} comment={c} thread={thread} onAdopt={() => handleAdopt(c.id)} onDelete={refetchComments} isAdmin={isCurrentBoardAdmin} canAdopt={isAuthor || isCurrentBoardAdmin} onReply={() => setReplyTarget(c)} />
