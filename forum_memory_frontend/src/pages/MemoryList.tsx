@@ -326,11 +326,13 @@ function highlight(text: string, kw: string): React.ReactNode {
 }
 
 function MemoryRow({ memory, keyword, onRestored }: { memory: Memory; keyword: string; onRestored: () => void }) {
+  const { boardId } = useParams<{ boardId?: string }>();
   const { addToast } = useToast();
   const [restoring, setRestoring] = useState(false);
   const lifecycleStatus = (memory.status || memory.lifecycle_status) as string | undefined;
   const canRestore = lifecycleStatus === 'COLD' || lifecycleStatus === 'ARCHIVED';
   const preview = memory.content.length > 160 ? memory.content.slice(0, 160) + '…' : memory.content;
+  const detailPath = boardId ? `/admin/boards/${boardId}/memories/${memory.id}` : `/admin/memories/${memory.id}`;
 
   async function handleRestore(e: React.MouseEvent) {
     e.preventDefault();
@@ -350,7 +352,7 @@ function MemoryRow({ memory, keyword, onRestored }: { memory: Memory; keyword: s
   return (
     <div className="memory-row">
       <div style={{ flex: 1 }}>
-        <Link to={`/admin/memories/${memory.id}`} style={{ textDecoration: 'none', color: 'var(--text)', fontSize: 13, lineHeight: 1.6, display: 'block', marginBottom: 6 }}>
+        <Link to={detailPath} style={{ textDecoration: 'none', color: 'var(--text)', fontSize: 13, lineHeight: 1.6, display: 'block', marginBottom: 6 }}>
           {highlight(preview, keyword)}
         </Link>
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>

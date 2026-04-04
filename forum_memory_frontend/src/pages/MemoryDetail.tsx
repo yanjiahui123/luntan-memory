@@ -7,8 +7,9 @@ import { Loading, ErrorMsg, AuthorityBadge, LifecycleBadge, Badge, QualityDot, C
 import type { MemoryAuthority, MemoryLifecycle } from '../types';
 
 export default function MemoryDetail() {
-  const { memoryId } = useParams<{ memoryId: string }>();
+  const { memoryId, boardId } = useParams<{ memoryId: string; boardId?: string }>();
   const navigate = useNavigate();
+  const memoryListPath = boardId ? `/admin/boards/${boardId}/memories` : '/admin/memories';
   const { data: memory, loading, error, refetch } = useAsync(() => memoryApi.get(memoryId!), [memoryId]);
   const { data: fbSummary } = useAsync(
     () => feedbackApi.summary(memoryId!).catch(err => {
@@ -50,7 +51,7 @@ export default function MemoryDetail() {
   async function handleDelete() {
     await memoryApi.delete(memoryId!);
     setShowDelete(false);
-    navigate('/admin/memories');
+    navigate(memoryListPath);
   }
 
   if (loading) return <Loading />;
@@ -62,7 +63,7 @@ export default function MemoryDetail() {
   return (
     <div>
       <div className="breadcrumb">
-        <Link to="/admin/memories">记忆管理</Link> <span>›</span> <span>详情</span>
+        <Link to={memoryListPath}>记忆管理</Link> <span>›</span> <span>详情</span>
       </div>
 
       <div className="detail-layout">

@@ -221,6 +221,8 @@ function QualityAlertTab({ boardId }: { boardId?: string }) {
 }
 
 function QualityAlertItem({ memory, onDismiss }: { memory: QualityAlert; onDismiss: () => void }) {
+  const { boardId } = useParams<{ boardId?: string }>();
+  const detailPath = boardId ? `/admin/boards/${boardId}/memories/${memory.id}` : `/admin/memories/${memory.id}`;
   return (
     <div className="card pending-item" style={{ borderLeftColor: 'var(--red)' }}>
       <div style={{ display: 'flex', gap: 6, marginBottom: 8, alignItems: 'center', flexWrap: 'wrap' }}>
@@ -242,7 +244,7 @@ function QualityAlertItem({ memory, onDismiss }: { memory: QualityAlert; onDismi
 
       <div className="pending-item__actions">
         <button className="btn-success btn-sm" onClick={onDismiss}>✓ 已复核，消除告警</button>
-        <Link to={`/admin/memories/${memory.id}`}>
+        <Link to={detailPath}>
           <button className="btn-secondary btn-sm">查看详情</button>
         </Link>
       </div>
@@ -358,13 +360,15 @@ function ContradictionPair({
 }
 
 function MemorySide({ label, memory }: { label: string; memory: Memory | undefined }) {
+  const { boardId } = useParams<{ boardId?: string }>();
+  const detailPath = memory ? (boardId ? `/admin/boards/${boardId}/memories/${memory.id}` : `/admin/memories/${memory.id}`) : '#';
   return (
     <div style={{ fontSize: 13, lineHeight: 1.7, padding: 10, background: 'var(--surface)', borderRadius: 'var(--radius)' }}>
       <div style={{ fontSize: 11, color: 'var(--text-ter)', marginBottom: 4 }}>{label}</div>
       {memory ? memory.content : <span style={{ color: 'var(--text-ter)' }}>加载中...</span>}
       {memory && (
         <div style={{ marginTop: 6 }}>
-          <Link to={`/admin/memories/${memory.id}`} style={{ fontSize: 12 }}>查看详情 →</Link>
+          <Link to={detailPath} style={{ fontSize: 12 }}>查看详情 →</Link>
         </div>
       )}
     </div>
@@ -378,6 +382,8 @@ function PendingItem({ memory, checked, onToggle, onPromote, onDiscard }: {
   onPromote: () => void;
   onDiscard: () => void;
 }) {
+  const { boardId } = useParams<{ boardId?: string }>();
+  const detailPath = boardId ? `/admin/boards/${boardId}/memories/${memory.id}` : `/admin/memories/${memory.id}`;
   const isPending = memory.pending_human_confirm;
   const isLowQuality = memory.quality_score < 0.3;
   let borderColor = 'var(--accent)';
@@ -412,7 +418,7 @@ function PendingItem({ memory, checked, onToggle, onPromote, onDiscard }: {
               <button className="btn-success btn-sm" onClick={onPromote}>✓ 确认入库 (晋升 LOCKED)</button>
             )}
             <button className="btn-danger btn-sm" onClick={onDiscard}>丢弃</button>
-            <Link to={`/admin/memories/${memory.id}`}>
+            <Link to={detailPath}>
               <button className="btn-secondary btn-sm">查看详情</button>
             </Link>
           </div>
