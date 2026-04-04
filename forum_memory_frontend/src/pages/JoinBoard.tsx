@@ -2,11 +2,13 @@ import React, { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { inviteApi } from '../api/client';
 import { useAsync } from '../hooks/useAsync';
+import { useFollow } from '../contexts/FollowContext';
 import { Loading, ErrorMsg } from '../components/UI';
 
 export default function JoinBoard() {
   const { code } = useParams<{ code: string }>();
   const navigate = useNavigate();
+  const { refetchFollowed } = useFollow();
   const [joining, setJoining] = useState(false);
   const [errMsg, setErrMsg] = useState('');
   const [done, setDone] = useState(false);
@@ -23,6 +25,7 @@ export default function JoinBoard() {
     try {
       const result = await inviteApi.join(code);
       setDone(true);
+      refetchFollowed();
       setTimeout(() => navigate(`/boards/${result.namespace_id}/threads`), 1500);
     } catch (err) {
       setErrMsg(err instanceof Error ? err.message : String(err));
