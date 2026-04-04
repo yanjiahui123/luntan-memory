@@ -176,7 +176,11 @@ def hybrid_search(
     status_filter: str = "ACTIVE",
     index_name: str | None = None,
 ) -> list[dict]:
-    """BM25 + knn hybrid search.
+    """BM25 + KNN hybrid search (union mode).
+
+    BM25 as ``should`` (scoring boost, not hard filter) so KNN-only matches
+    are preserved.  ``quality_score`` is mixed in via function_score to
+    surface high-quality memories earlier.
 
     Returns [{"memory_id": str, "score": float}, ...]
     """
@@ -191,20 +195,46 @@ def hybrid_search(
         {"term": {"status": status_filter}},
     ]
 
+    # BM25 as should: contributes score but does not exclude KNN-only hits
+    bm25_clause: dict = {
+        "match": {
+            "content": {
+                "query": query_text,
+                "minimum_should_match": "30%",
+            },
+        },
+    }
+
     try:
         resp = es.search(
             index=name,
             size=limit,
             query={
-                "bool": {
-                    "must": {"match": {"content": query_text}},
-                    "filter": filter_clauses,
-                }
+                "function_score": {
+                    "query": {
+                        "bool": {
+                            "should": [bm25_clause],
+                            "filter": filter_clauses,
+                        },
+                    },
+                    "functions": [
+                        {
+                            "field_value_factor": {
+                                "field": "quality_score",
+                                "modifier": "none",
+                                "missing": 0.5,
+                            },
+                            "weight": 5,
+                        },
+                    ],
+                    "boost_mode": "sum",
+                    "score_mode": "sum",
+                },
             },
             knn={
                 "field": "embedding",
                 "query_vector": query_embedding,
-                "k": limit,
+                "k": min(limit * 2, settings.es_knn_num_candidates),
                 "num_candidates": settings.es_knn_num_candidates,
                 "filter": {"bool": {"filter": filter_clauses}},
             },
