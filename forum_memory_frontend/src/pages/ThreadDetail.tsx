@@ -211,22 +211,18 @@ export default function ThreadDetail() {
   const AI_PLACEHOLDER = '<!-- ai_generating -->';
   const hasPlaceholderAi = !!(comments?.some(c => c.is_ai && c.content === AI_PLACEHOLDER));
 
-  // Auto-connect streaming for new threads with no comments
+  // Auto-connect streaming for:
+  // - new threads with no comments (first generation)
+  // - placeholder exists (generation in progress, resume via SSE)
   useEffect(() => {
     if (thread?.status !== 'OPEN') return;
     if (autoConnectAttempted.current) return;
-    if ((thread?.comment_count ?? 0) > 0) return;
+    const noComments = (thread?.comment_count ?? 0) === 0;
+    if (!noComments && !hasPlaceholderAi) return;
     autoConnectAttempted.current = true;
     connectStream();
     return () => { esRef.current?.close(); esRef.current = null; };
-  }, [thread?.id]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Poll for completion when placeholder exists (backend generating in background)
-  useEffect(() => {
-    if (!hasPlaceholderAi) return;
-    const timer = setInterval(() => { refetchComments(); }, 3000);
-    return () => clearInterval(timer);
-  }, [hasPlaceholderAi]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [thread?.id, hasPlaceholderAi]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (loading) return <Loading />;
   if (error) return <ErrorMsg message={error} />;
