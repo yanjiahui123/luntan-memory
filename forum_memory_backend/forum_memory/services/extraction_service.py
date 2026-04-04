@@ -213,9 +213,11 @@ def _execute_pipeline(session: Session, ctx: SourceContext, record: ExtractionRe
 
     memory_ids: list[UUID] = []
     batch_created: list[dict] = []
+    action_counts: dict[str, int] = {}
 
     for fact in facts:
-        mid, _action = process_one_fact(session, llm, ctx, fact, batch_created)
+        mid, action = process_one_fact(session, llm, ctx, fact, batch_created)
+        action_counts[action] = action_counts.get(action, 0) + 1
         if mid:
             memory_ids.append(mid)
             batch_created.append({
@@ -226,6 +228,10 @@ def _execute_pipeline(session: Session, ctx: SourceContext, record: ExtractionRe
                 "knowledge_type": fact.get("knowledge_type"),
             })
 
+    logger.info(
+        "AUDN summary for %s/%s: %d facts → %d memories, decisions: %s",
+        ctx.source_type, ctx.source_id, len(facts), len(memory_ids), action_counts,
+    )
     return memory_ids
 
 
@@ -317,6 +323,11 @@ def process_one_fact(
 
     result = _retry_audn_if_needed(llm, msgs, result, ctx)
     result = _validate_audn_target(result, similar, ctx)
+
+    logger.info(
+        "AUDN decision for source %s: action=%s target=%s reason=%s",
+        ctx.source_id, result.action.value, result.target_id, result.reason,
+    )
 
     data = _build_memory_create(ctx, fact)
     memory = apply_audn(session, data, result)
