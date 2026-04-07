@@ -40,7 +40,7 @@ export default function NotificationBell() {
 
   useEffect(() => {
     fetchUnread();
-    const timer = window.setInterval(fetchUnread, 30_000);
+    const timer = window.setInterval(() => {fetchUnread()}, 30_000);
     return () => window.clearInterval(timer);
   }, [fetchUnread]);
 

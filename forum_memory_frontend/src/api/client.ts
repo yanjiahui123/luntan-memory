@@ -9,20 +9,7 @@ import type {
   NamespaceMember, NamespaceInvite, UserSearchResult, DeptOption,
 } from '../types';
 
-const BASE = '/api/v1';
-
-/** JWT token management */
-export function getToken(): string {
-  return localStorage.getItem('jwt_token') || '';
-}
-
-export function setToken(token: string): void {
-  localStorage.setItem('jwt_token', token);
-}
-
-export function clearToken(): void {
-  localStorage.removeItem('jwt_token');
-}
+const BASE = import.meta.env.VITE_APP_API_BASE_URL;
 
 /**
  * Build auth headers.
@@ -30,20 +17,18 @@ export function clearToken(): void {
  * sent automatically by the browser via credentials: 'include'.
  */
 function authHeaders(): Record<string, string> {
-  const token = getToken();
-  if (token) {
-    return { Authorization: `Bearer ${token}` };
-  }
   return {};
 }
 
+export const w3loginProd: () => void = () => {
+  const redirectUrl = encodeURIComponent(window.location.href);
+  window.location.href = `https://login.yjh.com/login1/?redirect=${redirectUrl}`;
+};
+
 /** Handle 401 responses: clear stale token and redirect */
 function handleUnauthorized(): void {
-  clearToken();
   // Avoid redirect loops: only redirect if not already on login-related page
-  if (!window.location.pathname.startsWith('/login')) {
-    window.location.href = '/boards';
-  }
+  w3loginProd();
 }
 
 interface RequestOptions extends RequestInit {
