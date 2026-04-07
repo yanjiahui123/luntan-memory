@@ -41,7 +41,7 @@ function BoardConfigPanel({ boardId, isSuperAdmin, isAdmin }: { boardId: string;
   if (loading || !board) return <Loading />;
 
   const accessMode = (board.access_mode || 'public').toLowerCase();
-  const showMembers = accessMode === 'restricted' || accessMode === 'private';
+  const showMembers = accessMode === 'private';
 
   const tabs = [
     { key: 'info', label: '基本信息' },
@@ -102,7 +102,6 @@ function InfoTab({ board, onUpdate }: { board: Namespace; onUpdate: () => void }
         <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6 }}>访问模式</label>
         <select value={form.access_mode} onChange={e => setForm(f => ({ ...f, access_mode: e.target.value }))}>
           <option value="public">公开 — 所有人可查看和发帖</option>
-          <option value="restricted">限制 — 所有人可查看，仅成员可发帖</option>
           <option value="private">私密 — 仅成员可查看和发帖</option>
         </select>
         {form.access_mode !== 'public' && (

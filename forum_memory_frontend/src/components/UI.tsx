@@ -49,12 +49,8 @@ export function PriorityBadge({ priority }: { priority: string | null | undefine
 
 export function AccessModeBadge({ mode }: { mode: string | null | undefined }) {
   if (!mode || mode === 'public') return null;
-  const cfg: Record<string, { type: string; label: string }> = {
-    restricted: { type: 'amber', label: '🔒 受限' },
-    private: { type: 'red', label: '🔐 私有' },
-  };
-  const c = cfg[mode] ?? { type: 'gray', label: mode };
-  return <Badge type={c.type}>{c.label}</Badge>;
+  if (mode === 'private') return <Badge type="red">🔐 私密</Badge>;
+  return <Badge type="gray">{mode}</Badge>;
 }
 
 // ── State indicators ───────────────────────────────────────────────────────
