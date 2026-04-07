@@ -18,6 +18,7 @@ const GLOBAL_ADMIN_NAV: NavItem[] = [
   { path: '/admin/audit', label: '审计日志', icon: '📜' },
   { path: '/admin/users', label: '用户管理', icon: '👥' },
   { path: '/admin/settings', label: '板块配置', icon: '⚙️' },
+  { path: '/admin/share-links', label: '分享链接', icon: '🔗' },
 ];
 
 const BOARD_ADMIN_GLOBAL_NAV: NavItem[] = [

@@ -247,6 +247,27 @@ export interface NamespaceInvite {
   created_at: string;
 }
 
+export interface BoardShareLinkNamespaceInfo {
+  namespace_id: string;
+  display_name: string;
+}
+
+export interface BoardShareLink {
+  id: string;
+  code: string;
+  name: string;
+  use_count: number;
+  is_active: boolean;
+  created_at: string;
+  namespaces: BoardShareLinkNamespaceInfo[];
+}
+
+export interface BoardShareLinkInfo {
+  code: string;
+  name: string;
+  namespaces: BoardShareLinkNamespaceInfo[];
+}
+
 export interface UserSearchResult {
   w3Account: string;
   last_name: string;

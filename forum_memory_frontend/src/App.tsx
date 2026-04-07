@@ -22,6 +22,8 @@ import UserManagement from './pages/UserManagement';
 import AuditLog from './pages/AuditLog';
 import MyPosts from './pages/MyPosts';
 import JoinBoard from './pages/JoinBoard';
+import JoinShareLink from './pages/JoinShareLink';
+import ShareLinkManager from './pages/ShareLinkManager';
 
 export default function App() {
   return (
@@ -41,6 +43,7 @@ export default function App() {
           <Route path="/search" element={<SearchResults />} />
           <Route path="/my-posts" element={<MyPosts />} />
           <Route path="/join/:code" element={<JoinBoard />} />
+          <Route path="/share/:code" element={<JoinShareLink />} />
 
           {/* Admin routes — protected by AdminGuard */}
           <Route element={<AdminGuard />}>
@@ -53,6 +56,7 @@ export default function App() {
             <Route path="/admin/import" element={<ImportTopics />} />
             <Route path="/admin/users" element={<UserManagement />} />
             <Route path="/admin/audit" element={<AuditLog />} />
+            <Route path="/admin/share-links" element={<ShareLinkManager />} />
 
             {/* 板块级管理路由（板块管理员或超级管理员进入特定板块后台） */}
             <Route path="/admin/boards/:boardId" element={<AdminDashboard />} />

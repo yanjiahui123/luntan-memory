@@ -352,6 +352,18 @@ export const inviteApi = {
   join: (code: string) => post<{ namespace_id: string; namespace_display_name: string; role: string }>(`/invites/${code}/join`),
 };
 
+// ── Share Links ────────────────────────────────
+export const shareLinkApi = {
+  create: (data: { name: string; namespace_ids: string[] }) =>
+    post<import('../types').BoardShareLink>('/share-links', data),
+  list: () => get<import('../types').BoardShareLink[]>('/share-links'),
+  revoke: (linkId: string) => del<null>(`/share-links/${linkId}`),
+  getInfo: (code: string) =>
+    get<import('../types').BoardShareLinkInfo>(`/share-links/code/${code}`),
+  join: (code: string) =>
+    post<{ joined: import('../types').BoardShareLinkNamespaceInfo[]; count: number }>(`/share-links/code/${code}/join`),
+};
+
 // ── Uploads ──────────────────────────────────
 export const uploadApi = {
   upload: (file: File): Promise<UploadResponse> => {

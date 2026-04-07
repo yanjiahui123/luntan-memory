@@ -13,6 +13,7 @@ from forum_memory.api.auth import router as auth_router
 from forum_memory.api.relations import router as relation_router
 from forum_memory.api.notifications import router as notif_router
 from forum_memory.api.members import router as member_router
+from forum_memory.api.share_links import router as share_link_router
 
 
 def register_routers(app: FastAPI) -> None:
@@ -28,3 +29,4 @@ def register_routers(app: FastAPI) -> None:
     app.include_router(relation_router, prefix=prefix)
     app.include_router(notif_router, prefix=prefix)
     app.include_router(member_router, prefix=prefix)
+    app.include_router(share_link_router, prefix=prefix)
