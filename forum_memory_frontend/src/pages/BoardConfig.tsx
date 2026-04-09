@@ -624,16 +624,20 @@ function DeptAddSection({ boardId, onAdded }: { boardId: string; onAdded: () => 
   return (
     <div>
       <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 8 }}>
-        {departments.length > 0 ? (
-          <select value={deptCode} onChange={e => setDeptCode(e.target.value)} style={{ flex: 1 }}>
-            <option value="">选择部门...</option>
-            {departments.map(d => (
-              <option key={d.dept_code} value={d.dept_code}>{d.dept_path} ({d.dept_code})</option>
-            ))}
-          </select>
-        ) : (
-          <input placeholder="输入部门代码" value={deptCode} onChange={e => setDeptCode(e.target.value)} style={{ flex: 1 }} />
-        )}
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 4 }}>
+          {departments.length > 0 && (
+            <select
+              onChange={e => { if (e.target.value) setDeptCode(e.target.value); }}
+              style={{ fontSize: 13 }}
+            >
+              <option value="">从已知部门快速选择...</option>
+              {departments.map(d => (
+                <option key={d.dept_code} value={d.dept_code}>{d.dept_path} ({d.dept_code})</option>
+              ))}
+            </select>
+          )}
+          <input placeholder="输入部门代码" value={deptCode} onChange={e => setDeptCode(e.target.value)} />
+        </div>
         <select value={role} onChange={e => setRole(e.target.value)} style={{ width: 'auto', fontSize: 13 }}>
           <option value="member">成员</option>
           <option value="moderator">管理员</option>
