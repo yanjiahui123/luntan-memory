@@ -30,10 +30,7 @@ export default function AdminGuard() {
       return <Navigate to="/boards" replace />;
     }
 
-    // /admin 仪表盘：允许访问（显示多板块概览）
-    if (location.pathname === '/admin' && (!myNamespaces || myNamespaces.length === 0)) {
-      return <Navigate to="/boards" replace />;
-    }
+    // /admin 仪表盘：始终允许板块管理员访问（AdminDashboard 自行处理空板块情况）
   }
 
   return <Outlet />;
