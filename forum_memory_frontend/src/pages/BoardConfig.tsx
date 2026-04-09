@@ -597,6 +597,7 @@ function DeptAddSection({ boardId, onAdded }: { boardId: string; onAdded: () => 
   const [role, setRole] = useState('member');
   const [departments, setDepartments] = useState<DeptOption[]>([]);
   const [result, setResult] = useState<{ added: number; skipped: number; total_in_dept: number } | null>(null);
+  const [errorMsg, setErrorMsg] = useState('');
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -607,13 +608,14 @@ function DeptAddSection({ boardId, onAdded }: { boardId: string; onAdded: () => 
     if (!deptCode.trim()) return;
     setLoading(true);
     setResult(null);
+    setErrorMsg('');
     try {
       const res = await memberApi.batchAddByDept(boardId, deptCode.trim(), role);
       setResult(res);
       onAdded();
     } catch (err) {
       setResult(null);
-      alert(err instanceof Error ? err.message : String(err));
+      setErrorMsg(err instanceof Error ? err.message : String(err));
     } finally {
       setLoading(false);
     }
@@ -640,6 +642,9 @@ function DeptAddSection({ boardId, onAdded }: { boardId: string; onAdded: () => 
           {loading ? '添加中...' : '按部门添加'}
         </button>
       </div>
+      {errorMsg && (
+        <p style={{ fontSize: 13, marginTop: 4, color: 'var(--red)' }}>{errorMsg}</p>
+      )}
       {result && (
         <p style={{ fontSize: 13, marginTop: 4 }}>
           部门共 {result.total_in_dept} 人，
@@ -720,7 +725,8 @@ function InviteSection({ boardId }: { boardId: string }) {
         </div>
       )}
 
-      {loading ? <Loading /> : (invites?.length ?? 0) > 0 ? (
+      {loading && <Loading />}
+      {!loading && (invites?.length ?? 0) > 0 && (
         <table className="dict-table">
           <thead><tr><th>邀请码</th><th>角色</th><th>已用/上限</th><th>过期时间</th><th style={{ width: 100 }}>操作</th></tr></thead>
           <tbody>
@@ -740,7 +746,8 @@ function InviteSection({ boardId }: { boardId: string }) {
             ))}
           </tbody>
         </table>
-      ) : (
+      )}
+      {!loading && (invites?.length ?? 0) === 0 && (
         <p style={{ color: 'var(--text-ter)', fontSize: 13 }}>暂无有效邀请链接</p>
       )}
     </div>

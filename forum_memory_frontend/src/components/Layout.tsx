@@ -47,13 +47,15 @@ function ForumSidebar({ followedBoards, currentBoardId, currentUser, locationPat
     <>
       <div className="sidebar__section">★ 我关注的</div>
       <div style={{ maxHeight: 'calc(100vh - 220px)', overflowY: 'auto' }}>
-        {followedBoards === null ? (
+        {followedBoards === null && (
           <div style={{ padding: '8px 20px', fontSize: 12, color: 'var(--text-ter)' }}>加载中...</div>
-        ) : followedBoards.length === 0 ? (
+        )}
+        {followedBoards !== null && followedBoards.length === 0 && (
           <div style={{ padding: '8px 20px', fontSize: 12, color: 'var(--text-ter)' }}>
             还没有关注板块
           </div>
-        ) : (
+        )}
+        {followedBoards !== null && followedBoards.length > 0 && (
           followedBoards.map(b => (
             <Link
               key={b.id}

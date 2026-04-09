@@ -361,7 +361,8 @@ function ContradictionPair({
 
 function MemorySide({ label, memory }: { label: string; memory: Memory | undefined }) {
   const { boardId } = useParams<{ boardId?: string }>();
-  const detailPath = memory ? (boardId ? `/admin/boards/${boardId}/memories/${memory.id}` : `/admin/memories/${memory.id}`) : '#';
+  const memoryBase = boardId ? `/admin/boards/${boardId}/memories` : '/admin/memories';
+  const detailPath = memory ? `${memoryBase}/${memory.id}` : '#';
   return (
     <div style={{ fontSize: 13, lineHeight: 1.7, padding: 10, background: 'var(--surface)', borderRadius: 'var(--radius)' }}>
       <div style={{ fontSize: 11, color: 'var(--text-ter)', marginBottom: 4 }}>{label}</div>
