@@ -36,15 +36,13 @@ function boardAdminNav(boardId: string): NavItem[] {
 }
 
 /* ── Forum sidebar: followed boards + quick links ─── */
-function ForumSidebar({ followedBoards, currentBoardId, currentUser, locationPath, locationSearch, onClose }: {
+function ForumSidebar({ followedBoards, currentBoardId, currentUser, locationPath, onClose }: {
   followedBoards: Namespace[] | null;
   currentBoardId: string | null;
   currentUser: User | null;
   locationPath: string;
-  locationSearch: string;
   onClose: () => void;
 }) {
-  const isOnAllBoards = locationPath === '/boards' && locationSearch.includes('view=all');
   return (
     <>
       <div className="sidebar__section">★ 我关注的</div>
@@ -69,13 +67,6 @@ function ForumSidebar({ followedBoards, currentBoardId, currentUser, locationPat
         )}
       </div>
       <div className="sidebar__section" style={{ marginTop: 12 }}>快捷入口</div>
-      <Link
-        to="/boards?view=all"
-        className={`sidebar__item ${isOnAllBoards ? 'sidebar__item--active' : ''}`}
-        onClick={onClose}
-      >
-        📋 浏览板块
-      </Link>
       {currentUser && (
         <Link
           to="/my-posts"
@@ -246,7 +237,7 @@ export default function Layout() {
         {isAdminPage ? (
           <AdminSidebar nav={adminNav} sidebarTitle={adminTitle} activeBoardId={activeBoardId} isBoardAdmin={isBoardAdmin} isAdmin={isAdmin} myNamespaces={myNamespaces} locationPath={location.pathname} onClose={closeSidebar} />
         ) : (
-          <ForumSidebar followedBoards={followedBoards} currentBoardId={currentBoardId} currentUser={currentUser} locationPath={location.pathname} locationSearch={location.search} onClose={closeSidebar} />
+          <ForumSidebar followedBoards={followedBoards} currentBoardId={currentBoardId} currentUser={currentUser} locationPath={location.pathname} onClose={closeSidebar} />
         )}
       </aside>
 

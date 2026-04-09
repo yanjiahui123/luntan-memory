@@ -116,9 +116,6 @@ export default function BoardList() {
     <div>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
         <h1 className="page-title" style={{ marginBottom: 0 }}>我的板块</h1>
-        <button className="btn-secondary btn-sm" onClick={() => navigate('/boards?view=all')}>
-          浏览板块
-        </button>
       </div>
 
       {displayBoards.length === 0 ? (
