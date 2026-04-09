@@ -282,7 +282,6 @@ function CreateBoardModal({ onClose, onCreated }: { onClose: () => void; onCreat
             <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6 }}>访问模式</label>
             <select value={form.access_mode} onChange={e => setForm(f => ({ ...f, access_mode: e.target.value }))}>
               <option value="public">公开 — 所有人可查看和发帖</option>
-              <option value="restricted">限制 — 所有人可查看，仅成员可发帖</option>
               <option value="private">私密 — 仅成员可查看和发帖</option>
             </select>
           </div>
