@@ -159,11 +159,9 @@ export default function ThreadDetail() {
     const token = getToken();
     const params = new URLSearchParams();
     if (token) params.set('token', token);
+    if (force) params.set('force', 'true');
     const qs = params.toString() ? `?${params}` : '';
-    const streamPath = force
-      ? `/api/v1/threads/${threadId}/ai-answer/regenerate/stream${qs}`
-      : `/api/v1/threads/${threadId}/ai-answer/stream${qs}`;
-    const es = new EventSource(streamPath);
+    const es = new EventSource(`/api/v1/threads/${threadId}/ai-answer/stream${qs}`);
     esRef.current = es;
     es.onmessage = (event) => {
       try {
