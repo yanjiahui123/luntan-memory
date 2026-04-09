@@ -4,7 +4,7 @@ export interface AsyncState<T> {
   data: T | null;
   loading: boolean;
   error: string | null;
-  refetch: () => void;
+  refetch: () => Promise<void>;
 }
 
 export function useAsync<T>(asyncFn: (signal: AbortSignal) => Promise<T>, deps: unknown[] = []): AsyncState<T> {
@@ -14,7 +14,7 @@ export function useAsync<T>(asyncFn: (signal: AbortSignal) => Promise<T>, deps: 
   const abortRef = useRef<AbortController | null>(null);
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  const execute = useCallback(() => {
+  const execute = useCallback((): Promise<void> => {
     // Abort any previous in-flight request
     abortRef.current?.abort();
     const controller = new AbortController();
@@ -23,7 +23,7 @@ export function useAsync<T>(asyncFn: (signal: AbortSignal) => Promise<T>, deps: 
     setLoading(true);
     setError(null);
 
-    asyncFn(controller.signal)
+    return asyncFn(controller.signal)
       .then(result => {
         if (!controller.signal.aborted) {
           setData(result);

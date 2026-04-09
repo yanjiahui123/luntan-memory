@@ -154,7 +154,7 @@ export default function ThreadDetail() {
   function connectStream(force = false) {
     if (esRef.current) esRef.current.close();
     setStreamingContent('');
-    setStreamPhase('idle');
+    setStreamPhase(force ? 'searching' : 'idle');
     setAiLoading(true);
     const token = getToken();
     const params = new URLSearchParams();
@@ -181,9 +181,9 @@ export default function ThreadDetail() {
         } else if (msg.done) {
           es.close();
           esRef.current = null;
-          setStreamPhase('done');
           setAiLoading(false);
-          refetchComments();
+          // 保持 generating 状态直到 refetch 完成，避免内容闪烁
+          refetchComments().then(() => setStreamPhase('done'));
         } else if (msg.error) {
           es.close();
           esRef.current = null;
