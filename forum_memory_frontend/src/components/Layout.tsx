@@ -74,7 +74,7 @@ function ForumSidebar({ followedBoards, currentBoardId, currentUser, locationPat
         className={`sidebar__item ${isOnAllBoards ? 'sidebar__item--active' : ''}`}
         onClick={onClose}
       >
-        📋 全部板块
+        📋 浏览板块
       </Link>
       {currentUser && (
         <Link

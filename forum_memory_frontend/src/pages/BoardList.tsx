@@ -1,62 +1,54 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { Link, useSearchParams, useNavigate } from 'react-router-dom';
 import { namespaceApi } from '../api/client';
 import { useFollow } from '../contexts/FollowContext';
 import { Loading, ErrorMsg, EmptyState } from '../components/UI';
 import type { Namespace, NamespaceStats } from '../types';
 
-type ViewTab = 'followed' | 'all';
 const PAGE_SIZE = 20;
 
 export default function BoardList() {
   const [searchParams] = useSearchParams();
-  const initialTab: ViewTab = searchParams.get('view') === 'all' ? 'all' : 'followed';
+  const navigate = useNavigate();
+  const browsing = searchParams.get('view') === 'all';
 
   const { followedBoards, followedIds: ctxFollowedIds, refetchFollowed: ctxRefetch } = useFollow();
   const [followedIds, setFollowedIds] = useState<Set<string>>(new Set());
-  const [tab, setTab] = useState<ViewTab>(initialTab);
 
-  // All boards pagination state
+  // All boards pagination state (only used in browse mode)
   const [allBoards, setAllBoards] = useState<Namespace[]>([]);
   const [allTotal, setAllTotal] = useState(0);
   const [allPage, setAllPage] = useState(1);
   const [allLoading, setAllLoading] = useState(false);
   const [allError, setAllError] = useState<string | null>(null);
 
-  // Followed boards pagination (client-side since followedBoards is from context)
+  // Followed boards pagination (client-side)
   const [followedPage, setFollowedPage] = useState(1);
 
   const [statsMap, setStatsMap] = useState<Record<string, NamespaceStats>>({});
 
-  // Sync followed IDs from context
-  useEffect(() => {
-    setFollowedIds(ctxFollowedIds);
-  }, [ctxFollowedIds]);
+  useEffect(() => { setFollowedIds(ctxFollowedIds); }, [ctxFollowedIds]);
 
-  // Auto-switch to "all" if no followed boards
+  // Fetch all boards only when in browse mode
   useEffect(() => {
-    if (ctxFollowedIds.size === 0 && initialTab !== 'all') {
-      setTab('all');
-    }
-  }, [ctxFollowedIds, initialTab]);
-
-  // Fetch all boards page
-  useEffect(() => {
-    if (tab !== 'all') return;
+    if (!browsing) return;
     setAllLoading(true);
     setAllError(null);
     namespaceApi.list(allPage, PAGE_SIZE)
-      .then(res => {
-        setAllBoards(res.items);
-        setAllTotal(res.total);
-      })
+      .then(res => { setAllBoards(res.items); setAllTotal(res.total); })
       .catch(e => setAllError(e instanceof Error ? e.message : String(e)))
       .finally(() => setAllLoading(false));
-  }, [tab, allPage]);
+  }, [browsing, allPage]);
+
+  function pagedFollowed(): Namespace[] {
+    if (!followedBoards) return [];
+    const start = (followedPage - 1) * PAGE_SIZE;
+    return followedBoards.slice(start, start + PAGE_SIZE);
+  }
 
   // Fetch stats for visible boards
   useEffect(() => {
-    const visible = tab === 'all' ? allBoards : pagedFollowed();
+    const visible = browsing ? allBoards : pagedFollowed();
     if (!visible.length) return;
     Promise.all(visible.map(b => namespaceApi.stats(b.id).catch(() => null)))
       .then(results => {
@@ -64,13 +56,7 @@ export default function BoardList() {
         results.forEach((s, i) => { if (s) map[visible[i].id] = s; });
         setStatsMap(prev => ({ ...prev, ...map }));
       });
-  }, [tab, allBoards, followedBoards, followedPage, allPage]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  function pagedFollowed(): Namespace[] {
-    if (!followedBoards) return [];
-    const start = (followedPage - 1) * PAGE_SIZE;
-    return followedBoards.slice(start, start + PAGE_SIZE);
-  }
+  }, [browsing, allBoards, followedBoards, followedPage, allPage]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleToggleFollow = useCallback(async (boardId: string) => {
     const isFollowed = followedIds.has(boardId);
@@ -95,92 +81,99 @@ export default function BoardList() {
     }
   }, [followedIds, ctxRefetch]);
 
-  // Determine display data based on tab
-  const isFollowedTab = tab === 'followed';
-  const displayBoards = isFollowedTab ? pagedFollowed() : allBoards;
-  const displayTotal = isFollowedTab ? (followedBoards?.length ?? 0) : allTotal;
-  const currentPage = isFollowedTab ? followedPage : allPage;
+  const displayBoards = browsing ? allBoards : pagedFollowed();
+  const displayTotal = browsing ? allTotal : (followedBoards?.length ?? 0);
+  const currentPage = browsing ? allPage : followedPage;
   const totalPages = Math.ceil(displayTotal / PAGE_SIZE);
-  const isLoading = isFollowedTab ? !followedBoards : allLoading;
+  const isLoading = browsing ? allLoading : !followedBoards;
 
   function handlePageChange(p: number) {
-    if (isFollowedTab) { setFollowedPage(p); } else { setAllPage(p); }
+    if (browsing) { setAllPage(p); } else { setFollowedPage(p); }
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
   if (isLoading && currentPage === 1) return <Loading />;
-  if (!isFollowedTab && allError) return <ErrorMsg message={allError} onRetry={() => setAllPage(1)} />;
+  if (browsing && allError) return <ErrorMsg message={allError} onRetry={() => setAllPage(1)} />;
 
+  // ── Browse all boards view ──
+  if (browsing) {
+    return (
+      <div>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
+          <h1 className="page-title" style={{ marginBottom: 0 }}>浏览板块</h1>
+          <button className="btn-secondary btn-sm" onClick={() => navigate('/boards')}>
+            ← 返回我的板块
+          </button>
+        </div>
+        <BoardGrid boards={displayBoards} statsMap={statsMap} followedIds={followedIds} onToggleFollow={handleToggleFollow} />
+        <Pagination currentPage={currentPage} totalPages={totalPages} onChange={handlePageChange} />
+      </div>
+    );
+  }
+
+  // ── Default: my followed boards ──
   return (
     <div>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
-        <h1 className="page-title" style={{ marginBottom: 0 }}>板块</h1>
-        <div className="tabs" style={{ marginBottom: 0 }}>
-          <button
-            className={`tab ${tab === 'followed' ? 'tab--active' : ''}`}
-            onClick={() => { setTab('followed'); setFollowedPage(1); }}
-          >
-            我关注的
-          </button>
-          <button
-            className={`tab ${tab === 'all' ? 'tab--active' : ''}`}
-            onClick={() => { setTab('all'); setAllPage(1); }}
-          >
-            全部板块
-          </button>
-        </div>
+        <h1 className="page-title" style={{ marginBottom: 0 }}>我的板块</h1>
+        <button className="btn-secondary btn-sm" onClick={() => navigate('/boards?view=all')}>
+          浏览板块
+        </button>
       </div>
 
-      {displayBoards.length === 0 && isFollowedTab ? (
+      {displayBoards.length === 0 ? (
         <EmptyState
           icon="⭐"
           message="还没有关注任何板块"
-          action={<button className="btn-secondary" onClick={() => setTab('all')}>浏览全部板块</button>}
+          action={
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
+              <button className="btn-primary" onClick={() => navigate('/boards?view=all')}>浏览板块</button>
+              <span style={{ fontSize: 12, color: 'var(--text-ter)' }}>或通过分享链接加入领域板块</span>
+            </div>
+          }
         />
       ) : (
         <>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 16 }}>
-            {displayBoards.map(b => (
-              <BoardCard
-                key={b.id}
-                board={b}
-                stats={statsMap[b.id]}
-                followed={followedIds.has(b.id)}
-                onToggleFollow={handleToggleFollow}
-              />
-            ))}
-          </div>
-
-          {totalPages > 1 && (
-            <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 8, marginTop: 24 }}>
-              <button
-                className="btn-secondary btn-sm"
-                disabled={currentPage <= 1}
-                onClick={() => handlePageChange(currentPage - 1)}
-              >
-                上一页
-              </button>
-              <span style={{ fontSize: 13, color: 'var(--text-sec)' }}>
-                {currentPage} / {totalPages}
-              </span>
-              <button
-                className="btn-secondary btn-sm"
-                disabled={currentPage >= totalPages}
-                onClick={() => handlePageChange(currentPage + 1)}
-              >
-                下一页
-              </button>
-            </div>
-          )}
+          <BoardGrid boards={displayBoards} statsMap={statsMap} followedIds={followedIds} onToggleFollow={handleToggleFollow} />
+          <Pagination currentPage={currentPage} totalPages={totalPages} onChange={handlePageChange} />
         </>
       )}
     </div>
   );
 }
 
+function BoardGrid({ boards, statsMap, followedIds, onToggleFollow }: {
+  boards: Namespace[];
+  statsMap: Record<string, NamespaceStats>;
+  followedIds: Set<string>;
+  onToggleFollow: (id: string) => void;
+}) {
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 16 }}>
+      {boards.map(b => (
+        <BoardCard key={b.id} board={b} stats={statsMap[b.id]} followed={followedIds.has(b.id)} onToggleFollow={onToggleFollow} />
+      ))}
+    </div>
+  );
+}
+
+function Pagination({ currentPage, totalPages, onChange }: {
+  currentPage: number;
+  totalPages: number;
+  onChange: (p: number) => void;
+}) {
+  if (totalPages <= 1) return null;
+  return (
+    <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 8, marginTop: 24 }}>
+      <button className="btn-secondary btn-sm" disabled={currentPage <= 1} onClick={() => onChange(currentPage - 1)}>上一页</button>
+      <span style={{ fontSize: 13, color: 'var(--text-sec)' }}>{currentPage} / {totalPages}</span>
+      <button className="btn-secondary btn-sm" disabled={currentPage >= totalPages} onClick={() => onChange(currentPage + 1)}>下一页</button>
+    </div>
+  );
+}
+
 function AccessBadge({ mode }: { mode?: string }) {
-  const m = (mode || '').toLowerCase();
-  if (m === 'private') {
+  if ((mode || '').toLowerCase() === 'private') {
     return <span style={{ fontSize: 11, padding: '1px 6px', borderRadius: 4, background: '#fef2f2', color: '#dc2626', fontWeight: 600, marginLeft: 6 }}>私密</span>;
   }
   return null;
