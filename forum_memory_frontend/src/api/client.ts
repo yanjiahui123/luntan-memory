@@ -325,6 +325,8 @@ export const memberApi = {
   updateRole: (nsId: string, userId: string, role: string) =>
     put<{ user_id: string; role: string }>(`/namespaces/${nsId}/members/${userId}/role`, { role }),
   remove: (nsId: string, userId: string) => del<null>(`/namespaces/${nsId}/members/${userId}`),
+  batchRemove: (nsId: string, userIds: string[]) =>
+    post<{ removed: number; errors: string[] }>(`/namespaces/${nsId}/members/batch-delete`, { user_ids: userIds }),
 };
 
 // ── Invites ─────────────────────────────────

@@ -4,7 +4,7 @@ import { namespaceApi, memberApi, inviteApi, userApi } from '../api/client';
 import { useAsync } from '../hooks/useAsync';
 import { useUser } from '../contexts/UserContext';
 import { Loading, EmptyState } from '../components/UI';
-import type { Namespace, NamespaceMember, NamespaceInvite, UserSearchResult, DeptOption } from '../types';
+import type { Namespace, NamespaceMember, NamespaceInvite, UserSearchResult } from '../types';
 
 export default function BoardConfig() {
   const { boardId: routeBoardId } = useParams<{ boardId?: string }>();
@@ -398,6 +398,23 @@ function MemberListSection({ members, loading: isLoading, boardId, refetch }: {
   members: NamespaceMember[] | null; loading: boolean; boardId: string; refetch: () => void;
 }) {
   const [errMsg, setErrMsg] = useState('');
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [deleting, setDeleting] = useState(false);
+
+  const allIds = (members ?? []).map(m => m.user_id);
+  const allSelected = allIds.length > 0 && allIds.every(id => selected.has(id));
+
+  function toggleAll() {
+    setSelected(allSelected ? new Set() : new Set(allIds));
+  }
+
+  function toggleOne(id: string) {
+    setSelected(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }
 
   async function handleRoleChange(userId: string, newRole: string) {
     setErrMsg('');
@@ -413,9 +430,25 @@ function MemberListSection({ members, loading: isLoading, boardId, refetch }: {
     setErrMsg('');
     try {
       await memberApi.remove(boardId, userId);
+      setSelected(prev => { const next = new Set(prev); next.delete(userId); return next; });
       refetch();
     } catch (err) {
       setErrMsg(err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  async function handleBatchRemove() {
+    if (selected.size === 0) return;
+    setDeleting(true);
+    setErrMsg('');
+    try {
+      await memberApi.batchRemove(boardId, [...selected]);
+      setSelected(new Set());
+      refetch();
+    } catch (err) {
+      setErrMsg(err instanceof Error ? err.message : String(err));
+    } finally {
+      setDeleting(false);
     }
   }
 
@@ -423,15 +456,28 @@ function MemberListSection({ members, loading: isLoading, boardId, refetch }: {
 
   return (
     <div className="card" style={{ padding: 20 }}>
-      <h4 style={{ fontSize: 14, fontWeight: 600, marginBottom: 12 }}>成员列表 ({members?.length ?? 0})</h4>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+        <h4 style={{ fontSize: 14, fontWeight: 600 }}>成员列表 ({members?.length ?? 0})</h4>
+        {selected.size > 0 && (
+          <button className="btn-danger btn-sm" onClick={handleBatchRemove} disabled={deleting}>
+            {deleting ? '移除中...' : `移除选中 (${selected.size})`}
+          </button>
+        )}
+      </div>
 
       {(members?.length ?? 0) > 0 ? (
         <div style={{ maxHeight: 400, overflow: 'auto' }}>
           <table className="dict-table">
-            <thead><tr><th>姓名</th><th>工号</th><th>部门</th><th>角色</th><th style={{ width: 60 }}>操作</th></tr></thead>
+            <thead>
+              <tr>
+                <th style={{ width: 32 }}><input type="checkbox" checked={allSelected} onChange={toggleAll} /></th>
+                <th>姓名</th><th>工号</th><th>部门</th><th>角色</th><th style={{ width: 60 }}>操作</th>
+              </tr>
+            </thead>
             <tbody>
               {(members ?? []).map(m => (
                 <tr key={m.user_id}>
+                  <td><input type="checkbox" checked={selected.has(m.user_id)} onChange={() => toggleOne(m.user_id)} /></td>
                   <td style={{ fontWeight: 600 }}>{m.display_name}</td>
                   <td style={{ color: 'var(--text-sec)', fontSize: 12 }}>{m.employee_id}</td>
                   <td style={{ color: 'var(--text-sec)', fontSize: 12 }}>{m.dept_path || '-'}</td>
@@ -595,14 +641,9 @@ function BatchAddSection({ boardId, onAdded }: { boardId: string; onAdded: () =>
 function DeptAddSection({ boardId, onAdded }: { boardId: string; onAdded: () => void }) {
   const [deptCode, setDeptCode] = useState('');
   const [role, setRole] = useState('member');
-  const [departments, setDepartments] = useState<DeptOption[]>([]);
   const [result, setResult] = useState<{ added: number; skipped: number; total_in_dept: number } | null>(null);
   const [errorMsg, setErrorMsg] = useState('');
   const [loading, setLoading] = useState(false);
-
-  useEffect(() => {
-    userApi.departments().then(setDepartments).catch(() => {});
-  }, []);
 
   async function handleSubmit() {
     if (!deptCode.trim()) return;
@@ -624,20 +665,7 @@ function DeptAddSection({ boardId, onAdded }: { boardId: string; onAdded: () => 
   return (
     <div>
       <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 8 }}>
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 4 }}>
-          {departments.length > 0 && (
-            <select
-              onChange={e => { if (e.target.value) setDeptCode(e.target.value); }}
-              style={{ fontSize: 13 }}
-            >
-              <option value="">从已知部门快速选择...</option>
-              {departments.map(d => (
-                <option key={d.dept_code} value={d.dept_code}>{d.dept_path} ({d.dept_code})</option>
-              ))}
-            </select>
-          )}
-          <input placeholder="输入部门代码" value={deptCode} onChange={e => setDeptCode(e.target.value)} />
-        </div>
+        <input placeholder="输入部门代码" value={deptCode} onChange={e => setDeptCode(e.target.value)} style={{ flex: 1 }} />
         <select value={role} onChange={e => setRole(e.target.value)} style={{ width: 'auto', fontSize: 13 }}>
           <option value="member">成员</option>
           <option value="moderator">管理员</option>
