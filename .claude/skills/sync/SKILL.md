@@ -1,3 +1,8 @@
+---
+name: sync
+description: 将主仓最新代码自动同步推送到后端（memory_service）和前端（memory_website）子仓库
+---
+
 # /sync — 三仓同步
 
 将主仓的最新代码同步推送到后端和前端子仓库。

@@ -1,3 +1,8 @@
+---
+name: lint
+description: 对 git 改动的文件执行代码门禁规则检查（Python 后端 + TypeScript 前端），报告违规项并给出修复建议
+---
+
 # /lint — 门禁规则检查
 
 对当前 git 改动的文件执行代码门禁规则检查，报告违规项。
