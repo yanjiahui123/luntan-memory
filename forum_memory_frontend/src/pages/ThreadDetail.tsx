@@ -3,6 +3,8 @@ import { Link, useParams, useNavigate } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { threadApi, feedbackApi, memoryApi, namespaceApi, getToken } from '../api/client';
+
+const API_BASE = import.meta.env.VITE_APP_API_BASE_URL ?? '';
 import { useAsync } from '../hooks/useAsync';
 import { useUser } from '../contexts/UserContext';
 import { useToast } from '../contexts/ToastContext';
@@ -10,11 +12,18 @@ import { Loading, ErrorMsg, StatusBadge, Badge, TimeAgo, ConfirmModal, Knowledge
 import ImagePasteTextarea from '../components/ImagePasteTextarea';
 import type { Thread, Comment, Memory, FeedbackType, RagChunk } from '../types';
 
+const mdComponents = {
+  img: ({ src, alt, ...props }: React.ImgHTMLAttributes<HTMLImageElement>) => {
+    const resolvedSrc = src?.startsWith('/uploads/') ? `${API_BASE}${src}` : src;
+    return <img src={resolvedSrc} alt={alt} style={{ maxWidth: '100%' }} {...props} />;
+  },
+};
+
 function MarkdownContent({ content, style }: { content: string; style?: React.CSSProperties }) {
   if (!content) return null;
   return (
     <div className="md-body" style={style}>
-      <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
+      <ReactMarkdown remarkPlugins={[remarkGfm]} components={mdComponents}>{content}</ReactMarkdown>
     </div>
   );
 }
@@ -372,7 +381,7 @@ function StreamingAiComment({ phase, content }: { phase: string; content: string
       </div>
       {content ? (
         <div className="md-body streaming-content" style={{ fontSize: 14 }}>
-          <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
+          <ReactMarkdown remarkPlugins={[remarkGfm]} components={mdComponents}>{content}</ReactMarkdown>
           <span className="streaming-cursor" />
         </div>
       ) : (
