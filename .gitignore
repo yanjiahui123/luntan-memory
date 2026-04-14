@@ -31,8 +31,9 @@ forum_memory_frontend/node_modules/
 forum_memory_frontend/dist/
 forum_memory_frontend/.vite/
 
-# ─── 上传文件 ─────────────────────────────────────────────────────────────────
+# ─── 上传文件 / 日志 ─────────────────────────────────────────────────────────
 forum_memory_backend/forum_memory/uploads/
+logs/
 
 # ─── 编辑器 / 系统 ────────────────────────────────────────────────────────────
 .vscode/
