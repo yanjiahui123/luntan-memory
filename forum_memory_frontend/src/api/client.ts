@@ -356,7 +356,7 @@ export const uploadApi = {
   upload: (file: File): Promise<UploadResponse> => {
     const form = new FormData();
     form.append('file', file);
-    return fetch(`${BASE}/api/uploads`, {
+    return fetch(`${BASE}/uploads`, {
       method: 'POST',
       credentials: 'include',
       headers: authHeaders(),
