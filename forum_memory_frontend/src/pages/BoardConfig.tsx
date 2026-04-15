@@ -593,7 +593,7 @@ function BatchAddSection({ boardId, onAdded }: { boardId: string; onAdded: () =>
   const [loading, setLoading] = useState(false);
 
   async function handleSubmit() {
-    const ids = text.split(/[\n,;]+/).map(s => s.trim()).filter(Boolean);
+    const ids = text.split(/[\n,，;；]+/).map(s => s.trim()).filter(Boolean);
     if (!ids.length) return;
     setLoading(true);
     setResult(null);
