@@ -87,7 +87,8 @@ async function requestPaginated<T>(url: string, options: RequestOptions = {}): P
 }
 
 const get = <T>(url: string) => request<T>(url);
-const post = <T>(url: string, body?: unknown) => request<T>(url, { method: 'POST', body: JSON.stringify(body) });
+const post = <T>(url: string, body?: unknown, signal?: AbortSignal) =>
+  request<T>(url, { method: 'POST', body: JSON.stringify(body), ...(signal ? { signal } : {}) });
 const put = <T>(url: string, body?: unknown) => request<T>(url, { method: 'PUT', body: JSON.stringify(body) });
 const del = <T>(url: string) => request<T>(url, { method: 'DELETE' });
 
@@ -321,7 +322,11 @@ export const memberApi = {
   batchAdd: (nsId: string, employeeIds: string[], role = 'member') =>
     post<{ added: number; skipped: number; errors: string[] }>(`/namespaces/${nsId}/members/batch`, { employee_ids: employeeIds, role }),
   batchAddByDept: (nsId: string, deptCode: string, role = 'member') =>
-    post<{ added: number; skipped: number; errors: string[]; total_in_dept: number }>(`/namespaces/${nsId}/members/batch-by-dept`, { dept_code: deptCode, role }),
+    post<{ added: number; skipped: number; errors: string[]; total_in_dept: number }>(
+      `/namespaces/${nsId}/members/batch-by-dept`,
+      { dept_code: deptCode, role },
+      AbortSignal.timeout(120_000),
+    ),
   updateRole: (nsId: string, userId: string, role: string) =>
     put<{ user_id: string; role: string }>(`/namespaces/${nsId}/members/${userId}/role`, { role }),
   remove: (nsId: string, userId: string) => del<null>(`/namespaces/${nsId}/members/${userId}`),
