@@ -133,6 +133,21 @@ export type MemoryLifecycle = 'ACTIVE' | 'COLD' | 'ARCHIVED' | 'DELETED';
 export type MemoryAuthority = 'LOCKED' | 'NORMAL';
 export type KnowledgeType = 'how_to' | 'troubleshoot' | 'best_practice' | 'gotcha' | 'faq';
 
+export type PendingReason =
+  | 'AUDN_CONFLICT'
+  | 'AUDN_SUPPLEMENT_LOCKED'
+  | 'AUDN_DELETE_LOCKED'
+  | 'WRONG_FEEDBACK'
+  | 'ADMIN_DELETE'
+  | 'TIMEOUT'
+  | 'LOW_QUALITY';
+
+export const AUDN_PENDING_REASONS: PendingReason[] = [
+  'AUDN_CONFLICT',
+  'AUDN_SUPPLEMENT_LOCKED',
+  'AUDN_DELETE_LOCKED',
+];
+
 export interface Memory {
   id: string;
   namespace_id: string;
@@ -152,6 +167,7 @@ export interface Memory {
   resolved_type?: string;
   environment?: string;
   pending_human_confirm: boolean;
+  pending_reason?: PendingReason | null;
   wrong_count: number;
   retrieve_count: number;
   cite_count: number;

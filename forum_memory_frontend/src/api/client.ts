@@ -183,6 +183,7 @@ export interface MemoryListParams {
   tags?: string;
   pending_confirm?: boolean;
   pending_review?: boolean;
+  pending_reason?: string; // 单值或逗号分隔多值（如 "AUDN_CONFLICT,AUDN_SUPPLEMENT_LOCKED"）
   quality_score_max?: number;
   q?: string;
   page?: number;
