@@ -4,16 +4,25 @@ import { memoryApi, adminApi } from '../api/client';
 import { useAsync } from '../hooks/useAsync';
 import { useUrlState } from '../hooks/useUrlState';
 import { useToast } from '../contexts/ToastContext';
-import { Loading, ErrorMsg, EmptyState, Badge, AuthorityBadge, QualityDot, Pagination } from '../components/UI';
+import { Loading, ErrorMsg, EmptyState, Badge, AuthorityBadge, QualityDot, Pagination, PendingReasonBadge } from '../components/UI';
+import { AUDN_PENDING_REASONS } from '../types';
 import type { Memory, QualityAlert, MemoryRelation } from '../types';
 import type { MemoryListParams } from '../api/client';
 
 const PAGE_SIZE = 10;
 
+// Tab 结构按 pending_reason 互斥分类，避免多 tab 重复展示同一条记忆。
+// - all:         pending_confirm=True 总览
+// - audn:        AUDN 类（AUDN_CONFLICT / AUDN_SUPPLEMENT_LOCKED / AUDN_DELETE_LOCKED）
+// - timeout:     pending_reason = TIMEOUT
+// - low_quality: pending_reason = LOW_QUALITY
+// - quality_alert: pending_reason ∈ {WRONG_FEEDBACK, ADMIN_DELETE}（admin /quality-alerts 接口默认返回集）
+// - contradictions: CONTRADICTS 关系对
 const TABS = [
-  { key: 'all', label: '全部' },
-  { key: 'pending', label: '超时待确认' },
-  { key: 'low_quality', label: '低质量' },
+  { key: 'all', label: '全部待处理' },
+  { key: 'audn', label: 'AUDN 审批' },
+  { key: 'timeout', label: '超时待审' },
+  { key: 'low_quality', label: '低质量待审' },
   { key: 'quality_alert', label: '质量告警' },
   { key: 'contradictions', label: '矛盾对' },
 ] as const;
@@ -45,10 +54,19 @@ export default function PendingCenter() {
 function TabContent({ tab, boardId }: { tab: string; boardId?: string }) {
   if (tab === 'quality_alert') return <QualityAlertTab boardId={boardId} />;
   if (tab === 'contradictions') return <ContradictionsTab boardId={boardId} />;
-  return <MemoryTab tab={tab} boardId={boardId} />;
+  return <MemoryTab tab={tab as Exclude<TabKey, 'quality_alert' | 'contradictions'>} boardId={boardId} />;
 }
 
-function MemoryTab({ tab, boardId }: { tab: Exclude<TabKey, 'quality_alert'>; boardId?: string }) {
+// 把 tab key 映射到 /memories 的过滤参数（互斥分类）。
+function buildTabFilter(tab: Exclude<TabKey, 'quality_alert' | 'contradictions'>): Partial<MemoryListParams> {
+  if (tab === 'all') return { pending_confirm: true };
+  if (tab === 'audn') return { pending_reason: AUDN_PENDING_REASONS.join(',') };
+  if (tab === 'timeout') return { pending_reason: 'TIMEOUT' };
+  if (tab === 'low_quality') return { pending_reason: 'LOW_QUALITY' };
+  return { pending_confirm: true };
+}
+
+function MemoryTab({ tab, boardId }: { tab: Exclude<TabKey, 'quality_alert' | 'contradictions'>; boardId?: string }) {
   const { addToast } = useToast();
   const [page, setPage] = useUrlState('page', 1);
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -57,10 +75,7 @@ function MemoryTab({ tab, boardId }: { tab: Exclude<TabKey, 'quality_alert'>; bo
   const nsFilter = boardId ? { namespace_id: boardId } : {};
   const base = { ...nsFilter, page, size: PAGE_SIZE };
 
-  let tabFilter: Partial<MemoryListParams> = {};
-  if (tab === 'all') tabFilter = { pending_review: true };
-  else if (tab === 'pending') tabFilter = { pending_confirm: true };
-  else if (tab === 'low_quality') tabFilter = { status: 'ACTIVE', quality_score_max: 0.3 };
+  const tabFilter = buildTabFilter(tab);
   const params: MemoryListParams = { ...base, ...tabFilter };
 
   const { data, loading, error, refetch } = useAsync(() => memoryApi.list(params), [tab, boardId, page]);
@@ -386,10 +401,10 @@ function PendingItem({ memory, checked, onToggle, onPromote, onDiscard }: {
   const { boardId } = useParams<{ boardId?: string }>();
   const detailPath = boardId ? `/admin/boards/${boardId}/memories/${memory.id}` : `/admin/memories/${memory.id}`;
   const isPending = memory.pending_human_confirm;
-  const isLowQuality = memory.quality_score < 0.3;
+  const isLowQualityScore = memory.quality_score < 0.3;
   let borderColor = 'var(--accent)';
   if (isPending) borderColor = 'var(--amber)';
-  else if (isLowQuality) borderColor = 'var(--red)';
+  else if (isLowQualityScore) borderColor = 'var(--red)';
 
   return (
     <div className="card pending-item" style={{ borderLeftColor: borderColor }}>
@@ -401,9 +416,9 @@ function PendingItem({ memory, checked, onToggle, onPromote, onDiscard }: {
           style={{ marginTop: 3, flexShrink: 0, cursor: 'pointer' }}
         />
         <div style={{ flex: 1 }}>
-          <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
-            {isPending && memory.authority !== 'LOCKED' && <Badge type="amber">⏳ 超时待确认</Badge>}
-            {isLowQuality && <Badge type="red">⚠️ 低质量</Badge>}
+          <div style={{ display: 'flex', gap: 6, marginBottom: 8, flexWrap: 'wrap' }}>
+            <PendingReasonBadge reason={memory.pending_reason} />
+            {isLowQualityScore && !memory.pending_reason && <Badge type="red">⚠️ 低分</Badge>}
             <AuthorityBadge authority={memory.authority} />
             {memory.tags?.map((t: string) => <Badge key={t} type="gray">{t}</Badge>)}
           </div>

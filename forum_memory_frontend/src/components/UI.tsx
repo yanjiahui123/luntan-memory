@@ -1,5 +1,5 @@
 import React from 'react';
-import type { ThreadStatus, MemoryAuthority, MemoryLifecycle, KnowledgeType } from '../types';
+import type { ThreadStatus, MemoryAuthority, MemoryLifecycle, KnowledgeType, PendingReason } from '../types';
 
 // ── Badge ──────────────────────────────────────────────────────────────────
 
@@ -51,6 +51,22 @@ export function AccessModeBadge({ mode }: { mode: string | null | undefined }) {
   if (!mode || mode === 'public') return null;
   if (mode === 'private') return <Badge type="red">🔐 私密</Badge>;
   return <Badge type="gray">{mode}</Badge>;
+}
+
+const PENDING_REASON_MAP: Record<PendingReason, { type: string; label: string }> = {
+  AUDN_CONFLICT:          { type: 'red',   label: '🔀 AUDN 冲突' },
+  AUDN_SUPPLEMENT_LOCKED: { type: 'blue',  label: '➕ AUDN 补充' },
+  AUDN_DELETE_LOCKED:     { type: 'amber', label: '♻️ AUDN 替换' },
+  WRONG_FEEDBACK:         { type: 'red',   label: '❌ 错误反馈' },
+  ADMIN_DELETE:           { type: 'amber', label: '🗑 管理员删帖' },
+  TIMEOUT:                { type: 'amber', label: '⏰ 超时' },
+  LOW_QUALITY:            { type: 'gray',  label: '📉 低质量' },
+};
+
+export function PendingReasonBadge({ reason }: { reason: PendingReason | null | undefined }) {
+  if (!reason) return null;
+  const cfg = PENDING_REASON_MAP[reason] ?? { type: 'gray', label: reason };
+  return <Badge type={cfg.type}>{cfg.label}</Badge>;
 }
 
 // ── State indicators ───────────────────────────────────────────────────────
