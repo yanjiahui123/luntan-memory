@@ -83,7 +83,7 @@ export default function NotificationBell() {
   }
 
   return (
-    <div ref={panelRef} style={{ position: 'relative' }}>
+    <div ref={panelRef} style={{ position: 'absolute',right:'30px'}}>
       <button
         className="topbar__bell"
         onClick={() => setOpen(!open)}

@@ -269,7 +269,7 @@ export default function MemoryList() {
           <h1 className="page-title">记忆管理</h1>
         </div>
 
-      <div className="card" style={{ padding: '10px 14px', marginBottom: 16 }}>
+      <div className="card" style={{ padding: '10px 14px', marginBottom: 16, overflow:'visible' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
           <span style={{ fontSize: 15, color: 'var(--text-ter)', flexShrink: 0 }}>🔍</span>
 
@@ -297,7 +297,7 @@ export default function MemoryList() {
         if (error) return <ErrorMsg message={error} onRetry={refetch} />;
         if (!memories?.length) return <EmptyState icon="🧠" message="没有匹配的记忆" />;
         return (
-          <div className="card" style={{ padding: '0 16px' }}>
+          <div className="card" style={{ padding: '0 16px',maxHeight:totalCount>PAGE_SIZE?'calc(100vh - 256px)':'calc(100vh - 210px)' }}>
             {memories.map(m => <MemoryRow key={m.id} memory={m} keyword={keyword} onRestored={refetch} />)}
           </div>
         );

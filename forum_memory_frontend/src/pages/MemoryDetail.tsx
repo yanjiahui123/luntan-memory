@@ -152,18 +152,6 @@ export default function MemoryDetail() {
               </button>
             </div>
           </div>
-
-          <div className="card">
-            <h3 style={{ fontSize: 13, fontWeight: 700, marginBottom: 10 }}>来源溯源</h3>
-            <div style={{ fontSize: 12, lineHeight: 2 }}>
-              <div>📄 来源: {memory.source_type}</div>
-              <div>👤 回答者: {memory.source_role}</div>
-              <div>🏷 解决类型: {memory.resolved_type}</div>
-              {memory.source_id && (
-                <div>📎 <Link to={`/threads/${memory.source_id}`}>查看原帖</Link></div>
-              )}
-            </div>
-          </div>
         </div>
       </div>
 

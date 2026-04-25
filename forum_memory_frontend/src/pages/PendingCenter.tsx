@@ -143,12 +143,22 @@ function MemoryTab({ tab, boardId }: { tab: MemoryTabKey; boardId?: string }) {
       const ids = [...selected];
       await Promise.allSettled(ids.map(id => memoryApi.delete(id)));
       addToast('success', `已批量丢弃 ${ids.length} 条记忆`);
+      // 检查当前页码是否超过总页数，如果是则跳转到最后一页
       setSelected(new Set());
-      refetch();
+      await refetch();
+      // 计算新的总页数
+      const newTotalCount = totalCount - selected.size;
+      const totalPages = Math.ceil(newTotalCount / PAGE_SIZE);
+
+      // 如果当前页码超过总页数，则跳转到最后一页
+      if (page > totalPages) {
+        setPage(totalPages);
+      }
     } catch {
       addToast('error', '批量丢弃失败');
     } finally {
       setBatchLoading(false);
+
     }
   }
 
@@ -185,18 +195,18 @@ function MemoryTab({ tab, boardId }: { tab: MemoryTabKey; boardId?: string }) {
           </>
         )}
       </div>
-
-      {items.map(m => (
-        <PendingItem
-          key={m.id}
-          memory={m}
-          checked={selected.has(m.id)}
-          onToggle={() => toggleSelect(m.id)}
-          onPromote={() => handlePromote(m.id)}
-          onDiscard={() => handleDiscard(m.id)}
-        />
-      ))}
-
+      <div style={{maxHeight:totalCount>PAGE_SIZE?'calc(100vh - 300px)':'calc(100vh - 250px)',overflow:'auto'}}>
+        {items.map(m => (
+          <PendingItem
+            key={m.id}
+            memory={m}
+            checked={selected.has(m.id)}
+            onToggle={() => toggleSelect(m.id)}
+            onPromote={() => handlePromote(m.id)}
+            onDiscard={() => handleDiscard(m.id)}
+          />
+        ))}
+      </div>
       <Pagination page={page} total={totalCount} size={PAGE_SIZE} onChange={setPage} />
     </>
   );
@@ -247,7 +257,7 @@ function QualityAlertItem({ memory, onDismiss }: { memory: QualityAlert; onDismi
       <div style={{ fontSize: 13, lineHeight: 1.7, marginBottom: 8 }}>{memory.content}</div>
 
       <div style={{ fontSize: 12, color: 'var(--text-ter)', marginBottom: 10, display: 'flex', gap: 16, flexWrap: 'wrap' }}>
-        <span>质量分: <QualityDot score={memory.quality_score} /> {memory.quality_score?.toFixed(2)}</span>
+        <span>质量分: <QualityDot score={memory.quality_score} /></span>
         <span style={{ color: 'var(--red)' }}>错误反馈: {memory.wrong_count}</span>
         {memory.outdated_count !== undefined && <span>过时反馈: {memory.outdated_count}</span>}
         {memory.useful_count !== undefined && <span>有用: {memory.useful_count}</span>}

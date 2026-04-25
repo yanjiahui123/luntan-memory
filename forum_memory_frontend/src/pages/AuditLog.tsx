@@ -52,37 +52,39 @@ export default function AuditLog() {
 
   return (
     <div>
-      <div className="page-header" style={{ marginBottom: 16 }}>
-        <h1 className="page-title">审计日志</h1>
-      </div>
+      <div style={{position: 'sticky', top: 52, zIndex: 10, paddingBottom: '4px'}}>
+          <div className="page-header" style={{ marginBottom: 16 }}>
+            <h1 className="page-title">审计日志</h1>
+          </div>
 
-      <div className="filter-bar" style={{ flexWrap: 'wrap', gap: 8 }}>
-        {operationOptions.map(op => (
-          <button
-            key={op}
-            className={`filter-pill ${operation === op ? 'filter-pill--active' : ''}`}
-            onClick={() => setOperation(op)}
-          >
-            {op ? (OPERATION_LABELS[op] || op) : '全部'}
-          </button>
-        ))}
+          <div className="filter-bar" style={{ flexWrap: 'wrap', gap: 8 }}>
+            {operationOptions.map(op => (
+              <button
+                key={op}
+                className={`filter-pill ${operation === op ? 'filter-pill--active' : ''}`}
+                onClick={() => setOperation(op)}
+              >
+                {op ? (OPERATION_LABELS[op] || op) : '全部'}
+              </button>
+            ))}
 
-        {memoryId && (
-          <span style={{
-            display: 'inline-flex', alignItems: 'center', gap: 4,
-            padding: '3px 8px', borderRadius: 99,
-            background: 'var(--accent-light)', border: '1px solid var(--accent)',
-            fontSize: 12, color: 'var(--accent)', fontWeight: 500,
-          }}>
-            记忆: {memoryId.slice(0, 8)}...
-            <button
-              onClick={() => setMemoryId('')}
-              style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, lineHeight: 1, color: 'var(--accent)', fontSize: 13 }}
-            >
-              ×
-            </button>
-          </span>
-        )}
+            {memoryId && (
+              <span style={{
+                display: 'inline-flex', alignItems: 'center', gap: 4,
+                padding: '3px 8px', borderRadius: 99,
+                background: 'var(--accent-light)', border: '1px solid var(--accent)',
+                fontSize: 12, color: 'var(--accent)', fontWeight: 500,
+              }}>
+                记忆: {memoryId.slice(0, 8)}...
+                <button
+                  onClick={() => setMemoryId('')}
+                  style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, lineHeight: 1, color: 'var(--accent)', fontSize: 13 }}
+                >
+                  ×
+                </button>
+              </span>
+            )}
+          </div>
       </div>
 
       {(() => {
@@ -90,7 +92,7 @@ export default function AuditLog() {
         if (error) return <ErrorMsg message={error} onRetry={refetch} />;
         if (!logs?.length) return <EmptyState icon="📋" message="没有审计日志" />;
         return (
-          <div className="card" style={{ padding: '0 16px' }}>
+          <div className="card" style={{ padding: '0 16px',maxHeight:totalCount>PAGE_SIZE?'calc(100vh - 248px)':'calc(100vh - 200px)' }}>
             {logs.map(log => <AuditLogRow key={log.id} log={log} onFilterMemory={(id) => setMemoryId(id)} />)}
           </div>
         );

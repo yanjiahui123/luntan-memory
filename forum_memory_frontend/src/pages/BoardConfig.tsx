@@ -4,6 +4,7 @@ import { namespaceApi, memberApi, inviteApi, userApi } from '../api/client';
 import { useAsync } from '../hooks/useAsync';
 import { useUser } from '../contexts/UserContext';
 import { Loading, EmptyState } from '../components/UI';
+import { DeptTreeSelect } from "../components/DeptTreeSelect";
 import type { Namespace, NamespaceMember, NamespaceInvite, UserSearchResult } from '../types';
 
 export default function BoardConfig() {
@@ -537,6 +538,8 @@ function SearchAddSection({ boardId, onAdded }: { boardId: string; onAdded: () =
       await memberApi.add(boardId, account, role);
       onAdded();
       setResults(prev => prev.filter(r => r.w3Account !== account));
+      setQuery('');
+      setRole('member');
     } catch (err) {
       setErrMsg(err instanceof Error ? err.message : String(err));
     } finally {
@@ -601,6 +604,8 @@ function BatchAddSection({ boardId, onAdded }: { boardId: string; onAdded: () =>
       const res = await memberApi.batchAdd(boardId, ids, role);
       setResult(res);
       onAdded();
+      setText('');
+      setRole('member');
     } catch (err) {
       setResult({ added: 0, skipped: 0, errors: [err instanceof Error ? err.message : String(err)] });
     } finally {
@@ -618,7 +623,7 @@ function BatchAddSection({ boardId, onAdded }: { boardId: string; onAdded: () =>
         <span style={{ fontSize: 12, color: 'var(--text-sec)' }}>最多 100 个工号</span>
       </div>
       <textarea
-        placeholder="粘贴工号，一行一个或逗号分隔"
+        placeholder="带首字母的工号，一行一个或逗号分隔"
         value={text}
         onChange={e => setText(e.target.value)}
         style={{ minHeight: 80, marginBottom: 8 }}
@@ -626,13 +631,6 @@ function BatchAddSection({ boardId, onAdded }: { boardId: string; onAdded: () =>
       <button className="btn-primary" onClick={handleSubmit} disabled={loading || !text.trim()}>
         {loading ? '添加中...' : '批量添加'}
       </button>
-      {result && (
-        <p style={{ fontSize: 13, marginTop: 8 }}>
-          <span style={{ color: 'var(--success, #22c55e)' }}>添加 {result.added}</span>
-          {result.skipped > 0 && <span style={{ color: 'var(--text-sec)', marginLeft: 8 }}>跳过 {result.skipped}</span>}
-          {result.errors.length > 0 && <span style={{ color: 'var(--danger)', marginLeft: 8 }}>错误: {result.errors.join(', ')}</span>}
-        </p>
-      )}
     </div>
   );
 }
@@ -644,6 +642,7 @@ function DeptAddSection({ boardId, onAdded }: { boardId: string; onAdded: () => 
   const [result, setResult] = useState<{ added: number; skipped: number; total_in_dept: number } | null>(null);
   const [errorMsg, setErrorMsg] = useState('');
   const [loading, setLoading] = useState(false);
+  const [deptKey, setDeptKey] = useState(0);
 
   async function handleSubmit() {
     if (!deptCode.trim()) return;
@@ -654,6 +653,9 @@ function DeptAddSection({ boardId, onAdded }: { boardId: string; onAdded: () => 
       const res = await memberApi.batchAddByDept(boardId, deptCode.trim(), role);
       setResult(res);
       onAdded();
+      setDeptCode('');
+      setRole('member');
+      setDeptKey(prev => prev + 1);
     } catch (err) {
       setResult(null);
       setErrorMsg(err instanceof Error ? err.message : String(err));
@@ -662,10 +664,21 @@ function DeptAddSection({ boardId, onAdded }: { boardId: string; onAdded: () => 
     }
   }
 
+  function handleDeptSelect(deptCode: string){
+    setDeptCode(deptCode);
+  }
+
+  const handleClear = () => {
+    setDeptCode('');
+    setDeptKey(prev => prev + 1);
+  };
   return (
     <div>
       <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 8 }}>
-        <input placeholder="输入部门代码" value={deptCode} onChange={e => setDeptCode(e.target.value)} style={{ flex: 1 }} />
+        <div style={{ flex: 1 }}>
+          <DeptTreeSelect key={deptKey} onSelect={handleDeptSelect} placeholder="请选择部门" />
+        </div>
+        <button type="button" onClick={handleClear} style={{ fontSize: 12, padding: '4px 8px' }}>清除</button>
         <select value={role} onChange={e => setRole(e.target.value)} style={{ width: 'auto', fontSize: 13 }}>
           <option value="member">成员</option>
           <option value="moderator">管理员</option>
@@ -676,13 +689,6 @@ function DeptAddSection({ boardId, onAdded }: { boardId: string; onAdded: () => 
       </div>
       {errorMsg && (
         <p style={{ fontSize: 13, marginTop: 4, color: 'var(--red)' }}>{errorMsg}</p>
-      )}
-      {result && (
-        <p style={{ fontSize: 13, marginTop: 4 }}>
-          部门共 {result.total_in_dept} 人，
-          <span style={{ color: 'var(--success, #22c55e)' }}>添加 {result.added}</span>
-          {result.skipped > 0 && <span style={{ color: 'var(--text-sec)', marginLeft: 8 }}>跳过 {result.skipped}</span>}
-        </p>
       )}
     </div>
   );
@@ -719,7 +725,23 @@ function InviteSection({ boardId }: { boardId: string }) {
   }
 
   function copyLink(code: string) {
-    const url = `${window.location.origin}/join/${code}`;
+    // 检测是否在 iframe 中
+    const isInIframe = (() => {
+      try {
+        return window.self !== window.top;
+      } catch (e) {
+        // 跨域情况下访问 window.top 会抛出异常，但通常说明在 iframe 中
+        return true;
+      }
+    })();
+
+    // 根据是否在 iframe 中设置正确的基础 URL
+    const isProd = import.meta.env.MODE === 'production';
+    const baseUrl = isInIframe
+      ? `${import.meta.env.VITE_PARENT_BASEURL}/tabs/forum?r=`
+      : `${window.location.origin}${ isProd ? '/forum_memory' :'/forum_memory_beta'}/dashboard`;
+
+    const url = `${baseUrl}/join/${code}`;
     navigator.clipboard.writeText(url).then(() => {
       setCopied(code);
       setTimeout(() => setCopied(''), 2000);

@@ -21,15 +21,17 @@ import ImportTopics from './pages/ImportTopics';
 import UserManagement from './pages/UserManagement';
 import AuditLog from './pages/AuditLog';
 import MyPosts from './pages/MyPosts';
+import RouteListener from './components/RouterListener'
 import JoinBoard from './pages/JoinBoard';
 import JoinShareLink from './pages/JoinShareLink';
 import ShareLinkManager from './pages/ShareLinkManager';
 
 export default function App() {
-    const isProd = import.meta.env.MODE === 'production';
-    const basename = isProd ? "/forum_memory/dashboard" : "/forum_memory_beta/dashboard";
+  const isProd = import.meta.env.MODE === 'production';
+  const basename = isProd ? "/forum_memory/dashboard" : "/forum_memory_beta/dashboard";
   return (
     <BrowserRouter basename={basename}>
+      <RouteListener/>
       <UserProvider>
       <FollowProvider>
       <ToastProvider>

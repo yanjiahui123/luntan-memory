@@ -31,7 +31,23 @@ export default function ShareLinkManager() {
   }
 
   function copyLink(code: string) {
-    const url = `${window.location.origin}/share/${code}`;
+    // 检测是否在 iframe 中
+    const isInIframe = (() => {
+      try {
+        return window.self !== window.top;
+      } catch (e) {
+        // 跨域情况下访问 window.top 会抛出异常，但通常说明在 iframe 中
+        return true;
+      }
+    })();
+
+    // 根据是否在 iframe 中设置正确的基础 URL
+    const isProd = import.meta.env.MODE === 'production';
+    const baseUrl = isInIframe
+      ? `${import.meta.env.VITE_PARENT_BASEURL}/tabs/forum?r=`
+      : `${window.location.origin}${ isProd ? '/forum_memory' :'/forum_memory_beta'}/dashboard`;
+
+    const url = `${baseUrl}/share/${code}`;
     navigator.clipboard.writeText(url).then(() => toast.addToast('success','已复制链接'));
   }
 

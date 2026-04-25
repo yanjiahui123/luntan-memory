@@ -210,27 +210,15 @@ export default function Layout() {
         <button className="topbar__hamburger" onClick={() => setSidebarOpen(!sidebarOpen)} aria-label="Toggle sidebar">
           {sidebarOpen ? '\u2715' : '\u2630'}
         </button>
-        <Link to="/boards" className="topbar__logo" style={{ textDecoration: 'none' }}>知识论坛</Link>
-        <form onSubmit={handleSearch} style={{ flex: 1, maxWidth: 400, margin: '0 16px' }}>
-          <input className="topbar__search" placeholder={effectiveBoardId ? '搜索当前板块...' : '搜索知识...'} value={searchQ} onChange={e => setSearchQ(e.target.value)} />
-        </form>
-        <nav className="topbar__nav">
-          {isAdmin && (
-            <button className={`topbar__link ${isAdminPage ? 'topbar__link--active' : ''}`} onClick={() => navigate('/admin')}>管理后台</button>
-          )}
-          {currentUser && <NotificationBell />}
-        </nav>
-        <div style={{ position: 'relative' }}>
-          <div
-            className="topbar__avatar"
-            style={{ cursor: 'pointer', background: isAdmin ? 'var(--green)' : 'var(--accent)' }}
-            onClick={() => setShowUserMenu(!showUserMenu)}
-            title={currentUser ? `${displayName} (${currentUser.employee_id})` : '未登录'}
-          >{initial}</div>
-          {showUserMenu && (
-            <UserMenu currentUser={currentUser} roleLabel={roleLabel} roleColor={roleColor} onClose={() => setShowUserMenu(false)} />
-          )}
+        <div style={{display:'flex'}}>
+          <Link to="/boards" className={`topbar__logo ${!isAdminPage ? 'topbar__logo--active' : ''}`} style={{ textDecoration: 'none' }}>知识论坛</Link>
+          <nav className="topbar__nav">
+            {isAdmin && (
+              <button className={`topbar__link ${isAdminPage ? 'topbar__link--active' : ''}`} onClick={() => navigate('/admin')}>管理后台</button>
+            )}
+          </nav>
         </div>
+        {currentUser && <NotificationBell />}
       </header>
 
       {/* ── Sidebar ────────────────────────────── */}

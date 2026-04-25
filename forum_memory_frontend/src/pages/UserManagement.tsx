@@ -2,8 +2,11 @@ import React, { useState } from 'react';
 import { userApi } from '../api/client';
 import { useAsync } from '../hooks/useAsync';
 import { useToast } from '../contexts/ToastContext';
-import { Loading, ErrorMsg, EmptyState, Badge } from '../components/UI';
+import { Loading, ErrorMsg, EmptyState, Badge, Pagination } from '../components/UI';
 import type { User, UserRole } from '../types';
+
+const PAGE_SIZES = [15, 30, 50, 100];
+const DEFAULT_PAGE_SIZE = 30;
 
 const ROLE_OPTIONS: { value: UserRole | ''; label: string }[] = [
   { value: '', label: '全部' },
@@ -24,40 +27,82 @@ export default function UserManagement() {
   const [searchQ, setSearchQ] = useState('');
   const [showCreate, setShowCreate] = useState(false);
   const [editTarget, setEditTarget] = useState<User | null>(null);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
 
   const filtered = filterUsers(users, roleFilter, searchQ);
+  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+  const paginatedUsers = filtered.slice((page - 1) * pageSize, page * pageSize);
+
+  // Reset to first page when filters or page size change
+  React.useEffect(() => {
+    setPage(1);
+  }, [roleFilter, searchQ, pageSize]);
 
   if (loading) return <Loading />;
   if (error) return <ErrorMsg message={error} onRetry={refetch} />;
 
   return (
     <div>
-      <div className="page-header">
-        <h1 className="page-title">用户管理</h1>
-        <button className="btn-primary" onClick={() => setShowCreate(true)}>+ 创建用户</button>
+      <div style={{position: 'sticky', top: 52, zIndex: 10, paddingBottom: '4px'}}>
+        <div className="page-header">
+          <h1 className="page-title">用户管理</h1>
+          <button className="btn-primary" onClick={() => setShowCreate(true)}>+ 创建用户</button>
+        </div>
+
+        <div className="filter-bar" style={{ marginBottom: 16 }}>
+          {ROLE_OPTIONS.map(r => (
+            <button key={r.value} className={`filter-pill ${roleFilter === r.value ? 'filter-pill--active' : ''}`} onClick={() => setRoleFilter(r.value)}>
+              {r.label}
+            </button>
+          ))}
+          <input
+            value={searchQ}
+            onChange={e => setSearchQ(e.target.value)}
+            placeholder="搜索工号或姓名..."
+            style={{ maxWidth: 200, fontSize: 13, padding: '6px 12px' }}
+          />
+        </div>
       </div>
 
-      <div className="filter-bar" style={{ marginBottom: 16 }}>
-        {ROLE_OPTIONS.map(r => (
-          <button key={r.value} className={`filter-pill ${roleFilter === r.value ? 'filter-pill--active' : ''}`} onClick={() => setRoleFilter(r.value)}>
-            {r.label}
-          </button>
-        ))}
-        <input
-          value={searchQ}
-          onChange={e => setSearchQ(e.target.value)}
-          placeholder="搜索工号或姓名..."
-          style={{ maxWidth: 200, fontSize: 13, padding: '6px 12px' }}
-        />
-      </div>
-
-      {filtered.length === 0 ? <EmptyState icon="👥" message="没有匹配的用户" /> : (
-        <div className="card" style={{ padding: '0 16px' }}>
-          {filtered.map(u => (
+      {paginatedUsers.length === 0 ? <EmptyState icon="👥" message="没有匹配的用户" /> : (
+        <div className="card" style={{ padding: '0 16px', maxHeight: totalPages > 1 ? 'calc(100vh - 270px)' : 'calc(100vh - 206px)' }}>
+          {paginatedUsers.map(u => (
             <UserRow key={u.id} user={u} onEdit={() => setEditTarget(u)} />
           ))}
         </div>
       )}
+      {
+        totalPages > 1?
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 16, padding: '0 16px' }}>
+        <div style={{ fontSize: 13, color: 'var(--text-ter)' }}>
+          共 {filtered.length} 条记录
+        </div>
+        <div style={{position:'relative',top:'-8px'}}>
+          <Pagination page={page} total={filtered.length} size={pageSize} onChange={setPage} />
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ fontSize: 13, color: 'var(--text-ter)',width:'90px' }}>每页显示</span>
+          <select
+            value={pageSize}
+            onChange={(e) => setPageSize(Number(e.target.value))}
+            style={{
+              padding: '4px 8px',
+              fontSize: 13,
+              border: '1px solid var(--border)',
+              borderRadius: 'var(--radius)',
+              background: 'var(--surface)',
+              color: 'var(--text)'
+            }}
+          >
+            {PAGE_SIZES.map(size => (
+              <option key={size} value={size}>{size} 条</option>
+            ))}
+          </select>
+        </div>
+      </div>
+        :''
+      }
 
       {showCreate && (
         <CreateUserModal onClose={() => setShowCreate(false)} onCreated={() => { setShowCreate(false); refetch(); }} />
