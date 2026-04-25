@@ -5,26 +5,24 @@ import { useAsync } from '../hooks/useAsync';
 import { useUrlState } from '../hooks/useUrlState';
 import { useToast } from '../contexts/ToastContext';
 import { Loading, ErrorMsg, EmptyState, Badge, AuthorityBadge, QualityDot, Pagination, PendingReasonBadge } from '../components/UI';
-import { AUDN_PENDING_REASONS } from '../types';
 import type { Memory, QualityAlert, MemoryRelation } from '../types';
 import type { MemoryListParams } from '../api/client';
 
 const PAGE_SIZE = 10;
 
 // Tab 结构按 pending_reason 互斥分类，避免多 tab 重复展示同一条记忆。
-// - all:         pending_confirm=True 总览
-// - audn:        AUDN 类（AUDN_CONFLICT / AUDN_SUPPLEMENT_LOCKED / AUDN_DELETE_LOCKED）
-// - timeout:     pending_reason = TIMEOUT
-// - low_quality: pending_reason = LOW_QUALITY
-// - quality_alert: pending_reason ∈ {WRONG_FEEDBACK, ADMIN_DELETE}（admin /quality-alerts 接口默认返回集）
-// - contradictions: CONTRADICTS 关系对
+// - all:               pending_confirm=True 总览
+// - timeout:           pending_reason = TIMEOUT
+// - low_quality:       pending_reason = LOW_QUALITY
+// - quality_alert:     pending_reason ∈ {WRONG_FEEDBACK, ADMIN_DELETE}（admin /quality-alerts 接口默认返回集）
+// - locked_arbitration: AUDN 产出的 LOCKED 关联关系对（CONTRADICTS / SUPPLEMENTS / SUPERSEDES）成对展示并裁决
+//   注意：原 "AUDN 审批" tab 与 "矛盾对" tab 已合并为本 tab，以 RelationPair 形式统一处理。
 const TABS = [
   { key: 'all', label: '全部待处理' },
-  { key: 'audn', label: 'AUDN 审批' },
   { key: 'timeout', label: '超时待审' },
   { key: 'low_quality', label: '低质量待审' },
   { key: 'quality_alert', label: '质量告警' },
-  { key: 'contradictions', label: '矛盾对' },
+  { key: 'locked_arbitration', label: 'LOCKED 关联裁决' },
 ] as const;
 
 type TabKey = typeof TABS[number]['key'];
@@ -51,22 +49,23 @@ export default function PendingCenter() {
   );
 }
 
+type MemoryTabKey = Exclude<TabKey, 'quality_alert' | 'locked_arbitration'>;
+
 function TabContent({ tab, boardId }: { tab: string; boardId?: string }) {
   if (tab === 'quality_alert') return <QualityAlertTab boardId={boardId} />;
-  if (tab === 'contradictions') return <ContradictionsTab boardId={boardId} />;
-  return <MemoryTab tab={tab as Exclude<TabKey, 'quality_alert' | 'contradictions'>} boardId={boardId} />;
+  if (tab === 'locked_arbitration') return <ContradictionsTab boardId={boardId} />;
+  return <MemoryTab tab={tab as MemoryTabKey} boardId={boardId} />;
 }
 
 // 把 tab key 映射到 /memories 的过滤参数（互斥分类）。
-function buildTabFilter(tab: Exclude<TabKey, 'quality_alert' | 'contradictions'>): Partial<MemoryListParams> {
+function buildTabFilter(tab: MemoryTabKey): Partial<MemoryListParams> {
   if (tab === 'all') return { pending_confirm: true };
-  if (tab === 'audn') return { pending_reason: AUDN_PENDING_REASONS.join(',') };
   if (tab === 'timeout') return { pending_reason: 'TIMEOUT' };
   if (tab === 'low_quality') return { pending_reason: 'LOW_QUALITY' };
   return { pending_confirm: true };
 }
 
-function MemoryTab({ tab, boardId }: { tab: Exclude<TabKey, 'quality_alert' | 'contradictions'>; boardId?: string }) {
+function MemoryTab({ tab, boardId }: { tab: MemoryTabKey; boardId?: string }) {
   const { addToast } = useToast();
   const [page, setPage] = useUrlState('page', 1);
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -267,6 +266,64 @@ function QualityAlertItem({ memory, onDismiss }: { memory: QualityAlert; onDismi
   );
 }
 
+// 关系类型 → UI 元数据（标签、颜色、symbol、可执行操作集）
+type RelationActionKey = 'keep_source' | 'keep_target' | 'keep_both';
+interface RelationActionMeta {
+  key: RelationActionKey;
+  label: string;
+  className: string;
+}
+interface RelationTypeMeta {
+  badge: string;
+  badgeType: 'red' | 'amber' | 'gray';
+  symbol: string;
+  borderColor: string;
+  description: string;
+  actions: RelationActionMeta[];
+}
+
+const RELATION_TYPE_META: Record<string, RelationTypeMeta> = {
+  CONTRADICTS: {
+    badge: '矛盾',
+    badgeType: 'red',
+    symbol: '⇔',
+    borderColor: 'var(--red, #e53e3e)',
+    description: '新事实与 LOCKED 记忆冲突，需选择采纳哪一方。',
+    actions: [
+      { key: 'keep_source', label: '采纳 A (新)', className: 'btn-success btn-sm' },
+      { key: 'keep_target', label: '采纳 B (已有)', className: 'btn-primary btn-sm' },
+      { key: 'keep_both', label: '保留两者', className: 'btn-secondary btn-sm' },
+    ],
+  },
+  SUPPLEMENTS: {
+    badge: '补充',
+    badgeType: 'amber',
+    symbol: '＋',
+    borderColor: 'var(--amber, #d97706)',
+    description: '新事实补充已有 LOCKED 记忆，确认是否接受补充。',
+    actions: [
+      { key: 'keep_both', label: '✓ 接受补充', className: 'btn-success btn-sm' },
+      { key: 'keep_target', label: '丢弃 A (新)', className: 'btn-danger btn-sm' },
+    ],
+  },
+  SUPERSEDES: {
+    badge: '取代',
+    badgeType: 'red',
+    symbol: '⇒',
+    borderColor: 'var(--red, #e53e3e)',
+    description: '新事实拟取代已有 LOCKED 记忆，需人工确认。',
+    actions: [
+      { key: 'keep_source', label: '采纳替代 (A 取代 B)', className: 'btn-success btn-sm' },
+      { key: 'keep_target', label: '拒绝替代 (保留 B)', className: 'btn-primary btn-sm' },
+      { key: 'keep_both', label: '保留两者', className: 'btn-secondary btn-sm' },
+    ],
+  },
+};
+
+function getRelationMeta(relationType: string): RelationTypeMeta {
+  return RELATION_TYPE_META[relationType] || RELATION_TYPE_META.CONTRADICTS;
+}
+
 function ContradictionsTab({ boardId }: { boardId?: string }) {
   const { addToast } = useToast();
   const [page, setPage] = useUrlState('page', 1);
@@ -290,7 +347,7 @@ function ContradictionsTab({ boardId }: { boardId?: string }) {
   async function handleResolve(relationId: string, action: string, reason: string) {
     try {
       await adminApi.resolveContradiction(relationId, { action, reason });
-      addToast('success', '矛盾已裁决');
+      addToast('success', '已裁决');
       refetch();
     } catch (err) {
       const msg = err instanceof Error ? err.message : '裁决失败';
@@ -300,12 +357,12 @@ function ContradictionsTab({ boardId }: { boardId?: string }) {
 
   if (loading) return <Loading />;
   if (error) return <ErrorMsg message={error} onRetry={refetch} />;
-  if (!relItems.length) return <EmptyState icon="✅" message="暂无矛盾记忆对" />;
+  if (!relItems.length) return <EmptyState icon="✅" message="暂无 LOCKED 关联待裁决" />;
 
   return (
     <div>
       <div style={{ marginBottom: 12, fontSize: 13, color: 'var(--text-sec)' }}>
-        共 {data?.total || 0} 对矛盾记忆需要人工裁决。
+        共 {data?.total || 0} 对 LOCKED 关联记忆需要人工裁决（含矛盾 / 补充 / 取代）。
       </div>
       {relItems.map(rel => (
         <ContradictionPair key={rel.id} relation={rel} memMap={memMap} onResolve={handleResolve} />
@@ -326,6 +383,7 @@ function ContradictionPair({
   const [resolving, setResolving] = useState(false);
   const source = memMap.get(relation.source_memory_id);
   const target = memMap.get(relation.target_memory_id);
+  const meta = getRelationMeta(relation.relation_type);
 
   async function handleAction(action: string) {
     setResolving(true);
@@ -337,16 +395,16 @@ function ContradictionPair({
   }
 
   return (
-    <div className="card" style={{ padding: 14, marginBottom: 10, borderLeft: '3px solid var(--red, #e53e3e)' }}>
-      <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
-        <Badge type="red">矛盾</Badge>
+    <div className="card" style={{ padding: 14, marginBottom: 10, borderLeft: `3px solid ${meta.borderColor}` }}>
+      <div style={{ display: 'flex', gap: 6, marginBottom: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+        <Badge type={meta.badgeType}>{meta.badge}</Badge>
         <span style={{ fontSize: 12, color: 'var(--text-ter)' }}>
-          置信度 {relation.confidence.toFixed(2)} · 来源: {relation.origin}
+          {meta.description} · 置信度 {relation.confidence.toFixed(2)} · 来源: {relation.origin}
         </span>
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr auto 1fr', gap: 12, alignItems: 'start' }}>
         <MemorySide label="记忆 A (新)" memory={source} />
-        <div style={{ fontSize: 20, color: 'var(--red, #e53e3e)', alignSelf: 'center' }}>⇔</div>
+        <div style={{ fontSize: 20, color: meta.borderColor, alignSelf: 'center' }}>{meta.symbol}</div>
         <MemorySide label="记忆 B (已有)" memory={target} />
       </div>
       <div style={{ marginTop: 12, paddingTop: 10, borderTop: '1px solid var(--border, #e2e8f0)' }}>
@@ -358,16 +416,17 @@ function ContradictionPair({
           disabled={resolving}
           style={{ width: '100%', marginBottom: 8, padding: '6px 10px', fontSize: 13, border: '1px solid var(--border, #e2e8f0)', borderRadius: 'var(--radius, 4px)' }}
         />
-        <div style={{ display: 'flex', gap: 8 }}>
-          <button className="btn-success btn-sm" disabled={resolving} onClick={() => handleAction('keep_source')}>
-            采纳 A (新)
-          </button>
-          <button className="btn-primary btn-sm" disabled={resolving} onClick={() => handleAction('keep_target')}>
-            采纳 B (已有)
-          </button>
-          <button className="btn-secondary btn-sm" disabled={resolving} onClick={() => handleAction('keep_both')}>
-            保留两者
-          </button>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          {meta.actions.map(act => (
+            <button
+              key={act.key}
+              className={act.className}
+              disabled={resolving}
+              onClick={() => handleAction(act.key)}
+            >
+              {act.label}
+            </button>
+          ))}
         </div>
       </div>
     </div>
